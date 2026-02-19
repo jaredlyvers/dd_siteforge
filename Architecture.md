@@ -1,54 +1,272 @@
 ### Architecture
 
-**Overview:**  
-Terminal User Interface (TUI) app for building HTML pages via a CMS-like workflow. Built in Rust using ratatui for UI (with mouse support enabled), serde for data handling, and handlebars for HTML templating. Data model: Hierarchical structure with Site > Pages > Sections > Columns > Components. Output: Static HTML files with flex-based CSS grid.
+**Overview:**
+Terminal User Interface (TUI) app for building framework-native pages through a CMS-like workflow. Built in Rust using `ratatui` (mouse + keyboard), `crossterm` (terminal events), `serde/serde_json` (state persistence), and `handlebars` (template rendering). Output targets ldnddev framework markup and component templates, not generic flex-only HTML.
 
-**Key Components:**  
-- **UI Layer:** Ratatui widgets for menus, lists, forms (e.g., selectable lists for sections/columns/components). Enable mouse events via crossterm: capture clicks for selection, drags for resizing (if applicable), scrolls for navigation.  
-- **Data Model:** Structs for Section (id, columns: Vec<Column>), Column (width_class: String, components: Vec<Component>), Component (type: Enum e.g., Text/Image/Link, fields: HashMap<String, String>).  
-- **Logic Layer:** Commands for add/edit/generate; flex grid classes (e.g., "flex-1", "flex-2" from predefined set). Handle mouse inputs in event loop.  
-- **Output Generator:** Serialize data to HTML via templates, embedding images/links/copy.  
-- **Storage:** JSON files for site state persistence.
+Primary content hierarchy:
+- `Site`
+- `Page`
+- `Node` (ordered)
+  - `dd-hero` (top-level component, no `dd-section` wrapper required)
+  - `dd-section` wrapper containing one or more section-compatible components
 
-**Tech Stack:**  
-- Rust core.  
-- Dependencies: ratatui, crossterm (input with mouse enabled), serde_json (storage), handlebars (templating), image (optional for previews).
+This model enforces framework rules, required parameters, and valid layout options at authoring time before export.
 
-### Build Plan
+**Goals:**
+- Produce HTML that matches framework component contracts and class patterns.
+- Prevent invalid component configs with schema-based validation.
+- Support responsive and accessible authoring defaults.
+- Export deterministic, production-ready static pages.
 
-**Phase 1: Setup & Core UI (MVP Skeleton)**  
-- Initialize Rust project with dependencies. Enable mouse in crossterm backend.  
-- Build basic TUI: Main menu, navigation (keys: arrow/enter/esc; mouse: clicks for select, wheel for scroll).  
-- Implement data model structs.  
-- Checkpoint: Run app, navigate empty UI with mouse/keyboard without crashes.
+### Framework-Native Component Model
 
-**Phase 2: Section & Column Management**  
-- Add commands: Create/delete sections.  
-- Per section: Add/delete columns, select flex grid widths (e.g., menu with options like 1/12, 2/12; mouse-click to choose).  
-- UI: List views for sections/columns, mouse-selectable.  
-- Checkpoint: Create a page with sections and columns, view structure in TUI using mouse.
+Represent components as typed variants with explicit fields instead of generic key/value maps.
 
-**Phase 3: Component Integration**  
-- Define component list (e.g., Text, Image, Link, Button).  
-- Commands: Add component to column, edit fields (prompts for copy/url/alt-text; mouse for form navigation).  
-- UI: Sub-menus for component selection/editing, mouse-clickable.  
-- Checkpoint: Add/edit components in columns, verify data model updates with mouse.
+```rust
+struct Site {
+    id: String,
+    name: String,
+    theme: ThemeSettings,
+    pages: Vec<Page>,
+}
 
-**Phase 4: HTML Generation & Export**  
-- Implement templating: Generate HTML with flex classes, embed component content.  
-- Commands: Preview (text-based), export to file.  
-- Handle assets: Copy images to output dir if paths provided.  
-- Checkpoint: Generate and view sample HTML file from built page.
+struct Page {
+    id: String,
+    slug: String,
+    title: String,
+    meta_description: Option<String>,
+    nodes: Vec<PageNode>, // Ordered render list
+}
 
-**Phase 5: Full CMS Features & Polish**  
-- Site-level: Multiple pages, global settings (e.g., theme).  
-- Persistence: Load/save site JSON.  
-- Error handling, help menu, undo. Mouse-specific: Tooltips on hover if supported.  
-- Testing: Unit tests for data/logic, manual TUI runs with mouse.  
-- Checkpoint: Build multi-page site, export complete static site using mouse controls.
+enum PageNode {
+    Hero(DdHero),
+    Section(DdSection),
+}
 
-**Phase 6: Deployment & Extensions**  
-- Package as CLI tool (cargo install).  
-- Optional: Integrate with SSG like Hugo/Zola for full static site.  
-- Documentation: README with usage, including mouse controls.  
-- Checkpoint: Install and run end-to-end build/export with mouse.
+struct DdSection {
+    id: String,
+    background: SectionBackground, // primary|secondary|tertiary|gray|white|black
+    spacing: SectionSpacing,       // tight|normal|loose|extra-loose
+    width: SectionWidth,           // narrow|normal|wide|full
+    align: SectionAlign,           // left|center|right
+    components: Vec<SectionComponent>,
+}
+
+enum SectionComponent {
+    Card(DdCard),
+    Alert(DdAlert),
+    Banner(DdBanner),
+    Tabs(DdTabs),
+    Accordion(DdAccordion),
+    Cta(DdCta),
+    Modal(DdModal),
+    Slider(DdSlider),
+    Spacer(DdSpacer),
+    Timeline(DdTimeline),
+}
+```
+
+### Components and Contracts
+
+All components below are available and should be first-class in the editor.
+
+1. `dd-hero`
+- Required: `image`, `title`, `subtitle`
+- Optional: `copy`, `cta_text`, `cta_link`, `cta_target`, `image_alt`, `image_mobile`, `image_tablet`, `image_desktop`
+- Placement: top-level page node (no `dd-section` wrapper)
+
+2. `dd-card`
+- Required: `title`, `image`
+- Optional: `subtitle`, `copy`, `cta_text`, `cta_link`, `image_alt`, `columns(2|3|4)`, `animate(fade-up|fade-in|slide-up)`
+- Placement: inside `dd-section`
+
+3. `dd-section` (wrapper)
+- Required: `content`
+- Optional layout params: `background`, `spacing`, `width`, `align`
+- Placement: top-level page node wrapping section-compatible components
+
+4. `dd-alert`
+- Required: `type(success|error|warning|info)`, `message`
+- Optional: `title`, `dismissible`
+
+5. `dd-banner`
+- Required: `message`, `background`
+- Optional: `link_text`, `link_url`, `dismissible`
+
+6. `dd-tabs`
+- Required: `tabs[]` (`title`, `content`)
+- Optional: `default_tab`, `orientation(horizontal|vertical)`
+
+7. `dd-accordion`
+- Required: `items[]` (`title`, `content`)
+- Optional: `multiple`
+
+8. `dd-cta`
+- Required: `title`, `copy`, `cta_text`, `cta_link`
+
+9. `dd-modal`
+- Required: `trigger_text`, `title`, `content`
+
+10. `dd-slider`
+- Required: `slides[]` (`image`, `title`, `copy`)
+- Optional: `autoplay`, `speed`
+
+11. `dd-spacer`
+- Required: `height(sm|md|lg|xl|xxl)`
+
+12. `dd-timeline`
+- Required: `events[]` (`date`, `title`, `description`)
+
+### Layout Options and Utilities
+
+Expose these options directly in TUI controls (dropdown/select lists) and validate enumerations:
+
+- `dd-section.background`: `primary`, `secondary`, `tertiary`, `gray`, `white`, `black`
+- `dd-section.spacing`: `tight`, `normal`, `loose`, `extra-loose`
+- `dd-section.width`: `narrow`, `normal`, `wide`, `full`
+- `dd-section.align`: `left`, `center`, `right`
+- `dd-card.columns`: `2`, `3`, `4`
+- `dd-card.animate`: `fade-up`, `fade-in`, `slide-up`
+- `dd-tabs.orientation`: `horizontal`, `vertical`
+
+Framework utility classes to preserve during output where applicable:
+- Grid: `dd-u-1-1`, `dd-u-md-12-24`, `dd-u-lg-8-24`, `dd-u-xl-6-24`
+- Spacing: `l-box`, `m-bottom`, `m-top`, `p-large`, `p-small`
+- Text align: `dd-t-center`, `dd-t-left`, `dd-t-right`
+- Visibility: `dd-d-none`, `dd-d-block`, `dd-d-md-block`
+
+### Rendering Rules
+
+- Render `Page.nodes` in order.
+- `dd-hero` renders as a standalone block.
+- All other components render inside `dd-section` wrappers.
+- Use framework template structure and class names (for example `dd-section`, `dd-section__container`, `dd-section__item dd-u-1-1`).
+- Prefer template-backed output for each component:
+  - `/web/templates/components/dd-hero.html`
+  - `/web/templates/components/dd-card.html`
+  - `/web/templates/components/dd-section.html`
+  - `/web/templates/components/dd-alert.html`
+  - `/web/templates/components/dd-banner.html`
+  - `/web/templates/components/dd-tabs.html`
+  - `/web/templates/components/dd-accordion.html`
+  - `/web/templates/components/dd-cta.html`
+  - `/web/templates/components/dd-modal.html`
+  - `/web/templates/components/dd-slider.html`
+  - `/web/templates/components/dd-spacer.html`
+  - `/web/templates/components/dd-timeline.html`
+
+### Validation Layer
+
+Validation runs on create, update, and export.
+
+1. Schema validation
+- Required fields must exist per component.
+- Enum fields must be valid framework values.
+- Nested arrays (`tabs`, `items`, `slides`, `events`) must contain required child fields.
+
+2. Placement validation
+- `dd-hero` allowed at top level.
+- Section components must live inside `dd-section`.
+
+3. Accessibility validation
+- Require meaningful `image_alt` when image is informational.
+- Enforce semantic headings and section labels where appropriate.
+- Ensure interactive controls have discernible text.
+
+4. Link/media validation
+- URL format checks for CTA and links.
+- Image path existence checks when local assets are used.
+
+### UI/TUI Architecture
+
+**UI Layer (ratatui + crossterm):**
+- Left panel: page tree (`Hero`, `Section`, section components)
+- Center panel: property editor for selected node
+- Right panel: validation/errors and quick help
+- Event model:
+  - Keyboard: arrows, tab/shift-tab, enter, esc
+  - Mouse: click-select, click-edit, wheel-scroll
+
+**Application Layer:**
+- Command handlers: add/move/delete node, update fields, clone component, reorder sections/components
+- Undo/redo stack for editor operations
+- Deterministic serialization for stable diffs
+
+**Storage Layer:**
+- JSON persistence for full `Site` model
+- Autosave + explicit save
+- Versioned schema for future migrations
+
+### Build and Export Workflow
+
+All framework build commands must use `lando`:
+
+```bash
+lando grunt build
+lando grunt dev
+lando grunt sync
+```
+
+Export flow:
+1. Load site JSON.
+2. Validate full model.
+3. Render page HTML via component templates.
+4. Write output files and copy referenced assets.
+5. Run framework build command for final assets.
+
+### Implementation Plan
+
+**Phase 1: Foundation**
+- Set up Rust project and terminal shell.
+- Implement typed model (`Site`, `Page`, `PageNode`, framework component structs).
+- Add JSON load/save and schema versioning.
+
+**Phase 2: Framework-Aware Editor**
+- Build tree navigation and property forms.
+- Add all 12 framework components to insert menu.
+- Add constrained selectors for all layout enums.
+
+**Phase 3: Validation Engine**
+- Implement required-field, enum, placement, and nested-item validation.
+- Surface inline validation errors in UI.
+- Block export on critical errors.
+
+**Phase 4: Renderer**
+- Implement template mapping for each component.
+- Enforce wrapper rules (`dd-hero` standalone, others in `dd-section`).
+- Generate complete page HTML with semantic structure.
+
+**Phase 5: Accessibility and Responsiveness**
+- Add checks for alt text, heading order guidance, and link text quality.
+- Support responsive image fields (`image_mobile/tablet/desktop`) in hero.
+- Preserve framework utility classes in output.
+
+**Phase 6: Integration and Delivery**
+- Integrate `lando` build hooks.
+- Add tests for validation and render snapshots.
+- Document authoring workflow, keyboard/mouse controls, and troubleshooting.
+
+### Testing Strategy
+
+- Unit tests: schema validation, placement rules, enum parsing, serialization.
+- Snapshot tests: rendered HTML per component and mixed-page compositions.
+- Integration tests: JSON import -> edit operations -> export pipeline.
+- Manual QA: keyboard + mouse interaction, long-form content, responsive layouts.
+
+### Risks and Mitigations
+
+- Risk: Drift between app structs and framework templates.
+  - Mitigation: central component registry with shared metadata for required fields/options.
+
+- Risk: Invalid user-authored JSON.
+  - Mitigation: strict parser + migration layer + clear repair messages.
+
+- Risk: Template changes in framework.
+  - Mitigation: version pinning and regression snapshots for generated HTML.
+
+### Success Criteria
+
+- Users can build pages using every available framework component.
+- Exported HTML follows framework structure and passes validation.
+- Layout option controls are constrained to framework-supported values.
+- Generated output is responsive, accessible, and build-ready with `lando`.
