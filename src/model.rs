@@ -55,6 +55,16 @@ pub struct DdSection {
     pub spacing: SectionSpacing,
     pub width: SectionWidth,
     pub align: SectionAlign,
+    #[serde(default)]
+    pub columns: Vec<SectionColumn>,
+    #[serde(default)]
+    pub components: Vec<SectionComponent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SectionColumn {
+    pub id: String,
+    pub width_class: String,
     pub components: Vec<SectionComponent>,
 }
 
@@ -303,12 +313,17 @@ impl Site {
                         spacing: SectionSpacing::Normal,
                         width: SectionWidth::Normal,
                         align: SectionAlign::Left,
-                        components: vec![SectionComponent::Cta(DdCta {
-                            title: "Ready to publish?".to_string(),
-                            copy: "Generate framework-compliant HTML.".to_string(),
-                            cta_text: "Export".to_string(),
-                            cta_link: "/export".to_string(),
-                        })],
+                        columns: vec![SectionColumn {
+                            id: "column-1".to_string(),
+                            width_class: "dd-u-1-1".to_string(),
+                            components: vec![SectionComponent::Cta(DdCta {
+                                title: "Ready to publish?".to_string(),
+                                copy: "Generate framework-compliant HTML.".to_string(),
+                                cta_text: "Export".to_string(),
+                                cta_link: "/export".to_string(),
+                            })],
+                        }],
+                        components: Vec::new(),
                     }),
                 ],
             }],

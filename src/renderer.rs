@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use crate::model::{
     DdAccordion, DdAlert, DdBanner, DdCard, DdCta, DdHero, DdModal, DdSection, DdSlider, DdTabs,
-    DdTimeline, Page, PageNode, SectionComponent, Site,
+    DdTimeline, Page, PageNode, SectionColumn, SectionComponent, Site,
 };
 
 const PAGE_TEMPLATE: &str = r#"<!DOCTYPE html>
@@ -92,30 +92,38 @@ fn render_hero(hero: &DdHero) -> anyhow::Result<String> {
 }
 
 fn render_section(section: &DdSection) -> anyhow::Result<String> {
-    let mut inner = String::new();
-    for component in &section.components {
-        let html = match component {
-            SectionComponent::Card(v) => render_card(v)?,
-            SectionComponent::Alert(v) => render_alert(v)?,
-            SectionComponent::Banner(v) => render_banner(v)?,
-            SectionComponent::Tabs(v) => render_tabs(v)?,
-            SectionComponent::Accordion(v) => render_accordion(v)?,
-            SectionComponent::Cta(v) => render_cta(v)?,
-            SectionComponent::Modal(v) => render_modal(v)?,
-            SectionComponent::Slider(v) => render_slider(v)?,
-            SectionComponent::Spacer(v) => render_inline(
-                r#"<div class="dd-spacer dd-spacer--{{height}}" aria-hidden="true"></div>"#,
-                serde_json::to_value(v)?,
-            )?,
-            SectionComponent::Timeline(v) => render_timeline(v)?,
-        };
-        inner.push_str(&html);
-        inner.push('\n');
+    let mut columns_html = String::new();
+    for column in section_columns(section) {
+        let mut inner = String::new();
+        for component in &column.components {
+            let html = match component {
+                SectionComponent::Card(v) => render_card(v)?,
+                SectionComponent::Alert(v) => render_alert(v)?,
+                SectionComponent::Banner(v) => render_banner(v)?,
+                SectionComponent::Tabs(v) => render_tabs(v)?,
+                SectionComponent::Accordion(v) => render_accordion(v)?,
+                SectionComponent::Cta(v) => render_cta(v)?,
+                SectionComponent::Modal(v) => render_modal(v)?,
+                SectionComponent::Slider(v) => render_slider(v)?,
+                SectionComponent::Spacer(v) => render_inline(
+                    r#"<div class="dd-spacer dd-spacer--{{height}}" aria-hidden="true"></div>"#,
+                    serde_json::to_value(v)?,
+                )?,
+                SectionComponent::Timeline(v) => render_timeline(v)?,
+            };
+            inner.push_str(&html);
+            inner.push('\n');
+        }
+        columns_html.push_str(&format!(
+            r#"<div class="dd-section__item {}">{}</div>"#,
+            column.width_class, inner
+        ));
+        columns_html.push('\n');
     }
 
     let template = r#"<section class="dd-section {{background}}" aria-label="Content section">
   <div class="dd-section__container dd-g">
-    <div class="dd-section__item dd-u-1-1 {{align}} {{width}} {{spacing}}">
+    <div class="{{align}} {{width}} {{spacing}} dd-u-1-1 dd-g">
       {{{content}}}
     </div>
   </div>
@@ -128,9 +136,21 @@ fn render_section(section: &DdSection) -> anyhow::Result<String> {
             "spacing": stringify_json(&serde_json::to_value(&section.spacing)?),
             "width": stringify_json(&serde_json::to_value(&section.width)?),
             "align": stringify_json(&serde_json::to_value(&section.align)?),
-            "content": inner
+            "content": columns_html
         }),
     )
+}
+
+fn section_columns(section: &DdSection) -> Vec<SectionColumn> {
+    if !section.columns.is_empty() {
+        section.columns.clone()
+    } else {
+        vec![SectionColumn {
+            id: format!("{}-legacy-column", section.id),
+            width_class: "dd-u-1-1".to_string(),
+            components: section.components.clone(),
+        }]
+    }
 }
 
 fn render_card(card: &DdCard) -> anyhow::Result<String> {

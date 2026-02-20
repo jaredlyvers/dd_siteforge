@@ -1,0 +1,12 @@
+# Local TUI theme override for dd_staticbuilder.
+# Lookup order: ./theme.yml, ./.theme.yml, ~/.config/ldnddev/dd_staticbuilder/.theme.yml
+colors:
+  base: "#1e1e2e"
+  mantle: "#181825"
+  crust: "#11111b"
+  text: "#cdd6f4"
+  subtext0: "#a6adc8"
+  surface0: "#313244"
+  overlay0: "#6c7086"
+  lavender: "#b4befe"
+  blue: "#89b4fa"

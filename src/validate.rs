@@ -1,4 +1,4 @@
-use crate::model::{PageNode, SectionComponent, Site};
+use crate::model::{DdSection, PageNode, SectionColumn, SectionComponent, Site};
 
 pub fn validate_site(site: &Site) -> Vec<String> {
     let mut errors = Vec::new();
@@ -61,16 +61,43 @@ pub fn validate_site(site: &Site) -> Vec<String> {
                             page.id, section.id
                         ));
                     }
-                    if section.components.is_empty() {
-                        errors.push(format!("Section '{}' has no components.", section.id));
+                    let columns = section_columns(section);
+                    if columns.is_empty() {
+                        errors.push(format!("Section '{}' has no columns.", section.id));
                     }
-                    for component in &section.components {
-                        validate_section_component(
-                            component,
-                            page.id.as_str(),
-                            section.id.as_str(),
-                            &mut errors,
-                        );
+                    let mut column_ids = std::collections::HashSet::new();
+                    for column in &columns {
+                        if column.id.trim().is_empty() {
+                            errors.push(format!(
+                                "Page '{}' section '{}' has a column with empty id.",
+                                page.id, section.id
+                            ));
+                        } else if !column_ids.insert(column.id.clone()) {
+                            errors.push(format!(
+                                "Page '{}' section '{}' has duplicate column id '{}'.",
+                                page.id, section.id, column.id
+                            ));
+                        }
+                        if column.width_class.trim().is_empty() {
+                            errors.push(format!(
+                                "Page '{}' section '{}' column '{}' missing width_class.",
+                                page.id, section.id, column.id
+                            ));
+                        }
+                        if column.components.is_empty() {
+                            errors.push(format!(
+                                "Page '{}' section '{}' column '{}' has no components.",
+                                page.id, section.id, column.id
+                            ));
+                        }
+                        for component in &column.components {
+                            validate_section_component(
+                                component,
+                                page.id.as_str(),
+                                section.id.as_str(),
+                                &mut errors,
+                            );
+                        }
                     }
                 }
             }
@@ -292,6 +319,18 @@ fn is_valid_url(url: &str) -> bool {
             || v.starts_with("https://"))
 }
 
+fn section_columns(section: &DdSection) -> Vec<SectionColumn> {
+    if !section.columns.is_empty() {
+        section.columns.clone()
+    } else {
+        vec![SectionColumn {
+            id: format!("{}-legacy-column", section.id),
+            width_class: "dd-u-1-1".to_string(),
+            components: section.components.clone(),
+        }]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::validate_site;
@@ -335,7 +374,8 @@ mod tests {
         let mut site = Site::starter();
         let page = &mut site.pages[0];
         if let PageNode::Section(section) = &mut page.nodes[1] {
-            if let crate::model::SectionComponent::Cta(cta) = &mut section.components[0] {
+            if let crate::model::SectionComponent::Cta(cta) = &mut section.columns[0].components[0]
+            {
                 cta.cta_link = "bad-link".to_string();
             }
         }
