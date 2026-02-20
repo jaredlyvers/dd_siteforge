@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
@@ -54,6 +55,7 @@ struct App {
     theme: AppTheme,
     selected_page: usize,
     selected_node: usize,
+    selected_tree_row: usize,
     selected_column: usize,
     selected_component: usize,
     selected_nested_item: usize,
@@ -63,8 +65,15 @@ struct App {
     should_quit: bool,
     input_mode: Option<InputMode>,
     input_buffer: String,
+    component_picker: Option<ComponentPickerState>,
     component_kind: ComponentKind,
     show_help: bool,
+    expanded_sections: HashSet<(usize, usize)>,
+}
+
+struct ComponentPickerState {
+    query: String,
+    selected: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -140,24 +149,54 @@ struct PaletteFile {
     blue: Option<String>,
 }
 
+#[derive(Clone, Copy)]
+struct NodeTreeRow {
+    kind: NodeTreeKind,
+}
+
+#[derive(Clone, Copy)]
+enum NodeTreeKind {
+    Hero {
+        node_idx: usize,
+    },
+    Section {
+        node_idx: usize,
+    },
+    Column {
+        node_idx: usize,
+        column_idx: usize,
+    },
+    Component {
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+    },
+}
+
 impl App {
-    fn new(site: Site, path: Option<PathBuf>, theme: AppTheme) -> Self {
+    fn new(mut site: Site, path: Option<PathBuf>, theme: AppTheme) -> Self {
+        for page in &mut site.pages {
+            ensure_page_section_ids(page);
+        }
         Self {
             site,
             theme,
             selected_page: 0,
             selected_node: 0,
+            selected_tree_row: 0,
             selected_column: 0,
             selected_component: 0,
             selected_nested_item: 0,
             list_area: Rect::default(),
-            status: "q quit | s save | tab page | h/n add hero/section | d delete | J/K move nodes | C/V add/remove column | c/v select column | (/ ) move column | r/f edit column id/width class | </> move component | {/} move nested item | [/ ] pick component kind | a add component | x remove component | ,/. select section component | j/k select nested item | i/o add/remove nested item | m/l edit fields | b/w/g/t section layout | e/u edit hero".to_string(),
+            status: "Ready.".to_string(),
             path,
             should_quit: false,
             input_mode: None,
             input_buffer: String::new(),
+            component_picker: None,
             component_kind: ComponentKind::Card,
             show_help: false,
+            expanded_sections: HashSet::new(),
         }
     }
 
@@ -205,11 +244,11 @@ impl App {
         );
         frame.render_widget(header, root[0]);
 
-        let node_lines = page
-            .nodes
+        let tree_rows = self.build_node_tree_rows();
+        let node_lines = tree_rows
             .iter()
             .enumerate()
-            .map(|(idx, n)| ListItem::new(format!("{} {}", idx + 1, node_label(n))))
+            .map(|(_, row)| ListItem::new(self.tree_row_label(row)))
             .collect::<Vec<_>>();
         let list = List::new(node_lines)
             .block(
@@ -241,8 +280,8 @@ impl App {
             )
             .highlight_symbol("> ");
         let mut state = ListState::default();
-        if !page.nodes.is_empty() {
-            state.select(Some(self.selected_node.min(page.nodes.len() - 1)));
+        if !tree_rows.is_empty() {
+            state.select(Some(self.selected_tree_row.min(tree_rows.len() - 1)));
         }
         frame.render_stateful_widget(list, main[0], &mut state);
         self.list_area = main[0];
@@ -272,7 +311,10 @@ impl App {
             .wrap(Wrap { trim: true });
         frame.render_widget(details, main[1]);
 
-        let footer_text = "F1: keybindings | q: quit | s: save".to_string();
+        let footer_text = format!(
+            "F1 help | q quit | s save | / component picker | Enter toggle/edit/select | {}",
+            self.status
+        );
         let footer = Paragraph::new(footer_text)
             .style(
                 Style::default()
@@ -325,6 +367,85 @@ impl App {
                 .wrap(Wrap { trim: true });
             frame.render_widget(help, area);
         }
+
+        if self.input_mode.is_some() {
+            let area = centered_rect(72, 60, frame.area());
+            frame.render_widget(Clear, area);
+            let edit_help = self.current_modal_fields();
+            let modal = Paragraph::new(format!(
+                "Editing: {}\n\nValue:\n{}\n\nEditable fields:\n{}\n\nEnter: save | Esc: cancel",
+                self.current_input_mode_label(),
+                self.input_buffer,
+                edit_help
+            ))
+            .style(
+                Style::default()
+                    .fg(self.theme.foreground)
+                    .bg(self.theme.popup_background),
+            )
+            .block(
+                Block::default()
+                    .title("Edit Item")
+                    .borders(Borders::ALL)
+                    .style(
+                        Style::default()
+                            .fg(self.theme.foreground)
+                            .bg(self.theme.popup_background),
+                    )
+                    .border_style(Style::default().fg(self.theme.border))
+                    .title_style(
+                        Style::default()
+                            .fg(self.theme.title)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+            )
+            .wrap(Wrap { trim: true });
+            frame.render_widget(modal, area);
+        }
+
+        if let Some(picker) = &self.component_picker {
+            let area = centered_rect(70, 70, frame.area());
+            frame.render_widget(Clear, area);
+            let filtered = self.filtered_component_kinds(&picker.query);
+            let mut lines = Vec::new();
+            lines.push(format!("Search: {}", picker.query));
+            lines.push(String::new());
+            if filtered.is_empty() {
+                lines.push("No component matches query.".to_string());
+            } else {
+                for (idx, kind) in filtered.iter().enumerate() {
+                    let marker = if idx == picker.selected { ">" } else { " " };
+                    lines.push(format!("{marker} {}", kind.label()));
+                }
+            }
+            lines.push(String::new());
+            lines.push("Type to fuzzy search (e.g. card, dd_card).".to_string());
+            lines.push("Up/Down to choose, Enter to add, Esc to cancel.".to_string());
+            let picker_widget = Paragraph::new(lines.join("\n"))
+                .style(
+                    Style::default()
+                        .fg(self.theme.foreground)
+                        .bg(self.theme.popup_background),
+                )
+                .block(
+                    Block::default()
+                        .title("Add Component")
+                        .borders(Borders::ALL)
+                        .style(
+                            Style::default()
+                                .fg(self.theme.foreground)
+                                .bg(self.theme.popup_background),
+                        )
+                        .border_style(Style::default().fg(self.theme.border))
+                        .title_style(
+                            Style::default()
+                                .fg(self.theme.title)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                )
+                .wrap(Wrap { trim: true });
+            frame.render_widget(picker_widget, area);
+        }
     }
 
     fn handle_event(&mut self, evt: Event) -> anyhow::Result<()> {
@@ -338,6 +459,10 @@ impl App {
             return Ok(());
         }
 
+        if self.component_picker.is_some() {
+            return self.handle_component_picker_event(evt);
+        }
+
         if self.input_mode.is_some() {
             return self.handle_input_mode(evt);
         }
@@ -347,9 +472,11 @@ impl App {
                 KeyCode::Char('q') => self.should_quit = true,
                 KeyCode::Up => self.select_prev(),
                 KeyCode::Down => self.select_next(),
+                KeyCode::Enter => self.handle_enter_on_selected_row(),
                 KeyCode::Tab => self.select_next_page(),
                 KeyCode::BackTab => self.select_prev_page(),
                 KeyCode::Char('s') => self.save()?,
+                KeyCode::Char('/') => self.open_component_picker(),
                 KeyCode::Char('h') => self.add_hero(),
                 KeyCode::Char('n') => self.add_section(),
                 KeyCode::Char('d') => self.delete_selected_node(),
@@ -397,6 +524,7 @@ impl App {
             },
             _ => {}
         }
+        self.sync_tree_row_with_selection();
         Ok(())
     }
 
@@ -407,9 +535,11 @@ impl App {
                     self.input_mode = None;
                     self.input_buffer.clear();
                     self.status = "Edit cancelled.".to_string();
+                    self.sync_tree_row_with_selection();
                 }
                 KeyCode::Enter => {
                     self.commit_input_edit();
+                    self.sync_tree_row_with_selection();
                 }
                 KeyCode::Backspace => {
                     self.input_buffer.pop();
@@ -420,6 +550,76 @@ impl App {
                 _ => {}
             }
         }
+        Ok(())
+    }
+
+    fn handle_component_picker_event(&mut self, evt: Event) -> anyhow::Result<()> {
+        if let Event::Key(key) = evt {
+            match key.code {
+                KeyCode::Esc => {
+                    self.component_picker = None;
+                    self.status = "Component picker cancelled.".to_string();
+                }
+                KeyCode::Up => {
+                    let selected = self
+                        .component_picker
+                        .as_ref()
+                        .map(|p| p.selected)
+                        .unwrap_or(0)
+                        .saturating_sub(1);
+                    if let Some(picker) = &mut self.component_picker {
+                        picker.selected = selected;
+                    }
+                }
+                KeyCode::Down => {
+                    let (query, selected) = if let Some(picker) = &self.component_picker {
+                        (picker.query.clone(), picker.selected)
+                    } else {
+                        (String::new(), 0)
+                    };
+                    let total = self.filtered_component_kinds(&query).len();
+                    if let Some(picker) = &mut self.component_picker {
+                        if total == 0 {
+                            picker.selected = 0;
+                        } else {
+                            picker.selected = (selected + 1).min(total - 1);
+                        }
+                    }
+                }
+                KeyCode::Backspace => {
+                    if let Some(picker) = &mut self.component_picker {
+                        picker.query.pop();
+                    }
+                    self.normalize_component_picker_selection();
+                }
+                KeyCode::Enter => {
+                    let (query, selected) = if let Some(picker) = &self.component_picker {
+                        (picker.query.clone(), picker.selected)
+                    } else {
+                        (String::new(), 0)
+                    };
+                    let filtered = self.filtered_component_kinds(&query);
+                    let Some(kind) = filtered
+                        .get(selected.min(filtered.len().saturating_sub(1)))
+                        .copied()
+                    else {
+                        self.status = "No component selected.".to_string();
+                        return Ok(());
+                    };
+                    self.component_kind = kind;
+                    self.add_selected_component_to_section();
+                    self.component_picker = None;
+                }
+                KeyCode::Char(c) => {
+                    if let Some(picker) = &mut self.component_picker {
+                        picker.query.push(c);
+                    }
+                    self.normalize_component_picker_selection();
+                }
+                _ => {}
+            }
+        }
+        self.sync_tree_row_with_selection();
         Ok(())
     }
 
@@ -931,8 +1131,8 @@ impl App {
         if !contains(self.list_area, x, y) {
             return;
         }
-        let page = self.current_page();
-        if page.nodes.is_empty() {
+        let tree_rows = self.build_node_tree_rows();
+        if tree_rows.is_empty() {
             return;
         }
         let body_top = self.list_area.y.saturating_add(1);
@@ -944,12 +1144,10 @@ impl App {
             return;
         }
         let idx = (y - body_top) as usize;
-        if idx < page.nodes.len() {
-            self.selected_node = idx;
-            self.selected_column = 0;
-            self.selected_component = 0;
-            self.selected_nested_item = 0;
-            self.status = format!("Selected node {}", idx + 1);
+        if idx < tree_rows.len() {
+            self.selected_tree_row = idx;
+            self.apply_tree_row_selection(tree_rows[idx]);
+            self.status = format!("Selected {}", self.tree_row_label(&tree_rows[idx]));
         }
     }
 
@@ -979,30 +1177,391 @@ impl App {
         }
     }
 
-    fn select_prev(&mut self) {
-        if self.current_page().nodes.is_empty() {
+    fn build_node_tree_rows(&self) -> Vec<NodeTreeRow> {
+        let page = self.current_page();
+        let mut rows = Vec::new();
+        for (node_idx, node) in page.nodes.iter().enumerate() {
+            match node {
+                PageNode::Hero(_) => rows.push(NodeTreeRow {
+                    kind: NodeTreeKind::Hero { node_idx },
+                }),
+                PageNode::Section(section) => {
+                    rows.push(NodeTreeRow {
+                        kind: NodeTreeKind::Section { node_idx },
+                    });
+                    if self.is_section_expanded(node_idx) {
+                        let columns = section_columns_ref(section);
+                        for (column_idx, col) in columns.iter().enumerate() {
+                            rows.push(NodeTreeRow {
+                                kind: NodeTreeKind::Column {
+                                    node_idx,
+                                    column_idx,
+                                },
+                            });
+                            for (component_idx, _) in col.components.iter().enumerate() {
+                                rows.push(NodeTreeRow {
+                                    kind: NodeTreeKind::Component {
+                                        node_idx,
+                                        column_idx,
+                                        component_idx,
+                                    },
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        rows
+    }
+
+    fn tree_row_label(&self, row: &NodeTreeRow) -> String {
+        let page = self.current_page();
+        match row.kind {
+            NodeTreeKind::Hero { node_idx } => format!("{}. dd-hero", node_idx + 1),
+            NodeTreeKind::Section { node_idx } => {
+                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                    return format!("{}. dd-section", node_idx + 1);
+                };
+                let marker = if self.is_section_expanded(node_idx) {
+                    "[-]"
+                } else {
+                    "[+]"
+                };
+                format!("{}. {} dd-section ({})", node_idx + 1, marker, section.id)
+            }
+            NodeTreeKind::Column {
+                node_idx,
+                column_idx,
+            } => {
+                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                    return format!("    |- column {}", column_idx + 1);
+                };
+                let columns = section_columns_ref(section);
+                let col_i = column_idx.min(columns.len().saturating_sub(1));
+                let col = &columns[col_i];
+                format!(
+                    "    |- column {} ({}) [{}]",
+                    col_i + 1,
+                    col.id,
+                    col.width_class
+                )
+            }
+            NodeTreeKind::Component {
+                node_idx,
+                column_idx,
+                component_idx,
+            } => {
+                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                    return format!("       - component {}", component_idx + 1);
+                };
+                let columns = section_columns_ref(section);
+                let col_i = column_idx.min(columns.len().saturating_sub(1));
+                let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
+                let label = component_label(&columns[col_i].components[comp_i]);
+                format!("       - {} {}", comp_i + 1, label)
+            }
+        }
+    }
+
+    fn apply_tree_row_selection(&mut self, row: NodeTreeRow) {
+        match row.kind {
+            NodeTreeKind::Hero { node_idx } => {
+                self.selected_node = node_idx;
+                self.selected_column = 0;
+                self.selected_component = 0;
+                self.selected_nested_item = 0;
+            }
+            NodeTreeKind::Section { node_idx } => {
+                self.selected_node = node_idx;
+                self.selected_column = 0;
+                self.selected_component = 0;
+                self.selected_nested_item = 0;
+            }
+            NodeTreeKind::Column {
+                node_idx,
+                column_idx,
+            } => {
+                self.selected_node = node_idx;
+                self.selected_column = column_idx;
+                self.selected_component = 0;
+                self.selected_nested_item = 0;
+            }
+            NodeTreeKind::Component {
+                node_idx,
+                column_idx,
+                component_idx,
+            } => {
+                self.selected_node = node_idx;
+                self.selected_column = column_idx;
+                self.selected_component = component_idx;
+                self.selected_nested_item = 0;
+            }
+        }
+    }
+
+    fn sync_tree_row_with_selection(&mut self) {
+        let rows = self.build_node_tree_rows();
+        if rows.is_empty() {
+            self.selected_tree_row = 0;
             return;
         }
-        let next = self.selected_node.saturating_sub(1);
-        if next != self.selected_node {
-            self.selected_node = next;
-            self.selected_column = 0;
-            self.selected_component = 0;
-            self.selected_nested_item = 0;
+        let wanted = rows
+            .iter()
+            .position(|row| match row.kind {
+                NodeTreeKind::Hero { node_idx } => node_idx == self.selected_node,
+                NodeTreeKind::Section { node_idx } => node_idx == self.selected_node,
+                NodeTreeKind::Column {
+                    node_idx,
+                    column_idx,
+                } => node_idx == self.selected_node && column_idx == self.selected_column,
+                NodeTreeKind::Component {
+                    node_idx,
+                    column_idx,
+                    component_idx,
+                } => {
+                    node_idx == self.selected_node
+                        && column_idx == self.selected_column
+                        && component_idx == self.selected_component
+                }
+            })
+            .unwrap_or_else(|| self.selected_tree_row.min(rows.len().saturating_sub(1)));
+        self.selected_tree_row = wanted;
+    }
+
+    fn is_section_expanded(&self, node_idx: usize) -> bool {
+        !self
+            .expanded_sections
+            .contains(&(self.selected_page, node_idx))
+    }
+
+    fn set_section_expanded(&mut self, node_idx: usize, expanded: bool) {
+        if expanded {
+            self.expanded_sections
+                .remove(&(self.selected_page, node_idx));
+        } else {
+            self.expanded_sections
+                .insert((self.selected_page, node_idx));
+        }
+    }
+
+    fn toggle_selected_section_expanded(&mut self) {
+        let rows = self.build_node_tree_rows();
+        if rows.is_empty() {
+            return;
+        }
+        let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        let node_idx = match row.kind {
+            NodeTreeKind::Section { node_idx } => node_idx,
+            NodeTreeKind::Column { node_idx, .. } => node_idx,
+            NodeTreeKind::Component { node_idx, .. } => node_idx,
+            NodeTreeKind::Hero { .. } => {
+                self.status = "Selected row is not a section.".to_string();
+                return;
+            }
+        };
+        let page = self.current_page();
+        let Some(PageNode::Section(_)) = page.nodes.get(node_idx) else {
+            self.status = "Selected row is not a section.".to_string();
+            return;
+        };
+        let expanded = self.is_section_expanded(node_idx);
+        self.set_section_expanded(node_idx, !expanded);
+        self.selected_node = node_idx;
+        self.selected_column = 0;
+        self.selected_component = 0;
+        self.selected_nested_item = 0;
+        self.status = if expanded {
+            "Collapsed section.".to_string()
+        } else {
+            "Expanded section.".to_string()
+        };
+        self.sync_tree_row_with_selection();
+    }
+
+    fn handle_enter_on_selected_row(&mut self) {
+        let rows = self.build_node_tree_rows();
+        if rows.is_empty() {
+            return;
+        }
+        let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        match row.kind {
+            NodeTreeKind::Section { .. } => self.toggle_selected_section_expanded(),
+            NodeTreeKind::Hero { .. } => self.begin_edit_selected(),
+            NodeTreeKind::Column { .. } => self.begin_edit_selected_column_id(),
+            NodeTreeKind::Component { .. } => self.begin_edit_selected_component_primary(),
+        }
+    }
+
+    fn open_component_picker(&mut self) {
+        let page = self.current_page();
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = self.selected_node.min(page.nodes.len().saturating_sub(1));
+        match page.nodes.get(ni) {
+            Some(PageNode::Section(_)) => {
+                self.input_mode = None;
+                self.component_picker = Some(ComponentPickerState {
+                    query: String::new(),
+                    selected: 0,
+                });
+                self.status = "Component picker opened.".to_string();
+            }
+            _ => {
+                self.status = "Select a section row, column, or component to add.".to_string();
+            }
+        }
+    }
+
+    fn normalize_component_picker_selection(&mut self) {
+        let (query, selected) = if let Some(picker) = &self.component_picker {
+            (picker.query.clone(), picker.selected)
+        } else {
+            return;
+        };
+        let total = self.filtered_component_kinds(&query).len();
+        if let Some(picker) = &mut self.component_picker {
+            picker.selected = if total == 0 {
+                0
+            } else {
+                selected.min(total - 1)
+            };
+        }
+    }
+
+    fn filtered_component_kinds(&self, query: &str) -> Vec<ComponentKind> {
+        let all = ComponentKind::all();
+        let q = query.trim().to_ascii_lowercase();
+        if q.is_empty() {
+            return all.to_vec();
+        }
+        let mut scored = Vec::new();
+        for kind in all.iter().copied() {
+            let hay = component_search_haystack(kind);
+            if let Some(score) = fuzzy_score(&q, hay.as_str()) {
+                scored.push((kind, score));
+            }
+        }
+        scored.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.label().cmp(b.0.label())));
+        scored.into_iter().map(|(kind, _)| kind).collect()
+    }
+
+    fn selection_summary(&self) -> String {
+        let page = self.current_page();
+        if page.nodes.is_empty() {
+            return "(none)".to_string();
+        }
+        let ni = self.selected_node.min(page.nodes.len().saturating_sub(1));
+        match &page.nodes[ni] {
+            PageNode::Hero(_) => format!("node {} (dd-hero)", ni + 1),
+            PageNode::Section(section) => format!(
+                "node {} (dd-section:{}), column {}, component {}",
+                ni + 1,
+                section.id,
+                self.selected_column + 1,
+                self.selected_component + 1
+            ),
+        }
+    }
+
+    fn current_input_mode_label(&self) -> &'static str {
+        match self.input_mode {
+            Some(InputMode::EditHeroTitle) => "hero.title",
+            Some(InputMode::EditHeroSubtitle) => "hero.subtitle",
+            Some(InputMode::EditSectionId) => "section.id",
+            Some(InputMode::EditColumnId) => "section.column.id",
+            Some(InputMode::EditColumnWidthClass) => "section.column.width_class",
+            Some(InputMode::EditCardTitle) => "dd-card.title",
+            Some(InputMode::EditCardCopy) => "dd-card.copy",
+            Some(InputMode::EditCtaTitle) => "dd-cta.title",
+            Some(InputMode::EditCtaLink) => "dd-cta.cta_link",
+            Some(InputMode::EditAlertMessage) => "dd-alert.message",
+            Some(InputMode::EditAlertTitle) => "dd-alert.title",
+            Some(InputMode::EditBannerMessage) => "dd-banner.message",
+            Some(InputMode::EditBannerLinkUrl) => "dd-banner.link_url",
+            Some(InputMode::EditTabsFirstTitle) => "dd-tabs.active.title",
+            Some(InputMode::EditTabsFirstContent) => "dd-tabs.active.content",
+            Some(InputMode::EditAccordionFirstTitle) => "dd-accordion.active.title",
+            Some(InputMode::EditAccordionFirstContent) => "dd-accordion.active.content",
+            Some(InputMode::EditModalTitle) => "dd-modal.title",
+            Some(InputMode::EditModalContent) => "dd-modal.content",
+            Some(InputMode::EditSliderFirstTitle) => "dd-slider.active.title",
+            Some(InputMode::EditSliderFirstCopy) => "dd-slider.active.copy",
+            Some(InputMode::EditSpacerHeight) => "dd-spacer.height",
+            Some(InputMode::EditTimelineFirstTitle) => "dd-timeline.active.title",
+            Some(InputMode::EditTimelineFirstDescription) => "dd-timeline.active.description",
+            None => "field",
+        }
+    }
+
+    fn current_modal_fields(&self) -> String {
+        let page = self.current_page();
+        if page.nodes.is_empty() {
+            return "(none)".to_string();
+        }
+        let ni = self.selected_node.min(page.nodes.len().saturating_sub(1));
+        match &page.nodes[ni] {
+            PageNode::Hero(v) => format!(
+                "- hero.title: {}\n- hero.subtitle: {}\n- hero.image: {}",
+                v.title, v.subtitle, v.image
+            ),
+            PageNode::Section(section) => {
+                let mut lines = vec![
+                    format!("- section.id: {}", section.id),
+                    format!("- section.background: {:?}", section.background),
+                    format!("- section.spacing: {:?}", section.spacing),
+                    format!("- section.width: {:?}", section.width),
+                    format!("- section.align: {:?}", section.align),
+                    format!(
+                        "- section.css_classes: {}",
+                        section_modifier_class_string(section)
+                    ),
+                    "- section.class_options:".to_string(),
+                    section_modifier_options_block(),
+                ];
+                let columns = section_columns_ref(section);
+                if let Some(col) =
+                    columns.get(self.selected_column.min(columns.len().saturating_sub(1)))
+                {
+                    lines.push(format!("- column.id: {}", col.id));
+                    lines.push(format!("- column.width_class: {}", col.width_class));
+                    if let Some(component) = col.components.get(
+                        self.selected_component
+                            .min(col.components.len().saturating_sub(1)),
+                    ) {
+                        lines.push(format!("- component.type: {}", component_label(component)));
+                        lines.push(component_form(component, self.selected_nested_item));
+                    }
+                }
+                lines.join("\n")
+            }
+        }
+    }
+
+    fn select_prev(&mut self) {
+        let rows = self.build_node_tree_rows();
+        if rows.is_empty() {
+            return;
+        }
+        let next = self.selected_tree_row.saturating_sub(1);
+        if next != self.selected_tree_row {
+            self.selected_tree_row = next;
+            self.apply_tree_row_selection(rows[next]);
         }
     }
 
     fn select_next(&mut self) {
-        let total = self.current_page().nodes.len();
+        let rows = self.build_node_tree_rows();
+        let total = rows.len();
         if total == 0 {
             return;
         }
-        let next = (self.selected_node + 1).min(total - 1);
-        if next != self.selected_node {
-            self.selected_node = next;
-            self.selected_column = 0;
-            self.selected_component = 0;
-            self.selected_nested_item = 0;
+        let next = (self.selected_tree_row + 1).min(total - 1);
+        if next != self.selected_tree_row {
+            self.selected_tree_row = next;
+            self.apply_tree_row_selection(rows[next]);
         }
     }
 
@@ -1012,9 +1571,11 @@ impl App {
         }
         self.selected_page = (self.selected_page + 1) % self.site.pages.len();
         self.selected_node = 0;
+        self.selected_tree_row = 0;
         self.selected_column = 0;
         self.selected_component = 0;
         self.selected_nested_item = 0;
+        self.sync_tree_row_with_selection();
     }
 
     fn select_prev_page(&mut self) {
@@ -1027,9 +1588,11 @@ impl App {
             self.selected_page -= 1;
         }
         self.selected_node = 0;
+        self.selected_tree_row = 0;
         self.selected_column = 0;
         self.selected_component = 0;
         self.selected_nested_item = 0;
+        self.sync_tree_row_with_selection();
     }
 
     fn details_text(&self) -> String {
@@ -1037,37 +1600,52 @@ impl App {
         if page.nodes.is_empty() {
             return "No nodes on this page.".to_string();
         }
-        let idx = self.selected_node.min(page.nodes.len() - 1);
-        match &page.nodes[idx] {
-            PageNode::Hero(v) => format!(
-                "Type: dd-hero\nTitle: {}\nSubtitle: {}\nImage: {}\nCTA: {} -> {}\n",
-                v.title,
-                v.subtitle,
-                v.image,
-                v.cta_text.as_deref().unwrap_or("(none)"),
-                v.cta_link.as_deref().unwrap_or("(none)")
-            ),
-            PageNode::Section(v) => format!(
-                "Type: dd-section\nId: {}\nBackground: {:?}\nSpacing: {:?}\nWidth: {:?}\nAlign: {:?}\nColumn count: {}\nActive column: {}\nLayout map:\n{}\nActive component: {}\nComponents in active column: {}\nComponent details:\n{}\nInsert mode: {}\n",
-                v.id,
-                v.background,
-                v.spacing,
-                v.width,
-                v.align,
-                section_columns_ref(v).len(),
-                active_column_label(v, self.selected_column),
-                section_ascii_map(v, self.selected_column),
-                active_component_label(v, self.selected_column, self.selected_component),
-                section_component_summary(v, self.selected_column),
-                selected_component_details(
-                    v,
-                    self.selected_column,
-                    self.selected_component,
-                    self.selected_nested_item,
-                ),
-                self.component_kind.label()
-            ),
+        let mut out = Vec::new();
+        out.push(format!("Page blueprint: {}", page.title));
+        out.push(String::new());
+        for (idx, node) in page.nodes.iter().enumerate() {
+            let marker = if idx == self.selected_node { "*" } else { " " };
+            match node {
+                PageNode::Hero(v) => {
+                    out.push(format!(
+                        "{marker}[{:02}] dd-hero | title=\"{}\" | subtitle=\"{}\"",
+                        idx + 1,
+                        v.title,
+                        v.subtitle
+                    ));
+                }
+                PageNode::Section(v) => {
+                    out.push(format!(
+                        "{marker}[{:02}] dd-section {} | bg={:?} spacing={:?} width={:?} align={:?} | classes=\"{}\"",
+                        idx + 1,
+                        v.id,
+                        v.background,
+                        v.spacing,
+                        v.width,
+                        v.align,
+                        section_modifier_class_string(v)
+                    ));
+                    if idx == self.selected_node {
+                        out.push(section_modifier_options_block());
+                    }
+                    out.push(section_ascii_map(
+                        v,
+                        if idx == self.selected_node {
+                            self.selected_column
+                        } else {
+                            0
+                        },
+                    ));
+                }
+            }
+            out.push(String::new());
         }
+        out.push(format!(
+            "Selected: {} | Insert mode: {}",
+            self.selection_summary(),
+            self.component_kind.label()
+        ));
+        out.join("\n")
     }
 
     fn add_hero(&mut self) {
@@ -1104,9 +1682,9 @@ impl App {
         let Some(page) = self.current_page_mut() else {
             return;
         };
-        let next_num = page.nodes.len() + 1;
+        let next_id = next_section_id_for_page(page);
         let section = crate::model::DdSection {
-            id: format!("section-{}", next_num),
+            id: next_id,
             background: crate::model::SectionBackground::White,
             spacing: crate::model::SectionSpacing::Normal,
             width: crate::model::SectionWidth::Normal,
@@ -2392,13 +2970,6 @@ impl App {
     }
 }
 
-fn node_label(node: &PageNode) -> &'static str {
-    match node {
-        PageNode::Hero(_) => "dd-hero",
-        PageNode::Section(_) => "dd-section",
-    }
-}
-
 fn contains(rect: Rect, x: u16, y: u16) -> bool {
     x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height
 }
@@ -2460,34 +3031,6 @@ fn nested_index(total: usize, selected_nested_item: usize) -> Option<usize> {
     }
 }
 
-fn section_component_summary(section: &crate::model::DdSection, selected_column: usize) -> String {
-    let columns = section_columns_ref(section);
-    if columns.is_empty() {
-        return "(none)".to_string();
-    }
-    let ci = selected_column.min(columns.len().saturating_sub(1));
-    let components = &columns[ci].components;
-    if components.is_empty() {
-        return "(none)".to_string();
-    }
-    components
-        .iter()
-        .map(|c| match c {
-            crate::model::SectionComponent::Card(_) => "dd-card",
-            crate::model::SectionComponent::Alert(_) => "dd-alert",
-            crate::model::SectionComponent::Banner(_) => "dd-banner",
-            crate::model::SectionComponent::Tabs(_) => "dd-tabs",
-            crate::model::SectionComponent::Accordion(_) => "dd-accordion",
-            crate::model::SectionComponent::Cta(_) => "dd-cta",
-            crate::model::SectionComponent::Modal(_) => "dd-modal",
-            crate::model::SectionComponent::Slider(_) => "dd-slider",
-            crate::model::SectionComponent::Spacer(_) => "dd-spacer",
-            crate::model::SectionComponent::Timeline(_) => "dd-timeline",
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 fn section_ascii_map(section: &crate::model::DdSection, selected_column: usize) -> String {
     const CELL_WIDTH: usize = 14;
     const MAX_COMPONENT_ROWS: usize = 4;
@@ -2541,6 +3084,64 @@ fn section_ascii_map(section: &crate::model::DdSection, selected_column: usize) 
     lines.join("\n")
 }
 
+fn section_modifier_class_string(section: &crate::model::DdSection) -> String {
+    format!(
+        "{} {} {} {}",
+        section_background_class(section.background),
+        section_spacing_class(section.spacing),
+        section_width_class(section.width),
+        section_align_class(section.align)
+    )
+}
+
+fn section_modifier_options_block() -> String {
+    [
+        "  background: primary | secondary | tertiary | gray | white | black",
+        "  spacing: tight | normal | loose | extra_loose",
+        "  width: narrow | normal | wide | full",
+        "  align: left | center | right",
+        "  use b/w/g/t keys to cycle these section modifier classes",
+    ]
+    .join("\n")
+}
+
+fn section_background_class(v: crate::model::SectionBackground) -> &'static str {
+    match v {
+        crate::model::SectionBackground::Primary => "primary",
+        crate::model::SectionBackground::Secondary => "secondary",
+        crate::model::SectionBackground::Tertiary => "tertiary",
+        crate::model::SectionBackground::Gray => "gray",
+        crate::model::SectionBackground::White => "white",
+        crate::model::SectionBackground::Black => "black",
+    }
+}
+
+fn section_spacing_class(v: crate::model::SectionSpacing) -> &'static str {
+    match v {
+        crate::model::SectionSpacing::Tight => "tight",
+        crate::model::SectionSpacing::Normal => "normal",
+        crate::model::SectionSpacing::Loose => "loose",
+        crate::model::SectionSpacing::ExtraLoose => "extra_loose",
+    }
+}
+
+fn section_width_class(v: crate::model::SectionWidth) -> &'static str {
+    match v {
+        crate::model::SectionWidth::Narrow => "narrow",
+        crate::model::SectionWidth::Normal => "normal",
+        crate::model::SectionWidth::Wide => "wide",
+        crate::model::SectionWidth::Full => "full",
+    }
+}
+
+fn section_align_class(v: crate::model::SectionAlign) -> &'static str {
+    match v {
+        crate::model::SectionAlign::Left => "left",
+        crate::model::SectionAlign::Center => "center",
+        crate::model::SectionAlign::Right => "right",
+    }
+}
+
 fn section_ascii_border(column_count: usize, cell_width: usize) -> String {
     let mut border = String::from("+");
     for _ in 0..column_count {
@@ -2566,68 +3167,6 @@ fn truncate_ascii(value: &str, max_chars: usize) -> String {
     let mut out = chars.into_iter().take(max_chars - 3).collect::<String>();
     out.push_str("...");
     out
-}
-
-fn active_column_label(section: &crate::model::DdSection, selected_column: usize) -> String {
-    let columns = section_columns_ref(section);
-    if columns.is_empty() {
-        return "(none)".to_string();
-    }
-    let ci = selected_column.min(columns.len().saturating_sub(1));
-    format!(
-        "{} ({}/{}) width={}",
-        columns[ci].id,
-        ci + 1,
-        columns.len(),
-        columns[ci].width_class
-    )
-}
-
-fn active_component_label(
-    section: &crate::model::DdSection,
-    selected_column: usize,
-    selected_component: usize,
-) -> String {
-    let columns = section_columns_ref(section);
-    if columns.is_empty() {
-        return "(none)".to_string();
-    }
-    let col_i = selected_column.min(columns.len().saturating_sub(1));
-    let components = &columns[col_i].components;
-    let Some(idx) = component_index(components.len(), selected_component) else {
-        return "(none)".to_string();
-    };
-    format!(
-        "{} ({}/{})",
-        component_label(&components[idx]),
-        idx + 1,
-        components.len()
-    )
-}
-
-fn selected_component_details(
-    section: &crate::model::DdSection,
-    selected_column: usize,
-    selected_component: usize,
-    selected_nested_item: usize,
-) -> String {
-    let columns = section_columns_ref(section);
-    if columns.is_empty() {
-        return "No component selected.".to_string();
-    }
-    let col_i = selected_column.min(columns.len().saturating_sub(1));
-    let components = &columns[col_i].components;
-    let Some(idx) = component_index(components.len(), selected_component) else {
-        return "No component selected.".to_string();
-    };
-    let component = &components[idx];
-    let form = component_form(component, selected_nested_item);
-    let validation = component_inline_validation(component);
-    if validation.is_empty() {
-        format!("{form}\nValidation: OK")
-    } else {
-        format!("{form}\nValidation:\n{}", validation.join("\n"))
-    }
 }
 
 fn component_label(component: &crate::model::SectionComponent) -> &'static str {
@@ -2763,72 +3302,6 @@ fn component_form(
     }
 }
 
-fn component_inline_validation(component: &crate::model::SectionComponent) -> Vec<String> {
-    let mut issues = Vec::new();
-    match component {
-        crate::model::SectionComponent::Card(v) => {
-            if v.title.trim().is_empty() {
-                issues.push("- title is required".to_string());
-            }
-            if v.image.trim().is_empty() {
-                issues.push("- image is required".to_string());
-            }
-        }
-        crate::model::SectionComponent::Alert(v) => {
-            if v.message.trim().is_empty() {
-                issues.push("- message is required".to_string());
-            }
-        }
-        crate::model::SectionComponent::Banner(v) => {
-            if v.message.trim().is_empty() {
-                issues.push("- message is required".to_string());
-            }
-            if v.background.trim().is_empty() {
-                issues.push("- background is required".to_string());
-            }
-        }
-        crate::model::SectionComponent::Tabs(v) => {
-            if v.tabs.is_empty() {
-                issues.push("- at least one tab is required".to_string());
-            }
-        }
-        crate::model::SectionComponent::Accordion(v) => {
-            if v.items.is_empty() {
-                issues.push("- at least one accordion item is required".to_string());
-            }
-        }
-        crate::model::SectionComponent::Cta(v) => {
-            if v.title.trim().is_empty() || v.copy.trim().is_empty() || v.cta_text.trim().is_empty()
-            {
-                issues.push("- title/copy/cta_text are required".to_string());
-            }
-            if !is_valid_link(v.cta_link.as_str()) {
-                issues.push("- cta_link must be /path, #anchor, http://, or https://".to_string());
-            }
-        }
-        crate::model::SectionComponent::Modal(v) => {
-            if v.trigger_text.trim().is_empty()
-                || v.title.trim().is_empty()
-                || v.content.trim().is_empty()
-            {
-                issues.push("- trigger_text/title/content are required".to_string());
-            }
-        }
-        crate::model::SectionComponent::Slider(v) => {
-            if v.slides.is_empty() {
-                issues.push("- at least one slide is required".to_string());
-            }
-        }
-        crate::model::SectionComponent::Spacer(_) => {}
-        crate::model::SectionComponent::Timeline(v) => {
-            if v.events.is_empty() {
-                issues.push("- at least one timeline event is required".to_string());
-            }
-        }
-    }
-    issues
-}
-
 fn spacer_height_to_str(v: crate::model::SpacerHeight) -> &'static str {
     match v {
         crate::model::SpacerHeight::Sm => "sm",
@@ -2848,15 +3321,6 @@ fn parse_spacer_height(raw: &str) -> Option<crate::model::SpacerHeight> {
         "xxl" => Some(crate::model::SpacerHeight::Xxl),
         _ => None,
     }
-}
-
-fn is_valid_link(v: &str) -> bool {
-    let s = v.trim();
-    !s.is_empty()
-        && (s.starts_with('/')
-            || s.starts_with('#')
-            || s.starts_with("http://")
-            || s.starts_with("https://"))
 }
 
 impl AppTheme {
@@ -2951,6 +3415,96 @@ fn parse_hex_color(raw: &str) -> anyhow::Result<Color> {
     Ok(Color::Rgb(r, g, b))
 }
 
+fn component_search_haystack(kind: ComponentKind) -> String {
+    let label = kind.label();
+    let underscore = label.replace('-', "_");
+    let short = label
+        .trim_start_matches("dd-")
+        .replace('-', "_")
+        .to_string();
+    format!("{label} {underscore} {short}")
+}
+
+fn fuzzy_score(query: &str, text: &str) -> Option<i32> {
+    let q = query.to_ascii_lowercase();
+    let t = text.to_ascii_lowercase();
+    if q.is_empty() {
+        return Some(0);
+    }
+    if t.contains(&q) {
+        return Some(1000 - (t.find(&q).unwrap_or(0) as i32));
+    }
+    let mut score = 0i32;
+    let mut t_chars = t.chars().enumerate();
+    let mut last_idx: Option<usize> = None;
+    for qc in q.chars() {
+        let mut found = None;
+        for (idx, tc) in t_chars.by_ref() {
+            if tc == qc {
+                found = Some(idx);
+                break;
+            }
+        }
+        let Some(idx) = found else {
+            return None;
+        };
+        score += 10;
+        if let Some(prev) = last_idx {
+            if idx == prev + 1 {
+                score += 8;
+            }
+        }
+        if idx == 0 {
+            score += 6;
+        }
+        last_idx = Some(idx);
+    }
+    Some(score)
+}
+
+fn next_section_id_for_page(page: &crate::model::Page) -> String {
+    let mut used = HashSet::new();
+    for node in &page.nodes {
+        if let PageNode::Section(section) = node {
+            if !section.id.trim().is_empty() {
+                used.insert(section.id.clone());
+            }
+        }
+    }
+    let mut idx = 1usize;
+    loop {
+        let candidate = format!("section-{}", idx);
+        if !used.contains(&candidate) {
+            return candidate;
+        }
+        idx += 1;
+    }
+}
+
+fn ensure_page_section_ids(page: &mut crate::model::Page) {
+    let mut used = HashSet::new();
+    let mut next_idx = 1usize;
+    for node in &mut page.nodes {
+        let PageNode::Section(section) = node else {
+            continue;
+        };
+        let current = section.id.trim().to_string();
+        if !current.is_empty() && !used.contains(&current) {
+            used.insert(current);
+            continue;
+        }
+        loop {
+            let candidate = format!("section-{}", next_idx);
+            next_idx += 1;
+            if !used.contains(&candidate) {
+                section.id = candidate.clone();
+                used.insert(candidate);
+                break;
+            }
+        }
+    }
+}
+
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -2979,7 +3533,8 @@ fn help_text() -> String {
         "  Tab / Shift+Tab: Next/previous page",
         "",
         "Node navigation and edits:",
-        "  Up/Down or mouse wheel: Select node",
+        "  Up/Down or mouse wheel: Select row in Nodes tree",
+        "  Enter: Expand/collapse section row or edit selected item row",
         "  h / n: Add hero / section",
         "  d: Delete selected node",
         "  J / K: Move selected node down / up",
@@ -2991,10 +3546,11 @@ fn help_text() -> String {
         "  c / v: Select previous/next column",
         "  ( / ): Move selected column up/down",
         "  r / f: Edit selected column id / width class",
-        "  Details pane shows ASCII layout map with component names",
+        "  Details pane shows ASCII blueprint for all page items",
         "",
         "Component operations:",
-        "  [ / ]: Select component type to insert",
+        "  [ and ]: Select component type to insert",
+        "  /: Open component picker modal with fuzzy search",
         "  a: Add selected component type",
         "  x: Remove last component from section",
         "  , / .: Select previous/next component",
@@ -3006,7 +3562,8 @@ fn help_text() -> String {
         "  i / o: Add/remove nested item",
         "  { / }: Move nested item up/down",
         "",
-        "Input mode:",
+        "Edit modal:",
+        "  Any edit command opens a modal with editable fields",
         "  Enter: Confirm edit",
         "  Esc: Cancel edit",
         "  Backspace: Delete character",
@@ -3015,6 +3572,21 @@ fn help_text() -> String {
 }
 
 impl ComponentKind {
+    fn all() -> &'static [Self] {
+        &[
+            Self::Card,
+            Self::Alert,
+            Self::Banner,
+            Self::Tabs,
+            Self::Accordion,
+            Self::Cta,
+            Self::Modal,
+            Self::Slider,
+            Self::Spacer,
+            Self::Timeline,
+        ]
+    }
+
     fn label(self) -> &'static str {
         match self {
             ComponentKind::Card => "dd-card",

@@ -1,12 +1,22 @@
 # Local TUI theme override for dd_staticbuilder.
 # Lookup order: ./theme.yml, ./.theme.yml, ~/.config/ldnddev/dd_staticbuilder/.theme.yml
+#
+# Key mapping used by src/tui.rs:
+# - base: app background
+# - mantle: panel background (Nodes/Details)
+# - crust: popup/modal background
+# - text: primary foreground
+# - subtext0: muted/footer text
+# - surface0: selected row background
+# - overlay0: borders and separators
+# - lavender/blue: title/accent color seed
 colors:
-  base: "#1e1e2e"
-  mantle: "#181825"
-  crust: "#11111b"
-  text: "#cdd6f4"
-  subtext0: "#a6adc8"
-  surface0: "#313244"
-  overlay0: "#6c7086"
-  lavender: "#b4befe"
-  blue: "#89b4fa"
+  base: "#f6f3ee"
+  mantle: "#ece6dd"
+  crust: "#dfd5c8"
+  text: "#2b2a28"
+  subtext0: "#5f5a53"
+  surface0: "#cbbba4"
+  overlay0: "#8b7a63"
+  lavender: "#a13d2d"
+  blue: "#6f4e37"
