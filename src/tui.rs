@@ -63,6 +63,8 @@ struct App {
     status: String,
     path: Option<PathBuf>,
     should_quit: bool,
+    save_prompt_open: bool,
+    save_input: String,
     input_mode: Option<InputMode>,
     input_buffer: String,
     component_picker: Option<ComponentPickerState>,
@@ -76,7 +78,7 @@ struct ComponentPickerState {
     selected: usize,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum InputMode {
     EditHeroTitle,
     EditHeroSubtitle,
@@ -191,6 +193,8 @@ impl App {
             status: "Ready.".to_string(),
             path,
             should_quit: false,
+            save_prompt_open: false,
+            save_input: String::new(),
             input_mode: None,
             input_buffer: String::new(),
             component_picker: None,
@@ -223,7 +227,7 @@ impl App {
             .constraints([
                 Constraint::Length(1),
                 Constraint::Min(1),
-                Constraint::Length(2),
+                Constraint::Length(3),
             ])
             .split(frame.area());
         let main = Layout::default()
@@ -286,7 +290,7 @@ impl App {
         frame.render_stateful_widget(list, main[0], &mut state);
         self.list_area = main[0];
 
-        let details = Paragraph::new(self.details_text())
+        let details = Paragraph::new(self.details_text(main[1].width.saturating_sub(2) as usize))
             .style(
                 Style::default()
                     .fg(self.theme.foreground)
@@ -446,6 +450,84 @@ impl App {
                 .wrap(Wrap { trim: true });
             frame.render_widget(picker_widget, area);
         }
+
+        if self.save_prompt_open {
+            let area = centered_rect(70, 35, frame.area());
+            frame.render_widget(Clear, area);
+            let prompt = Paragraph::new(format!(
+                "Save file path:\n{}\n\nEnter: save | Esc: cancel",
+                self.save_input
+            ))
+            .style(
+                Style::default()
+                    .fg(self.theme.foreground)
+                    .bg(self.theme.popup_background),
+            )
+            .block(
+                Block::default()
+                    .title("Save Page")
+                    .borders(Borders::ALL)
+                    .style(
+                        Style::default()
+                            .fg(self.theme.foreground)
+                            .bg(self.theme.popup_background),
+                    )
+                    .border_style(Style::default().fg(self.theme.border))
+                    .title_style(
+                        Style::default()
+                            .fg(self.theme.title)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+            )
+            .wrap(Wrap { trim: true });
+            frame.render_widget(prompt, area);
+        }
+
+        self.set_cursor_for_active_input(frame);
+    }
+
+    fn set_cursor_for_active_input(&self, frame: &mut ratatui::Frame) {
+        if self.input_mode.is_some() {
+            let area = centered_rect(72, 60, frame.area());
+            let inner_width = area.width.saturating_sub(2) as usize;
+            let x = area.x.saturating_add(1).saturating_add(
+                self.input_buffer
+                    .chars()
+                    .count()
+                    .min(inner_width.saturating_sub(1)) as u16,
+            );
+            let y = area.y.saturating_add(4);
+            frame.set_cursor_position((x, y));
+            return;
+        }
+
+        if self.save_prompt_open {
+            let area = centered_rect(70, 35, frame.area());
+            let inner_width = area.width.saturating_sub(2) as usize;
+            let x = area.x.saturating_add(1).saturating_add(
+                self.save_input
+                    .chars()
+                    .count()
+                    .min(inner_width.saturating_sub(1)) as u16,
+            );
+            let y = area.y.saturating_add(2);
+            frame.set_cursor_position((x, y));
+            return;
+        }
+
+        if let Some(picker) = &self.component_picker {
+            let area = centered_rect(70, 70, frame.area());
+            let prefix = "Search: ";
+            let inner_width = area.width.saturating_sub(2) as usize;
+            let max_query_width = inner_width.saturating_sub(prefix.chars().count() + 1);
+            let x = area
+                .x
+                .saturating_add(1)
+                .saturating_add(prefix.chars().count() as u16)
+                .saturating_add(picker.query.chars().count().min(max_query_width) as u16);
+            let y = area.y.saturating_add(1);
+            frame.set_cursor_position((x, y));
+        }
     }
 
     fn handle_event(&mut self, evt: Event) -> anyhow::Result<()> {
@@ -457,6 +539,10 @@ impl App {
                 }
             }
             return Ok(());
+        }
+
+        if self.save_prompt_open {
+            return self.handle_save_prompt_event(evt);
         }
 
         if self.component_picker.is_some() {
@@ -475,7 +561,7 @@ impl App {
                 KeyCode::Enter => self.handle_enter_on_selected_row(),
                 KeyCode::Tab => self.select_next_page(),
                 KeyCode::BackTab => self.select_prev_page(),
-                KeyCode::Char('s') => self.save()?,
+                KeyCode::Char('s') => self.begin_save_prompt(),
                 KeyCode::Char('/') => self.open_component_picker(),
                 KeyCode::Char('h') => self.add_hero(),
                 KeyCode::Char('n') => self.add_section(),
@@ -538,7 +624,15 @@ impl App {
                     self.sync_tree_row_with_selection();
                 }
                 KeyCode::Enter => {
-                    self.commit_input_edit();
+                    let _ = self.commit_input_edit();
+                    self.sync_tree_row_with_selection();
+                }
+                KeyCode::Tab => {
+                    self.tab_next_component_field();
+                    self.sync_tree_row_with_selection();
+                }
+                KeyCode::BackTab => {
+                    self.tab_prev_component_field();
                     self.sync_tree_row_with_selection();
                 }
                 KeyCode::Backspace => {
@@ -551,6 +645,43 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    fn tab_next_component_field(&mut self) {
+        self.tab_component_field(true);
+    }
+
+    fn tab_prev_component_field(&mut self) {
+        self.tab_component_field(false);
+    }
+
+    fn tab_component_field(&mut self, forward: bool) {
+        let Some(current) = self.input_mode else {
+            return;
+        };
+        let Some(group) = component_edit_group_for_mode(current) else {
+            self.status =
+                "Tab field navigation is available while editing a component.".to_string();
+            return;
+        };
+        let Some(idx) = group.iter().position(|m| *m == current) else {
+            return;
+        };
+        let ok = self.commit_input_edit();
+        if !ok {
+            return;
+        }
+        let next_idx = if forward {
+            (idx + 1) % group.len()
+        } else if idx == 0 {
+            group.len() - 1
+        } else {
+            idx - 1
+        };
+        let next_mode = group[next_idx];
+        if !self.set_component_input_mode(next_mode) {
+            self.status = "Could not switch to next component field.".to_string();
+        }
     }
 
     fn handle_component_picker_event(&mut self, evt: Event) -> anyhow::Result<()> {
@@ -620,6 +751,54 @@ impl App {
             }
         }
         self.sync_tree_row_with_selection();
+        Ok(())
+    }
+
+    fn begin_save_prompt(&mut self) {
+        self.component_picker = None;
+        self.input_mode = None;
+        self.save_prompt_open = true;
+        self.save_input = self
+            .path
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "site.json".to_string());
+        self.status = "Save prompt opened.".to_string();
+    }
+
+    fn handle_save_prompt_event(&mut self, evt: Event) -> anyhow::Result<()> {
+        if let Event::Key(key) = evt {
+            match key.code {
+                KeyCode::Esc => {
+                    self.save_prompt_open = false;
+                    self.save_input.clear();
+                    self.status = "Save cancelled.".to_string();
+                }
+                KeyCode::Enter => self.commit_save_prompt()?,
+                KeyCode::Backspace => {
+                    self.save_input.pop();
+                }
+                KeyCode::Char(c) => {
+                    self.save_input.push(c);
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn commit_save_prompt(&mut self) -> anyhow::Result<()> {
+        let raw = self.save_input.trim();
+        if raw.is_empty() {
+            self.status = "Save path cannot be empty.".to_string();
+            return Ok(());
+        }
+        let path = PathBuf::from(raw);
+        save_site(&path, &self.site)?;
+        self.path = Some(path.clone());
+        self.save_prompt_open = false;
+        self.save_input.clear();
+        self.status = format!("Saved {}", path.display());
         Ok(())
     }
 
@@ -800,14 +979,14 @@ impl App {
             "Editing selected column width class. Enter to save, esc to cancel.".to_string();
     }
 
-    fn commit_input_edit(&mut self) {
+    fn commit_input_edit(&mut self) -> bool {
         let Some(mode) = self.input_mode else {
-            return;
+            return false;
         };
         let value = self.input_buffer.trim().to_string();
         if value.is_empty() {
             self.status = "Value cannot be empty.".to_string();
-            return;
+            return false;
         }
         let selected = self.selected_node;
         let selected_column = self.selected_column;
@@ -815,13 +994,14 @@ impl App {
         let selected_nested_item = self.selected_nested_item;
         let mut status = "No page available.".to_string();
         let mut clear_input = true;
+        let mut applied = false;
         let Some(page) = self.current_page_mut() else {
             self.status = status;
-            return;
+            return false;
         };
         if page.nodes.is_empty() {
             self.status = "No node selected.".to_string();
-            return;
+            return false;
         }
         let idx = selected.min(page.nodes.len() - 1);
         if let PageNode::Section(section) = &mut page.nodes[idx] {
@@ -830,30 +1010,36 @@ impl App {
         status = match (&mut page.nodes[idx], mode) {
             (PageNode::Hero(v), InputMode::EditHeroTitle) => {
                 v.title = value;
+                applied = true;
                 "Updated hero title.".to_string()
             }
             (PageNode::Hero(v), InputMode::EditHeroSubtitle) => {
                 v.subtitle = value;
+                applied = true;
                 "Updated hero subtitle.".to_string()
             }
             (PageNode::Section(v), InputMode::EditSectionId) => {
                 v.id = value;
+                applied = true;
                 "Updated section id.".to_string()
             }
             (PageNode::Section(v), InputMode::EditColumnId) => {
                 let col_i = selected_column.min(v.columns.len().saturating_sub(1));
                 v.columns[col_i].id = value;
+                applied = true;
                 "Updated column id.".to_string()
             }
             (PageNode::Section(v), InputMode::EditColumnWidthClass) => {
                 let col_i = selected_column.min(v.columns.len().saturating_sub(1));
                 v.columns[col_i].width_class = value;
+                applied = true;
                 "Updated column width class.".to_string()
             }
             (PageNode::Section(v), InputMode::EditCardTitle) => {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
                         card.title = value;
+                        applied = true;
                         "Updated dd-card title.".to_string()
                     } else {
                         "Selected component is not dd-card.".to_string()
@@ -866,6 +1052,7 @@ impl App {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
                         card.copy = Some(value);
+                        applied = true;
                         "Updated dd-card copy.".to_string()
                     } else {
                         "Selected component is not dd-card.".to_string()
@@ -878,6 +1065,7 @@ impl App {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
                         cta.title = value;
+                        applied = true;
                         "Updated dd-cta title.".to_string()
                     } else {
                         "Selected component is not dd-cta.".to_string()
@@ -890,6 +1078,7 @@ impl App {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
                         cta.cta_link = value;
+                        applied = true;
                         "Updated dd-cta link.".to_string()
                     } else {
                         "Selected component is not dd-cta.".to_string()
@@ -902,6 +1091,7 @@ impl App {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Alert(alert) = &mut v.components[ci] {
                         alert.message = value;
+                        applied = true;
                         "Updated dd-alert message.".to_string()
                     } else {
                         "Selected component is not dd-alert.".to_string()
@@ -914,6 +1104,7 @@ impl App {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Alert(alert) = &mut v.components[ci] {
                         alert.title = Some(value);
+                        applied = true;
                         "Updated dd-alert title.".to_string()
                     } else {
                         "Selected component is not dd-alert.".to_string()
@@ -926,6 +1117,7 @@ impl App {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Banner(banner) = &mut v.components[ci] {
                         banner.message = value;
+                        applied = true;
                         "Updated dd-banner message.".to_string()
                     } else {
                         "Selected component is not dd-banner.".to_string()
@@ -938,6 +1130,7 @@ impl App {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Banner(banner) = &mut v.components[ci] {
                         banner.link_url = Some(value);
+                        applied = true;
                         "Updated dd-banner link_url.".to_string()
                     } else {
                         "Selected component is not dd-banner.".to_string()
@@ -951,6 +1144,7 @@ impl App {
                     if let crate::model::SectionComponent::Tabs(tabs) = &mut v.components[ci] {
                         if let Some(ni) = nested_index(tabs.tabs.len(), selected_nested_item) {
                             tabs.tabs[ni].title = value;
+                            applied = true;
                             format!("Updated dd-tabs item {} title.", ni + 1)
                         } else {
                             "dd-tabs has no items.".to_string()
@@ -967,6 +1161,7 @@ impl App {
                     if let crate::model::SectionComponent::Tabs(tabs) = &mut v.components[ci] {
                         if let Some(ni) = nested_index(tabs.tabs.len(), selected_nested_item) {
                             tabs.tabs[ni].content = value;
+                            applied = true;
                             format!("Updated dd-tabs item {} content.", ni + 1)
                         } else {
                             "dd-tabs has no items.".to_string()
@@ -983,6 +1178,7 @@ impl App {
                     if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
                         if let Some(ni) = nested_index(acc.items.len(), selected_nested_item) {
                             acc.items[ni].title = value;
+                            applied = true;
                             format!("Updated dd-accordion item {} title.", ni + 1)
                         } else {
                             "dd-accordion has no items.".to_string()
@@ -999,6 +1195,7 @@ impl App {
                     if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
                         if let Some(ni) = nested_index(acc.items.len(), selected_nested_item) {
                             acc.items[ni].content = value;
+                            applied = true;
                             format!("Updated dd-accordion item {} content.", ni + 1)
                         } else {
                             "dd-accordion has no items.".to_string()
@@ -1014,6 +1211,7 @@ impl App {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Modal(modal) = &mut v.components[ci] {
                         modal.title = value;
+                        applied = true;
                         "Updated dd-modal title.".to_string()
                     } else {
                         "Selected component is not dd-modal.".to_string()
@@ -1026,6 +1224,7 @@ impl App {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Modal(modal) = &mut v.components[ci] {
                         modal.content = value;
+                        applied = true;
                         "Updated dd-modal content.".to_string()
                     } else {
                         "Selected component is not dd-modal.".to_string()
@@ -1039,6 +1238,7 @@ impl App {
                     if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
                         if let Some(ni) = nested_index(slider.slides.len(), selected_nested_item) {
                             slider.slides[ni].title = value;
+                            applied = true;
                             format!("Updated dd-slider slide {} title.", ni + 1)
                         } else {
                             "dd-slider has no slides.".to_string()
@@ -1055,6 +1255,7 @@ impl App {
                     if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
                         if let Some(ni) = nested_index(slider.slides.len(), selected_nested_item) {
                             slider.slides[ni].copy = value;
+                            applied = true;
                             format!("Updated dd-slider slide {} copy.", ni + 1)
                         } else {
                             "dd-slider has no slides.".to_string()
@@ -1071,6 +1272,7 @@ impl App {
                     if let crate::model::SectionComponent::Spacer(spacer) = &mut v.components[ci] {
                         if let Some(height) = parse_spacer_height(&value) {
                             spacer.height = height;
+                            applied = true;
                             "Updated dd-spacer height.".to_string()
                         } else {
                             clear_input = false;
@@ -1088,6 +1290,7 @@ impl App {
                     if let crate::model::SectionComponent::Timeline(tl) = &mut v.components[ci] {
                         if let Some(ni) = nested_index(tl.events.len(), selected_nested_item) {
                             tl.events[ni].title = value;
+                            applied = true;
                             format!("Updated dd-timeline event {} title.", ni + 1)
                         } else {
                             "dd-timeline has no events.".to_string()
@@ -1104,6 +1307,7 @@ impl App {
                     if let crate::model::SectionComponent::Timeline(tl) = &mut v.components[ci] {
                         if let Some(ni) = nested_index(tl.events.len(), selected_nested_item) {
                             tl.events[ni].description = value;
+                            applied = true;
                             format!("Updated dd-timeline event {} description.", ni + 1)
                         } else {
                             "dd-timeline has no events.".to_string()
@@ -1125,6 +1329,7 @@ impl App {
             self.input_mode = None;
             self.input_buffer.clear();
         }
+        applied
     }
 
     fn handle_click(&mut self, x: u16, y: u16) {
@@ -1149,16 +1354,6 @@ impl App {
             self.apply_tree_row_selection(tree_rows[idx]);
             self.status = format!("Selected {}", self.tree_row_label(&tree_rows[idx]));
         }
-    }
-
-    fn save(&mut self) -> anyhow::Result<()> {
-        if let Some(path) = &self.path {
-            save_site(path, &self.site)?;
-            self.status = format!("Saved {}", path.display());
-        } else {
-            self.status = "No save path set for this session.".to_string();
-        }
-        Ok(())
     }
 
     fn current_page(&self) -> &crate::model::Page {
@@ -1540,6 +1735,169 @@ impl App {
         }
     }
 
+    fn set_component_input_mode(&mut self, mode: InputMode) -> bool {
+        let Some(value) = self.value_for_component_mode(mode) else {
+            return false;
+        };
+        self.input_mode = Some(mode);
+        self.input_buffer = value;
+        self.status = match mode {
+            InputMode::EditCardTitle => {
+                "Editing dd-card title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardCopy => {
+                "Editing dd-card copy. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaTitle => {
+                "Editing dd-cta title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaLink => {
+                "Editing dd-cta link. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertMessage => {
+                "Editing dd-alert message. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertTitle => {
+                "Editing dd-alert title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditBannerMessage => {
+                "Editing dd-banner message. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditBannerLinkUrl => {
+                "Editing dd-banner link_url. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditTabsFirstTitle => {
+                "Editing dd-tabs item title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditTabsFirstContent => {
+                "Editing dd-tabs item content. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAccordionFirstTitle => {
+                "Editing dd-accordion item title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAccordionFirstContent => {
+                "Editing dd-accordion item content. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditModalTitle => {
+                "Editing dd-modal title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditModalContent => {
+                "Editing dd-modal content. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSliderFirstTitle => {
+                "Editing dd-slider slide title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSliderFirstCopy => {
+                "Editing dd-slider slide copy. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSpacerHeight => {
+                "Editing dd-spacer height (sm|md|lg|xl|xxl). Enter to save, esc to cancel."
+                    .to_string()
+            }
+            InputMode::EditTimelineFirstTitle => {
+                "Editing dd-timeline event title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditTimelineFirstDescription => {
+                "Editing dd-timeline event description. Enter to save, esc to cancel.".to_string()
+            }
+            _ => "Editing field. Enter to save, esc to cancel.".to_string(),
+        };
+        true
+    }
+
+    fn value_for_component_mode(&self, mode: InputMode) -> Option<String> {
+        let component = self.selected_component_owned()?;
+        match (mode, component) {
+            (InputMode::EditCardTitle, crate::model::SectionComponent::Card(v)) => {
+                Some(v.title.clone())
+            }
+            (InputMode::EditCardCopy, crate::model::SectionComponent::Card(v)) => {
+                Some(v.copy.clone().unwrap_or_default())
+            }
+            (InputMode::EditCtaTitle, crate::model::SectionComponent::Cta(v)) => {
+                Some(v.title.clone())
+            }
+            (InputMode::EditCtaLink, crate::model::SectionComponent::Cta(v)) => {
+                Some(v.cta_link.clone())
+            }
+            (InputMode::EditAlertMessage, crate::model::SectionComponent::Alert(v)) => {
+                Some(v.message.clone())
+            }
+            (InputMode::EditAlertTitle, crate::model::SectionComponent::Alert(v)) => {
+                Some(v.title.clone().unwrap_or_default())
+            }
+            (InputMode::EditBannerMessage, crate::model::SectionComponent::Banner(v)) => {
+                Some(v.message.clone())
+            }
+            (InputMode::EditBannerLinkUrl, crate::model::SectionComponent::Banner(v)) => {
+                Some(v.link_url.clone().unwrap_or_default())
+            }
+            (InputMode::EditModalTitle, crate::model::SectionComponent::Modal(v)) => {
+                Some(v.title.clone())
+            }
+            (InputMode::EditModalContent, crate::model::SectionComponent::Modal(v)) => {
+                Some(v.content.clone())
+            }
+            (InputMode::EditSpacerHeight, crate::model::SectionComponent::Spacer(v)) => {
+                Some(spacer_height_to_str(v.height).to_string())
+            }
+            (InputMode::EditTabsFirstTitle, crate::model::SectionComponent::Tabs(v)) => {
+                let ni = nested_index(v.tabs.len(), self.selected_nested_item)?;
+                Some(v.tabs[ni].title.clone())
+            }
+            (InputMode::EditTabsFirstContent, crate::model::SectionComponent::Tabs(v)) => {
+                let ni = nested_index(v.tabs.len(), self.selected_nested_item)?;
+                Some(v.tabs[ni].content.clone())
+            }
+            (InputMode::EditAccordionFirstTitle, crate::model::SectionComponent::Accordion(v)) => {
+                let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                Some(v.items[ni].title.clone())
+            }
+            (
+                InputMode::EditAccordionFirstContent,
+                crate::model::SectionComponent::Accordion(v),
+            ) => {
+                let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                Some(v.items[ni].content.clone())
+            }
+            (InputMode::EditSliderFirstTitle, crate::model::SectionComponent::Slider(v)) => {
+                let ni = nested_index(v.slides.len(), self.selected_nested_item)?;
+                Some(v.slides[ni].title.clone())
+            }
+            (InputMode::EditSliderFirstCopy, crate::model::SectionComponent::Slider(v)) => {
+                let ni = nested_index(v.slides.len(), self.selected_nested_item)?;
+                Some(v.slides[ni].copy.clone())
+            }
+            (InputMode::EditTimelineFirstTitle, crate::model::SectionComponent::Timeline(v)) => {
+                let ni = nested_index(v.events.len(), self.selected_nested_item)?;
+                Some(v.events[ni].title.clone())
+            }
+            (
+                InputMode::EditTimelineFirstDescription,
+                crate::model::SectionComponent::Timeline(v),
+            ) => {
+                let ni = nested_index(v.events.len(), self.selected_nested_item)?;
+                Some(v.events[ni].description.clone())
+            }
+            _ => None,
+        }
+    }
+
+    fn selected_component_owned(&self) -> Option<crate::model::SectionComponent> {
+        let page = self.current_page();
+        if page.nodes.is_empty() {
+            return None;
+        }
+        let ni = self.selected_node.min(page.nodes.len().saturating_sub(1));
+        let PageNode::Section(section) = &page.nodes[ni] else {
+            return None;
+        };
+        let columns = section_columns_ref(section);
+        let col_i = self.selected_column.min(columns.len().saturating_sub(1));
+        let ci = component_index(columns[col_i].components.len(), self.selected_component)?;
+        columns[col_i].components.get(ci).cloned()
+    }
+
     fn select_prev(&mut self) {
         let rows = self.build_node_tree_rows();
         if rows.is_empty() {
@@ -1595,7 +1953,7 @@ impl App {
         self.sync_tree_row_with_selection();
     }
 
-    fn details_text(&self) -> String {
+    fn details_text(&self, detail_width: usize) -> String {
         let page = self.current_page();
         if page.nodes.is_empty() {
             return "No nodes on this page.".to_string();
@@ -1607,12 +1965,8 @@ impl App {
             let marker = if idx == self.selected_node { "*" } else { " " };
             match node {
                 PageNode::Hero(v) => {
-                    out.push(format!(
-                        "{marker}[{:02}] dd-hero | title=\"{}\" | subtitle=\"{}\"",
-                        idx + 1,
-                        v.title,
-                        v.subtitle
-                    ));
+                    out.push(format!("{marker}[{:02}] dd-hero", idx + 1,));
+                    out.push(hero_ascii_map(v, detail_width));
                 }
                 PageNode::Section(v) => {
                     out.push(format!(
@@ -1635,6 +1989,7 @@ impl App {
                         } else {
                             0
                         },
+                        detail_width,
                     ));
                 }
             }
@@ -3031,8 +3386,11 @@ fn nested_index(total: usize, selected_nested_item: usize) -> Option<usize> {
     }
 }
 
-fn section_ascii_map(section: &crate::model::DdSection, selected_column: usize) -> String {
-    const CELL_WIDTH: usize = 14;
+fn section_ascii_map(
+    section: &crate::model::DdSection,
+    selected_column: usize,
+    panel_width: usize,
+) -> String {
     const MAX_COMPONENT_ROWS: usize = 4;
 
     let columns = section_columns_ref(section);
@@ -3040,6 +3398,7 @@ fn section_ascii_map(section: &crate::model::DdSection, selected_column: usize) 
         return "(no columns)".to_string();
     }
     let active = selected_column.min(columns.len().saturating_sub(1));
+    let cell_width = section_cell_width(panel_width, columns.len());
 
     let mut cells = columns
         .iter()
@@ -3064,7 +3423,7 @@ fn section_ascii_map(section: &crate::model::DdSection, selected_column: usize) 
         .collect::<Vec<_>>();
 
     let row_count = cells.iter().map(std::vec::Vec::len).max().unwrap_or(0);
-    let border = section_ascii_border(columns.len(), CELL_WIDTH);
+    let border = section_ascii_border(columns.len(), cell_width);
     let mut lines = vec![border.clone()];
     for row_i in 0..row_count {
         let mut row = String::from("|");
@@ -3074,7 +3433,7 @@ fn section_ascii_map(section: &crate::model::DdSection, selected_column: usize) 
                 .map(std::string::String::as_str)
                 .unwrap_or("");
             row.push(' ');
-            row.push_str(&fit_ascii_cell(value, CELL_WIDTH));
+            row.push_str(&fit_ascii_cell(value, cell_width));
             row.push_str(" |");
         }
         lines.push(row);
@@ -3082,6 +3441,43 @@ fn section_ascii_map(section: &crate::model::DdSection, selected_column: usize) 
     lines.push(border);
     lines.push("Legend: * active column".to_string());
     lines.join("\n")
+}
+
+fn hero_ascii_map(hero: &crate::model::DdHero, panel_width: usize) -> String {
+    let inner_width = panel_width.saturating_sub(4).max(8);
+    let border = format!("+{}+", "-".repeat(inner_width + 2));
+    let lines = [
+        fit_ascii_cell("HERO (full width)", inner_width),
+        fit_ascii_cell(&format!("title: {}", hero.title), inner_width),
+        fit_ascii_cell(&format!("subtitle: {}", hero.subtitle), inner_width),
+        fit_ascii_cell(
+            &format!(
+                "cta: {} -> {}",
+                hero.cta_text.as_deref().unwrap_or("(none)"),
+                hero.cta_link.as_deref().unwrap_or("(none)")
+            ),
+            inner_width,
+        ),
+        fit_ascii_cell(&format!("image: {}", hero.image), inner_width),
+    ];
+    let mut out = Vec::new();
+    out.push(border.clone());
+    for line in lines {
+        out.push(format!("| {} |", line));
+    }
+    out.push(border);
+    out.join("\n")
+}
+
+fn section_cell_width(panel_width: usize, column_count: usize) -> usize {
+    if column_count == 0 {
+        return 10;
+    }
+    let per_col = panel_width
+        .saturating_sub(1)
+        .checked_div(column_count)
+        .unwrap_or(0);
+    per_col.saturating_sub(3).max(8)
 }
 
 fn section_modifier_class_string(section: &crate::model::DdSection) -> String {
@@ -3524,12 +3920,50 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
+fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]> {
+    match mode {
+        InputMode::EditCardTitle | InputMode::EditCardCopy => {
+            Some(&[InputMode::EditCardTitle, InputMode::EditCardCopy])
+        }
+        InputMode::EditCtaTitle | InputMode::EditCtaLink => {
+            Some(&[InputMode::EditCtaTitle, InputMode::EditCtaLink])
+        }
+        InputMode::EditAlertMessage | InputMode::EditAlertTitle => {
+            Some(&[InputMode::EditAlertMessage, InputMode::EditAlertTitle])
+        }
+        InputMode::EditBannerMessage | InputMode::EditBannerLinkUrl => {
+            Some(&[InputMode::EditBannerMessage, InputMode::EditBannerLinkUrl])
+        }
+        InputMode::EditTabsFirstTitle | InputMode::EditTabsFirstContent => Some(&[
+            InputMode::EditTabsFirstTitle,
+            InputMode::EditTabsFirstContent,
+        ]),
+        InputMode::EditAccordionFirstTitle | InputMode::EditAccordionFirstContent => Some(&[
+            InputMode::EditAccordionFirstTitle,
+            InputMode::EditAccordionFirstContent,
+        ]),
+        InputMode::EditModalTitle | InputMode::EditModalContent => {
+            Some(&[InputMode::EditModalTitle, InputMode::EditModalContent])
+        }
+        InputMode::EditSliderFirstTitle | InputMode::EditSliderFirstCopy => Some(&[
+            InputMode::EditSliderFirstTitle,
+            InputMode::EditSliderFirstCopy,
+        ]),
+        InputMode::EditTimelineFirstTitle | InputMode::EditTimelineFirstDescription => Some(&[
+            InputMode::EditTimelineFirstTitle,
+            InputMode::EditTimelineFirstDescription,
+        ]),
+        InputMode::EditSpacerHeight => Some(&[InputMode::EditSpacerHeight]),
+        _ => None,
+    }
+}
+
 fn help_text() -> String {
     [
         "Global:",
         "  F1: Open/close this help",
         "  q: Quit",
-        "  s: Save",
+        "  s: Open save modal and enter file path",
         "  Tab / Shift+Tab: Next/previous page",
         "",
         "Node navigation and edits:",
@@ -3564,6 +3998,7 @@ fn help_text() -> String {
         "",
         "Edit modal:",
         "  Any edit command opens a modal with editable fields",
+        "  Tab / Shift+Tab: Next/previous editable field for selected component",
         "  Enter: Confirm edit",
         "  Esc: Cancel edit",
         "  Backspace: Delete character",
