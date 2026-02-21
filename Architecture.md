@@ -71,8 +71,8 @@ enum SectionComponent {
 All components below are available and should be first-class in the editor.
 
 1. `dd-hero`
-- Required: `image`, `title`, `subtitle`
-- Optional: `copy`, `cta_text`, `cta_link`, `cta_target`, `image_alt`, `image_mobile`, `image_tablet`, `image_desktop`
+- Required: `image`, `image_alt`, `title`
+- Optional: `subtitle`, `copy`, `cta_text`, `cta_link`, `cta_target`, `image_mobile`, `image_tablet`, `image_desktop`
 - Placement: top-level page node (no `dd-section` wrapper)
 
 2. `dd-card`
@@ -123,17 +123,16 @@ Expose these options directly in TUI controls (dropdown/select lists) and valida
 
 - `dd-section.background`: `primary`, `secondary`, `tertiary`, `gray`, `white`, `black`
 - `dd-section.spacing`: `tight`, `normal`, `loose`, `extra-loose`
-- `dd-section.width`: `narrow`, `normal`, `wide`, `full`
-- `dd-section.align`: `left`, `center`, `right`
+- `dd-section.width`: `-full-full`, `-full-contained`
 - `dd-card.columns`: `2`, `3`, `4`
 - `dd-card.animate`: `fade-up`, `fade-in`, `slide-up`
 - `dd-tabs.orientation`: `horizontal`, `vertical`
 
 Framework utility classes to preserve during output where applicable:
 - Grid: `dd-u-1-1`, `dd-u-md-12-24`, `dd-u-lg-8-24`, `dd-u-xl-6-24`
-- Spacing: `l-box`, `m-bottom`, `m-top`, `p-large`, `p-small`
-- Text align: `dd-t-center`, `dd-t-left`, `dd-t-right`
-- Visibility: `dd-d-none`, `dd-d-block`, `dd-d-md-block`
+- Spacing: `l-box`, `ll-box`
+- Text align: `-text-center`, `-text-left`, `-text-right`
+- Visibility: `-scrn-reader-only`
 
 ### Rendering Rules
 
