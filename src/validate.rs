@@ -215,6 +215,12 @@ fn validate_section_component(
             }
         }
         SectionComponent::Accordion(accordion) => {
+            if accordion.group_name.trim().is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-accordion missing group_name.",
+                    page_id, section_id
+                ));
+            }
             if accordion.items.is_empty() {
                 errors.push(format!(
                     "Page '{}' section '{}' has dd-accordion with no items.",

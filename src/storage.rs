@@ -127,6 +127,10 @@ mod tests {
             section
                 .components
                 .push(SectionComponent::Accordion(crate::model::DdAccordion {
+                    accordion_type: crate::model::AccordionType::Default,
+                    accordion_class: crate::model::AccordionClass::Primary,
+                    accordion_aos: crate::model::HeroAos::FadeIn,
+                    group_name: "group1".to_string(),
                     items: vec![
                         crate::model::AccordionItem {
                             title: "Acc 1".to_string(),

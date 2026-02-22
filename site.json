@@ -18,20 +18,91 @@
         {
           "node_type": "hero",
           "image": "/assets/images/hero.jpg",
-          "title": "title",
-          "subtitle": "",
-          "copy": "lorum ipsum copy",
-          "cta_text": "blog",
-          "cta_link": "/blog/",
+          "hero_class": "-full-full",
+          "hero_aos": "fade-in",
+          "title": "Build with dd-framework",
+          "subtitle": "Framework-native static page builder",
+          "copy": "Compose pages with typed component schemas.",
+          "cta_text": "Get Started",
+          "cta_link": "/start",
           "cta_target": "_self",
-          "cta_text_2": null,
-          "cta_link_2": null,
+          "cta_text_2": "Learn More",
+          "cta_link_2": "/learn-more",
           "cta_target_2": "_self",
           "image_alt": "Decorative hero",
           "image_mobile": null,
           "image_tablet": null,
           "image_desktop": null,
           "image_class": "-full-full"
+        },
+        {
+          "node_type": "section",
+          "id": "section-1",
+          "section_title": "Ready to publish?",
+          "section_class": "-full-contained",
+          "item_box_class": "l-box",
+          "columns": [
+            {
+              "id": "column-1",
+              "width_class": "dd-u-1-1",
+              "components": [
+                {
+                  "component_type": "accordion",
+                  "accordion_type": "-default",
+                  "accordion_class": "-primary",
+                  "accordion_aos": "fade-in",
+                  "group_name": "group1",
+                  "items": [
+                    {
+                      "title": "Accordion Item 1",
+                      "content": "Accordion content 1"
+                    },
+                    {
+                      "title": "Accordion Item 2",
+                      "content": "Accordion content 2"
+                    },
+                    {
+                      "title": "Accordion Item 3",
+                      "content": "Accordion content 3"
+                    },
+                    {
+                      "title": "Accordion Item 4",
+                      "content": "Accordion content 4"
+                    }
+                  ],
+                  "multiple": false
+                }
+              ]
+            }
+          ],
+          "components": [
+            {
+              "component_type": "accordion",
+              "accordion_type": "-default",
+              "accordion_class": "-primary",
+              "accordion_aos": "fade-in",
+              "group_name": "group1",
+              "items": [
+                {
+                  "title": "Accordion Item 1",
+                  "content": "Accordion content 1"
+                },
+                {
+                  "title": "Accordion Item 2",
+                  "content": "Accordion content 2"
+                },
+                {
+                  "title": "Accordion Item 3",
+                  "content": "Accordion content 3"
+                },
+                {
+                  "title": "Accordion Item 4",
+                  "content": "Accordion content 4"
+                }
+              ],
+              "multiple": false
+            }
+          ]
         }
       ]
     }

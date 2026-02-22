@@ -253,15 +253,68 @@ fn render_tabs(tabs: &DdTabs) -> anyhow::Result<String> {
 }
 
 fn render_accordion(accordion: &DdAccordion) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-accordion">
-  {{#each items}}
-  <details>
-    <summary>{{title}}</summary>
-    <div>{{content}}</div>
-  </details>
-  {{/each}}
-</div>"#;
-    render_inline(template, serde_json::to_value(accordion)?)
+    let template = r#"<div class="dd-accordion {{accordion_type}} {{accordion_class}}" data-aos="{{accordion_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+  <div class="dd-accordion__items">
+    {{#each items}}<details name="{{../group_name}}" class="dd-accordion__item">
+      <summary class="dd-accordion__header dd-g -y-center">
+        <div class="dd-accordion__title dd-u-1-1">{{title}}</div>
+      </summary>
+      <div class="dd-accordion__copy"><p>{{content}}</p></div>
+    </details>
+    {{/each}}
+  </div>
+</div>{{#if has_faq_schema}}
+<script type="application/ld+json">{{{faq_schema_json}}}</script>{{/if}}"#;
+    let mut v = serde_json::to_value(accordion)?;
+    let faq_schema = serde_json::to_string(&json!({
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": accordion.items.iter().map(|item| {
+            json!({
+                "@type": "Question",
+                "name": item.title,
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": item.content
+                }
+            })
+        }).collect::<Vec<_>>()
+    }))?;
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert(
+            "accordion_type".to_string(),
+            Value::String(
+                serde_json::to_value(accordion.accordion_type)
+                    .map(|v| stringify_json(&v))
+                    .unwrap_or_else(|_| "-default".to_string()),
+            ),
+        );
+        obj.insert(
+            "accordion_class".to_string(),
+            Value::String(
+                serde_json::to_value(accordion.accordion_class)
+                    .map(|v| stringify_json(&v))
+                    .unwrap_or_else(|_| "-primary".to_string()),
+            ),
+        );
+        obj.insert(
+            "accordion_aos".to_string(),
+            Value::String(
+                serde_json::to_value(accordion.accordion_aos)
+                    .map(|v| stringify_json(&v))
+                    .unwrap_or_else(|_| "fade-in".to_string()),
+            ),
+        );
+        obj.insert(
+            "has_faq_schema".to_string(),
+            Value::Bool(matches!(
+                accordion.accordion_type,
+                crate::model::AccordionType::Faq
+            )),
+        );
+        obj.insert("faq_schema_json".to_string(), Value::String(faq_schema));
+    }
+    render_inline(template, v)
 }
 
 fn render_cta(cta: &DdCta) -> anyhow::Result<String> {

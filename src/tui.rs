@@ -71,6 +71,7 @@ struct App {
     component_kind: ComponentKind,
     show_help: bool,
     expanded_sections: HashSet<(usize, usize)>,
+    expanded_accordion_items: HashSet<(usize, usize, usize, usize)>,
 }
 
 struct ComponentPickerState {
@@ -105,6 +106,10 @@ enum InputMode {
     EditBannerLinkUrl,
     EditTabsFirstTitle,
     EditTabsFirstContent,
+    EditAccordionType,
+    EditAccordionClass,
+    EditAccordionAos,
+    EditAccordionGroupName,
     EditAccordionFirstTitle,
     EditAccordionFirstContent,
     EditModalTitle,
@@ -185,6 +190,12 @@ enum NodeTreeKind {
         column_idx: usize,
         component_idx: usize,
     },
+    AccordionItem {
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+        item_idx: usize,
+    },
 }
 
 impl App {
@@ -213,6 +224,7 @@ impl App {
             component_kind: ComponentKind::Card,
             show_help: false,
             expanded_sections: HashSet::new(),
+            expanded_accordion_items: HashSet::new(),
         }
     }
 
@@ -328,7 +340,7 @@ impl App {
         frame.render_widget(details, main[1]);
 
         let footer_text = format!(
-            "F1 help | q quit | s save | / insert | Enter edit | Space expand/collapse | {}",
+            "F1 help | q quit | s save | / insert | Enter edit | Space expand/collapse | A add accordion item | X remove accordion item | {}",
             self.status
         );
         let footer = Paragraph::new(footer_text)
@@ -570,7 +582,7 @@ impl App {
                 KeyCode::Char('q') => self.should_quit = true,
                 KeyCode::Up => self.select_prev(),
                 KeyCode::Down => self.select_next(),
-                KeyCode::Char(' ') => self.toggle_selected_section_expanded(),
+                KeyCode::Char(' ') => self.toggle_selected_tree_expanded(),
                 KeyCode::Enter => self.handle_enter_on_selected_row(),
                 KeyCode::Tab => self.select_next_page(),
                 KeyCode::BackTab => self.select_prev_page(),
@@ -587,6 +599,8 @@ impl App {
                 KeyCode::Char(')') => self.move_selected_column_down(),
                 KeyCode::Char('r') => self.begin_edit_selected_column_id(),
                 KeyCode::Char('f') => self.begin_edit_selected_column_width_class(),
+                KeyCode::Char('A') => self.add_selected_accordion_item(),
+                KeyCode::Char('X') => self.remove_selected_accordion_item(),
                 _ => {}
             },
             Event::Mouse(m) => match m.kind {
@@ -644,6 +658,28 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
+                    Some(InputMode::EditAccordionType) => {
+                        self.cycle_accordion_type(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditAccordionType)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditAccordionClass) => {
+                        self.cycle_accordion_class(false);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditAccordionClass)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditAccordionAos) => {
+                        self.cycle_accordion_aos(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditAccordionAos)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
                     _ => {}
                 },
                 KeyCode::Right => match self.input_mode {
@@ -662,6 +698,28 @@ impl App {
                     Some(InputMode::EditSectionClass) => {
                         self.cycle_section_class(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditSectionClass)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditAccordionType) => {
+                        self.cycle_accordion_type(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditAccordionType)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditAccordionClass) => {
+                        self.cycle_accordion_class(true);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditAccordionClass)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditAccordionAos) => {
+                        self.cycle_accordion_aos(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditAccordionAos)
                         {
                             self.input_buffer = v;
                         }
@@ -692,7 +750,7 @@ impl App {
         let Some(current) = self.input_mode else {
             return;
         };
-        let Some(group) = component_edit_group_for_mode(current) else {
+        let Some(group) = self.component_edit_group_for_active_mode(current) else {
             self.status = "Tab field navigation is available while editing hero/component fields."
                 .to_string();
             return;
@@ -715,6 +773,37 @@ impl App {
         if !self.set_component_input_mode(next_mode) {
             self.status = "Could not switch to next component field.".to_string();
         }
+    }
+
+    fn component_edit_group_for_active_mode(&self, mode: InputMode) -> Option<Vec<InputMode>> {
+        let accordion_mode = matches!(
+            mode,
+            InputMode::EditAccordionType
+                | InputMode::EditAccordionClass
+                | InputMode::EditAccordionAos
+                | InputMode::EditAccordionGroupName
+                | InputMode::EditAccordionFirstTitle
+                | InputMode::EditAccordionFirstContent
+        );
+        if accordion_mode {
+            let rows = self.build_node_tree_rows();
+            let row_kind = rows
+                .get(self.selected_tree_row.min(rows.len().saturating_sub(1)))
+                .map(|r| r.kind);
+            if matches!(row_kind, Some(NodeTreeKind::AccordionItem { .. })) {
+                return Some(vec![
+                    InputMode::EditAccordionFirstTitle,
+                    InputMode::EditAccordionFirstContent,
+                ]);
+            }
+            return Some(vec![
+                InputMode::EditAccordionType,
+                InputMode::EditAccordionClass,
+                InputMode::EditAccordionAos,
+                InputMode::EditAccordionGroupName,
+            ]);
+        }
+        component_edit_group_for_mode(mode).map(|modes| modes.to_vec())
     }
 
     fn handle_component_picker_event(&mut self, evt: Event) -> anyhow::Result<()> {
@@ -931,6 +1020,18 @@ impl App {
             }
             InputMode::EditTabsFirstContent => {
                 "Editing dd-tabs first content. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAccordionType => {
+                "Editing dd-accordion type. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAccordionClass => {
+                "Editing dd-accordion class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAccordionAos => {
+                "Editing dd-accordion data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAccordionGroupName => {
+                "Editing dd-accordion group name. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAccordionFirstTitle => {
                 "Editing dd-accordion first title. Enter to save, esc to cancel.".to_string()
@@ -1293,6 +1394,73 @@ impl App {
                     "Section has no components.".to_string()
                 }
             }
+            (PageNode::Section(v), InputMode::EditAccordionType) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
+                        if let Some(vt) = parse_accordion_type(value.as_str()) {
+                            acc.accordion_type = vt;
+                            applied = true;
+                            "Updated dd-accordion type.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-accordion type option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-accordion.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditAccordionClass) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
+                        if let Some(vc) = parse_accordion_class(value.as_str()) {
+                            acc.accordion_class = vc;
+                            applied = true;
+                            "Updated dd-accordion class.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-accordion class option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-accordion.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditAccordionAos) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
+                        if let Some(va) = parse_hero_aos(value.as_str()) {
+                            acc.accordion_aos = va;
+                            applied = true;
+                            "Updated dd-accordion data-aos.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-accordion data-aos option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-accordion.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditAccordionGroupName) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
+                        acc.group_name = value;
+                        applied = true;
+                        "Updated dd-accordion group name.".to_string()
+                    } else {
+                        "Selected component is not dd-accordion.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
             (PageNode::Section(v), InputMode::EditAccordionFirstTitle) => {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
@@ -1521,6 +1689,26 @@ impl App {
                                         component_idx,
                                     },
                                 });
+                                if let Some(crate::model::SectionComponent::Accordion(acc)) =
+                                    col.components.get(component_idx)
+                                {
+                                    if self.is_accordion_items_expanded(
+                                        node_idx,
+                                        column_idx,
+                                        component_idx,
+                                    ) {
+                                        for (item_idx, _) in acc.items.iter().enumerate() {
+                                            rows.push(NodeTreeRow {
+                                                kind: NodeTreeKind::AccordionItem {
+                                                    node_idx,
+                                                    column_idx,
+                                                    component_idx,
+                                                    item_idx,
+                                                },
+                                            });
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1573,8 +1761,56 @@ impl App {
                 let columns = section_columns_ref(section);
                 let col_i = column_idx.min(columns.len().saturating_sub(1));
                 let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
-                let label = component_label(&columns[col_i].components[comp_i]);
-                format!("       - {} {}", comp_i + 1, label)
+                let component = &columns[col_i].components[comp_i];
+                let label = component_label(component);
+                if matches!(component, crate::model::SectionComponent::Accordion(_)) {
+                    let marker = if self.is_accordion_items_expanded(node_idx, col_i, comp_i) {
+                        "[-]"
+                    } else {
+                        "[+]"
+                    };
+                    format!("       - {} {} {}", comp_i + 1, marker, label)
+                } else {
+                    format!("       - {} {}", comp_i + 1, label)
+                }
+            }
+            NodeTreeKind::AccordionItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                    return format!("          - item {}", item_idx + 1);
+                };
+                let columns = section_columns_ref(section);
+                let col_i = column_idx.min(columns.len().saturating_sub(1));
+                let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
+                let title = if let Some(crate::model::SectionComponent::Accordion(acc)) =
+                    columns[col_i].components.get(comp_i)
+                {
+                    acc.items
+                        .get(item_idx)
+                        .map(|i| i.title.as_str())
+                        .unwrap_or("(none)")
+                } else {
+                    "(none)"
+                };
+                let marker = if node_idx == self.selected_node
+                    && col_i == self.selected_column
+                    && comp_i == self.selected_component
+                    && item_idx == self.selected_nested_item
+                {
+                    "*"
+                } else {
+                    "-"
+                };
+                format!(
+                    "          {} item {}: {}",
+                    marker,
+                    item_idx + 1,
+                    truncate_ascii(title, 48)
+                )
             }
         }
     }
@@ -1612,6 +1848,17 @@ impl App {
                 self.selected_component = component_idx;
                 self.selected_nested_item = 0;
             }
+            NodeTreeKind::AccordionItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                self.selected_node = node_idx;
+                self.selected_column = column_idx;
+                self.selected_component = component_idx;
+                self.selected_nested_item = item_idx;
+            }
         }
     }
 
@@ -1636,6 +1883,18 @@ impl App {
                 node_idx == self.selected_node
                     && column_idx == self.selected_column
                     && component_idx == self.selected_component
+                    && self.selected_nested_item == 0
+            }
+            NodeTreeKind::AccordionItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                node_idx == self.selected_node
+                    && column_idx == self.selected_column
+                    && component_idx == self.selected_component
+                    && item_idx == self.selected_nested_item
             }
         };
 
@@ -1668,16 +1927,85 @@ impl App {
         }
     }
 
-    fn toggle_selected_section_expanded(&mut self) {
+    fn is_accordion_items_expanded(
+        &self,
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+    ) -> bool {
+        !self.expanded_accordion_items.contains(&(
+            self.selected_page,
+            node_idx,
+            column_idx,
+            component_idx,
+        ))
+    }
+
+    fn set_accordion_items_expanded(
+        &mut self,
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+        expanded: bool,
+    ) {
+        let key = (self.selected_page, node_idx, column_idx, component_idx);
+        if expanded {
+            self.expanded_accordion_items.remove(&key);
+        } else {
+            self.expanded_accordion_items.insert(key);
+        }
+    }
+
+    fn toggle_selected_tree_expanded(&mut self) {
         let rows = self.build_node_tree_rows();
         if rows.is_empty() {
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        if let NodeTreeKind::Component {
+            node_idx,
+            column_idx,
+            component_idx,
+        }
+        | NodeTreeKind::AccordionItem {
+            node_idx,
+            column_idx,
+            component_idx,
+            ..
+        } = row.kind
+        {
+            let page = self.current_page();
+            let Some(PageNode::Section(section)) = page.nodes.get(node_idx) else {
+                self.status = "Selected row is not a section.".to_string();
+                return;
+            };
+            let columns = section_columns_ref(section);
+            let col_i = column_idx.min(columns.len().saturating_sub(1));
+            let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
+            if matches!(
+                columns[col_i].components.get(comp_i),
+                Some(crate::model::SectionComponent::Accordion(_))
+            ) {
+                let expanded = self.is_accordion_items_expanded(node_idx, col_i, comp_i);
+                self.set_accordion_items_expanded(node_idx, col_i, comp_i, !expanded);
+                self.selected_node = node_idx;
+                self.selected_column = col_i;
+                self.selected_component = comp_i;
+                self.selected_nested_item = 0;
+                self.status = if expanded {
+                    "Collapsed accordion items.".to_string()
+                } else {
+                    "Expanded accordion items.".to_string()
+                };
+                self.sync_tree_row_with_selection();
+                return;
+            }
+        }
         let node_idx = match row.kind {
             NodeTreeKind::Section { node_idx } => node_idx,
             NodeTreeKind::Column { node_idx, .. } => node_idx,
             NodeTreeKind::Component { node_idx, .. } => node_idx,
+            NodeTreeKind::AccordionItem { node_idx, .. } => node_idx,
             NodeTreeKind::Hero { .. } => {
                 self.status = "Selected row is not a section.".to_string();
                 return;
@@ -1713,6 +2041,12 @@ impl App {
             NodeTreeKind::Hero { .. } => self.begin_edit_selected(),
             NodeTreeKind::Column { .. } => self.begin_edit_selected_column_width_class(),
             NodeTreeKind::Component { .. } => self.begin_edit_selected_component_primary(),
+            NodeTreeKind::AccordionItem { .. } => {
+                if self.set_component_input_mode(InputMode::EditAccordionFirstTitle) {
+                    return;
+                }
+                self.begin_edit_selected_component_primary();
+            }
         }
     }
 
@@ -1811,6 +2145,10 @@ impl App {
             Some(InputMode::EditBannerLinkUrl) => "dd-banner.link_url",
             Some(InputMode::EditTabsFirstTitle) => "dd-tabs.active.title",
             Some(InputMode::EditTabsFirstContent) => "dd-tabs.active.content",
+            Some(InputMode::EditAccordionType) => "dd-accordion.type",
+            Some(InputMode::EditAccordionClass) => "dd-accordion.class",
+            Some(InputMode::EditAccordionAos) => "dd-accordion.data_aos",
+            Some(InputMode::EditAccordionGroupName) => "dd-accordion.group_name",
             Some(InputMode::EditAccordionFirstTitle) => "dd-accordion.active.title",
             Some(InputMode::EditAccordionFirstContent) => "dd-accordion.active.content",
             Some(InputMode::EditModalTitle) => "dd-modal.title",
@@ -1867,22 +2205,73 @@ impl App {
                             "(none)".to_string()
                         }
                     }
-                    Some(NodeTreeKind::Component { .. }) => {
+                    Some(NodeTreeKind::Component { .. })
+                    | Some(NodeTreeKind::AccordionItem { .. }) => {
                         let columns = section_columns_ref(section);
                         if let Some(col) =
                             columns.get(self.selected_column.min(columns.len().saturating_sub(1)))
                         {
-                            let mut lines = vec![
-                                format!("- column.id: {}", col.id),
-                                format!("- column.width_class: {}", col.width_class),
-                            ];
                             if let Some(component) = col.components.get(
                                 self.selected_component
                                     .min(col.components.len().saturating_sub(1)),
                             ) {
-                                lines.push(component_form(component, self.selected_nested_item));
+                                if let crate::model::SectionComponent::Accordion(acc) = component {
+                                    match self.input_mode {
+                                        Some(InputMode::EditAccordionType)
+                                        | Some(InputMode::EditAccordionClass)
+                                        | Some(InputMode::EditAccordionAos)
+                                        | Some(InputMode::EditAccordionGroupName) => vec![
+                                            format!(
+                                                "- accordion_type: {}",
+                                                accordion_type_to_str(acc.accordion_type)
+                                            ),
+                                            format!(
+                                                "- accordion.class: {}",
+                                                accordion_class_to_str(acc.accordion_class)
+                                            ),
+                                            format!(
+                                                "- accordion.data_aos: {}",
+                                                hero_aos_to_str(acc.accordion_aos)
+                                            ),
+                                            format!("- accordion.group_name: {}", acc.group_name),
+                                        ]
+                                        .join("\n"),
+                                        Some(InputMode::EditAccordionFirstTitle)
+                                        | Some(InputMode::EditAccordionFirstContent) => {
+                                            let title = nested_index(
+                                                acc.items.len(),
+                                                self.selected_nested_item,
+                                            )
+                                            .and_then(|i| acc.items.get(i))
+                                            .map(|i| i.title.as_str())
+                                            .unwrap_or("(none)");
+                                            let content = nested_index(
+                                                acc.items.len(),
+                                                self.selected_nested_item,
+                                            )
+                                            .and_then(|i| acc.items.get(i))
+                                            .map(|i| i.content.as_str())
+                                            .unwrap_or("(none)");
+                                            vec![
+                                                format!("- accordion_title: {}", title),
+                                                format!("- accordion_copy: {}", content),
+                                            ]
+                                            .join("\n")
+                                        }
+                                        _ => component_form(component, self.selected_nested_item),
+                                    }
+                                } else {
+                                    let mut lines = vec![
+                                        format!("- column.id: {}", col.id),
+                                        format!("- column.width_class: {}", col.width_class),
+                                    ];
+                                    lines
+                                        .push(component_form(component, self.selected_nested_item));
+                                    lines.join("\n")
+                                }
+                            } else {
+                                "(none)".to_string()
                             }
-                            lines.join("\n")
                         } else {
                             "(none)".to_string()
                         }
@@ -1983,6 +2372,18 @@ impl App {
             }
             InputMode::EditTabsFirstContent => {
                 "Editing dd-tabs item content. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAccordionType => {
+                "Editing dd-accordion type. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAccordionClass => {
+                "Editing dd-accordion class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAccordionAos => {
+                "Editing dd-accordion data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAccordionGroupName => {
+                "Editing dd-accordion group name. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAccordionFirstTitle => {
                 "Editing dd-accordion item title. Enter to save, esc to cancel.".to_string()
@@ -2122,6 +2523,18 @@ impl App {
             (InputMode::EditTabsFirstContent, crate::model::SectionComponent::Tabs(v)) => {
                 let ni = nested_index(v.tabs.len(), self.selected_nested_item)?;
                 Some(v.tabs[ni].content.clone())
+            }
+            (InputMode::EditAccordionType, crate::model::SectionComponent::Accordion(v)) => {
+                Some(accordion_type_to_str(v.accordion_type).to_string())
+            }
+            (InputMode::EditAccordionClass, crate::model::SectionComponent::Accordion(v)) => {
+                Some(accordion_class_to_str(v.accordion_class).to_string())
+            }
+            (InputMode::EditAccordionAos, crate::model::SectionComponent::Accordion(v)) => {
+                Some(hero_aos_to_str(v.accordion_aos).to_string())
+            }
+            (InputMode::EditAccordionGroupName, crate::model::SectionComponent::Accordion(v)) => {
+                Some(v.group_name.clone())
             }
             (InputMode::EditAccordionFirstTitle, crate::model::SectionComponent::Accordion(v)) => {
                 let ni = nested_index(v.items.len(), self.selected_nested_item)?;
@@ -2497,6 +2910,187 @@ impl App {
         );
     }
 
+    fn cycle_accordion_type(&mut self, forward: bool) {
+        self.mutate_selected_accordion(
+            |a| {
+                a.accordion_type = next_accordion_type(a.accordion_type, forward);
+            },
+            "Cycled dd-accordion type.",
+        );
+    }
+
+    fn cycle_accordion_class(&mut self, forward: bool) {
+        self.mutate_selected_accordion(
+            |a| {
+                a.accordion_class = next_accordion_class(a.accordion_class, forward);
+            },
+            "Cycled dd-accordion class.",
+        );
+    }
+
+    fn cycle_accordion_aos(&mut self, forward: bool) {
+        self.mutate_selected_accordion(
+            |a| {
+                a.accordion_aos = next_hero_aos(a.accordion_aos, forward);
+            },
+            "Cycled dd-accordion data-aos.",
+        );
+    }
+
+    fn mutate_selected_accordion<F>(&mut self, mutator: F, success_message: &str)
+    where
+        F: FnOnce(&mut crate::model::DdAccordion),
+    {
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Accordion(accordion) =
+                        &mut components[ci]
+                    {
+                        mutator(accordion);
+                        success_message.to_string()
+                    } else {
+                        "Selected component is not dd-accordion.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            _ => "Selected node is not a section.".to_string(),
+        };
+        self.status = result;
+    }
+
+    fn add_selected_accordion_item(&mut self) {
+        let rows = self.build_node_tree_rows();
+        if rows.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let preferred_insert_after = match row.kind {
+            NodeTreeKind::AccordionItem { item_idx, .. } => Some(item_idx),
+            _ => None,
+        };
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Accordion(acc) = &mut components[ci] {
+                        let insert_idx = preferred_insert_after
+                            .map(|i| (i + 1).min(acc.items.len()))
+                            .unwrap_or(acc.items.len());
+                        let next_num = acc.items.len() + 1;
+                        acc.items.insert(
+                            insert_idx,
+                            crate::model::AccordionItem {
+                                title: format!("Accordion Item {}", next_num),
+                                content: "Accordion content".to_string(),
+                            },
+                        );
+                        (
+                            Some((ni, col_i, ci, insert_idx)),
+                            format!("Added accordion item {}.", insert_idx + 1),
+                        )
+                    } else {
+                        (None, "Selected component is not dd-accordion.".to_string())
+                    }
+                } else {
+                    (None, "Section has no components.".to_string())
+                }
+            }
+            _ => (None, "Selected node is not a section.".to_string()),
+        };
+        if let Some((node_idx, column_idx, component_idx, item_idx)) = result.0 {
+            self.selected_node = node_idx;
+            self.selected_column = column_idx;
+            self.selected_component = component_idx;
+            self.selected_nested_item = item_idx;
+            self.set_accordion_items_expanded(node_idx, column_idx, component_idx, true);
+        }
+        self.status = result.1;
+    }
+
+    fn remove_selected_accordion_item(&mut self) {
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let selected_nested_item = self.selected_nested_item;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Accordion(acc) = &mut components[ci] {
+                        if acc.items.len() <= 1 {
+                            (
+                                None,
+                                "dd-accordion must keep at least one item.".to_string(),
+                            )
+                        } else {
+                            let remove_idx = selected_nested_item.min(acc.items.len() - 1);
+                            acc.items.remove(remove_idx);
+                            let next_item_idx = remove_idx.min(acc.items.len() - 1);
+                            (
+                                Some((ni, col_i, ci, next_item_idx)),
+                                format!("Removed accordion item {}.", remove_idx + 1),
+                            )
+                        }
+                    } else {
+                        (None, "Selected component is not dd-accordion.".to_string())
+                    }
+                } else {
+                    (None, "Section has no components.".to_string())
+                }
+            }
+            _ => (None, "Selected node is not a section.".to_string()),
+        };
+        if let Some((node_idx, column_idx, component_idx, item_idx)) = result.0 {
+            self.selected_node = node_idx;
+            self.selected_column = column_idx;
+            self.selected_component = component_idx;
+            self.selected_nested_item = item_idx;
+            self.set_accordion_items_expanded(node_idx, column_idx, component_idx, true);
+        }
+        self.status = result.1;
+    }
+
     fn mutate_selected_section<F>(&mut self, mutator: F, success_message: &str)
     where
         F: FnOnce(&mut crate::model::DdSection),
@@ -2734,18 +3328,10 @@ impl App {
                                         None
                                     }
                                 }
-                                crate::model::SectionComponent::Accordion(acc) => {
-                                    if let Some(ni) =
-                                        nested_index(acc.items.len(), self.selected_nested_item)
-                                    {
-                                        Some((
-                                            InputMode::EditAccordionFirstTitle,
-                                            acc.items[ni].title.clone(),
-                                        ))
-                                    } else {
-                                        None
-                                    }
-                                }
+                                crate::model::SectionComponent::Accordion(acc) => Some((
+                                    InputMode::EditAccordionType,
+                                    accordion_type_to_str(acc.accordion_type).to_string(),
+                                )),
                                 crate::model::SectionComponent::Modal(modal) => {
                                     Some((InputMode::EditModalTitle, modal.title.clone()))
                                 }
@@ -2808,6 +3394,18 @@ impl App {
             }
             InputMode::EditTabsFirstTitle => {
                 "Editing dd-tabs first title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAccordionType => {
+                "Editing dd-accordion type. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAccordionClass => {
+                "Editing dd-accordion class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAccordionAos => {
+                "Editing dd-accordion data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAccordionGroupName => {
+                "Editing dd-accordion group name. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAccordionFirstTitle => {
                 "Editing dd-accordion first title. Enter to save, esc to cancel.".to_string()
@@ -2969,7 +3567,7 @@ fn section_ascii_map(
                     box_lines.push(format!(
                         "| {} |",
                         fit_ascii_cell(
-                            &format!("- {}", component_label(component)),
+                            &format!("- {}", component_blueprint_label(component)),
                             item_inner_width
                         )
                     ));
@@ -3251,6 +3849,82 @@ fn parse_section_class(raw: &str) -> Option<crate::model::SectionClass> {
     }
 }
 
+fn accordion_type_to_str(v: crate::model::AccordionType) -> &'static str {
+    match v {
+        crate::model::AccordionType::Default => "-default",
+        crate::model::AccordionType::Faq => "-faq",
+    }
+}
+
+fn parse_accordion_type(raw: &str) -> Option<crate::model::AccordionType> {
+    match raw.trim() {
+        "-default" => Some(crate::model::AccordionType::Default),
+        "-faq" => Some(crate::model::AccordionType::Faq),
+        _ => None,
+    }
+}
+
+fn next_accordion_type(
+    current: crate::model::AccordionType,
+    forward: bool,
+) -> crate::model::AccordionType {
+    use crate::model::AccordionType;
+    let all = [AccordionType::Default, AccordionType::Faq];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
+}
+
+fn accordion_class_to_str(v: crate::model::AccordionClass) -> &'static str {
+    match v {
+        crate::model::AccordionClass::Borderless => "-borderless",
+        crate::model::AccordionClass::Compact => "-compact",
+        crate::model::AccordionClass::Primary => "-primary",
+        crate::model::AccordionClass::Secondary => "-secondary",
+        crate::model::AccordionClass::Tertiary => "-tertiary",
+    }
+}
+
+fn parse_accordion_class(raw: &str) -> Option<crate::model::AccordionClass> {
+    match raw.trim() {
+        "-borderless" => Some(crate::model::AccordionClass::Borderless),
+        "-compact" => Some(crate::model::AccordionClass::Compact),
+        "-primary" => Some(crate::model::AccordionClass::Primary),
+        "-secondary" => Some(crate::model::AccordionClass::Secondary),
+        "-tertiary" => Some(crate::model::AccordionClass::Tertiary),
+        _ => None,
+    }
+}
+
+fn next_accordion_class(
+    current: crate::model::AccordionClass,
+    forward: bool,
+) -> crate::model::AccordionClass {
+    use crate::model::AccordionClass;
+    let all = [
+        AccordionClass::Borderless,
+        AccordionClass::Compact,
+        AccordionClass::Primary,
+        AccordionClass::Secondary,
+        AccordionClass::Tertiary,
+    ];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
+}
+
 fn next_section_class(
     current: crate::model::SectionClass,
     forward: bool,
@@ -3313,6 +3987,19 @@ fn component_label(component: &crate::model::SectionComponent) -> &'static str {
     }
 }
 
+fn component_blueprint_label(component: &crate::model::SectionComponent) -> String {
+    match component {
+        crate::model::SectionComponent::Accordion(v) => format!(
+            "dd-accordion | accordion_title: {}",
+            v.items
+                .first()
+                .map(|i| i.title.as_str())
+                .unwrap_or("(none)")
+        ),
+        _ => component_label(component).to_string(),
+    }
+}
+
 fn component_form(
     component: &crate::model::SectionComponent,
     selected_nested_item: usize,
@@ -3370,8 +4057,11 @@ fn component_form(
                 .map(|i| i.content.as_str())
                 .unwrap_or("(none)");
             format!(
-                "fields:\n  items_count: {}\n  active_item: {}\n  active_title: {}\n  active_content: {}",
-                v.items.len(),
+                "fields:\n  accordion_type: {}\n  accordion.class: {}\n  accordion.data_aos: {}\n  accordion.group_name: {}\n  active_item: {}\n  accordion_title: {}\n  accordion_copy: {}",
+                accordion_type_to_str(v.accordion_type),
+                accordion_class_to_str(v.accordion_class),
+                hero_aos_to_str(v.accordion_aos),
+                v.group_name,
                 active,
                 title,
                 content
@@ -3812,7 +4502,16 @@ fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]
             InputMode::EditTabsFirstTitle,
             InputMode::EditTabsFirstContent,
         ]),
-        InputMode::EditAccordionFirstTitle | InputMode::EditAccordionFirstContent => Some(&[
+        InputMode::EditAccordionType
+        | InputMode::EditAccordionClass
+        | InputMode::EditAccordionAos
+        | InputMode::EditAccordionGroupName
+        | InputMode::EditAccordionFirstTitle
+        | InputMode::EditAccordionFirstContent => Some(&[
+            InputMode::EditAccordionType,
+            InputMode::EditAccordionClass,
+            InputMode::EditAccordionAos,
+            InputMode::EditAccordionGroupName,
             InputMode::EditAccordionFirstTitle,
             InputMode::EditAccordionFirstContent,
         ]),
@@ -3843,8 +4542,9 @@ fn help_text() -> String {
         "Node navigation and edits:",
         "  Up/Down or mouse wheel: Select row in Nodes tree",
         "  Enter: Edit selected row",
-        "  Space: Expand/collapse selected section",
+        "  Space: Expand/collapse selected section or accordion items",
         "  /: Open insert fuzzy finder (hero/section/components)",
+        "  A / X: Add/remove dd-accordion item on selected accordion",
         "  d: Delete selected node",
         "  J / K: Move selected node down / up",
         "",
@@ -3858,7 +4558,7 @@ fn help_text() -> String {
         "Edit modal:",
         "  Any edit command opens a modal with editable fields",
         "  Tab / Shift+Tab: Next/previous editable field for selected hero/section",
-        "  Left / Right: Cycle section/hero option fields when active",
+        "  Left / Right: Cycle section/hero/accordion option fields when active",
         "  Enter: Confirm edit",
         "  Esc: Cancel edit",
         "  Backspace: Delete character",
@@ -3948,6 +4648,10 @@ impl ComponentKind {
             }),
             ComponentKind::Accordion => {
                 crate::model::SectionComponent::Accordion(crate::model::DdAccordion {
+                    accordion_type: crate::model::AccordionType::Default,
+                    accordion_class: crate::model::AccordionClass::Primary,
+                    accordion_aos: crate::model::HeroAos::FadeIn,
+                    group_name: "group1".to_string(),
                     items: vec![crate::model::AccordionItem {
                         title: "Accordion Item".to_string(),
                         content: "Accordion content".to_string(),

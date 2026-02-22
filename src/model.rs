@@ -135,6 +135,14 @@ pub struct TabItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DdAccordion {
+    #[serde(default = "default_accordion_type")]
+    pub accordion_type: AccordionType,
+    #[serde(default = "default_accordion_class")]
+    pub accordion_class: AccordionClass,
+    #[serde(default = "default_accordion_aos")]
+    pub accordion_aos: HeroAos,
+    #[serde(default = "default_accordion_group_name")]
+    pub group_name: String,
     pub items: Vec<AccordionItem>,
     pub multiple: Option<bool>,
 }
@@ -143,6 +151,22 @@ pub struct DdAccordion {
 pub struct AccordionItem {
     pub title: String,
     pub content: String,
+}
+
+fn default_accordion_group_name() -> String {
+    "group1".to_string()
+}
+
+fn default_accordion_type() -> AccordionType {
+    AccordionType::Default
+}
+
+fn default_accordion_class() -> AccordionClass {
+    AccordionClass::Primary
+}
+
+fn default_accordion_aos() -> HeroAos {
+    HeroAos::FadeIn
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -323,6 +347,28 @@ pub enum SpacerHeight {
     Lg,
     Xl,
     Xxl,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AccordionType {
+    #[serde(rename = "-default")]
+    Default,
+    #[serde(rename = "-faq")]
+    Faq,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AccordionClass {
+    #[serde(rename = "-borderless")]
+    Borderless,
+    #[serde(rename = "-compact")]
+    Compact,
+    #[serde(rename = "-primary")]
+    Primary,
+    #[serde(rename = "-secondary")]
+    Secondary,
+    #[serde(rename = "-tertiary")]
+    Tertiary,
 }
 
 impl Site {

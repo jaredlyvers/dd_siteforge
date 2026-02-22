@@ -1,61 +1,97 @@
-# Section component
-## Section code
-**Usage Examples**:
+---
+component: dd-section
+version: 1
+node_scope: page_node
+insert:
+  defaults:
+    id: "section-1"
+    section_title: ""
+    section_class: "-full-contained"
+    item_box_class: "l-box"
+    items:
+      - item_id: "column-1"
+        width_class: "dd-u-1-1"
+        components: []
+fields:
+  - id: id
+    required: true
+    type: string
+    maps_to: "section[id reference in builder only]"
+  - id: section_title
+    required: false
+    type: string
+    maps_to: ".dd-section__title"
+  - id: section_class
+    required: true
+    type: enum
+    options: ["-contained", "-contained-md", "-contained-lg", "-contained-xl", "-contained-xxl", "-full-full", "-full-contained", "-full-contained-md", "-full-contained-lg", "-full-contained-xl", "-full-contained-xxl"]
+    default: "-full-contained"
+    maps_to: ".dd-section class token"
+  - id: item_box_class
+    required: true
+    type: enum
+    options: ["l-box", "ll-box"]
+    default: "l-box"
+    maps_to: ".dd-section__item class token"
+  - id: items
+    required: true
+    type: array
+    min_items: 1
+    item_fields:
+      - id: item_id
+        required: true
+        type: string
+        maps_to: "builder identifier"
+      - id: width_class
+        required: true
+        type: string
+        maps_to: ".dd-section__item width classes (dd-u-*)"
+      - id: components
+        required: false
+        type: array
+        maps_to: "nested section components"
+edit_ui:
+  tab_order:
+    - id
+    - section_title
+    - section_class
+  row_editing:
+    section_item:
+      - item_id
+      - width_class
+blueprint:
+  label: "dd-section"
+  show_fields:
+    - id
+    - section_title
+    - section_class
+    - items[].item_id
+    - items[].width_class
+---
+
+## HTML Template
+
 ```html
-<section class="dd-section -full-contained">
+<section class="dd-section [section_class]">
   <div class="dd-section__content">
-  <!-- if [section_title] -->
-    <div class="dd-section__title l-box">[section_title]</div>
+    <!-- if [section_title] --><div class="dd-section__title l-box">[section_title]</div><!-- endif -->
     <div class="dd-section__items dd-g">
-      <!-- if components -->
-      <div class="dd-section__item dd-u-1-1 dd-u-lg-8-24 l-box">
-        <!-- 
-        components go here
-        Section Item goes here. This item can be any of the other components.
-        -->
+      <!-- repeat: items -->
+      <div class="dd-section__item [width_class] [item_box_class]">
+        <!-- nested components render here -->
       </div>
-      <!-- endif -->
-      <!-- if components -->
-      <div class="dd-section__item dd-u-1-1 dd-u-lg-8-24 l-box">
-        <!-- 
-        components go here
-        Section Item goes here. This item can be any of the other components.
-        -->
-      </div>
-      <!-- endif -->
-      <!-- if components -->
-      <div class="dd-section__item dd-u-1-1 dd-u-lg-8-24 l-box">
-        <!-- 
-        components go here
-        Section Item goes here. This item can be any of the other components.
-        -->
-      </div>
-      <!-- endif -->
     </div>
   </div>
 </section>
-```html
+```
 
-## CSS classes
-**Usage Examples**:
-```css
-.dd-section.-contained
-.dd-section.-contained-md
-.dd-section.-contained-lg
-.dd-section.-contained-xl
-.dd-section.-contained-xxl
-.dd-section.-full-full
-.dd-section.-full-contained // default class
-.dd-section.-full-contained-md
-.dd-section.-full-contained-lg
-.dd-section.-full-contained-xl
-.dd-section.-full-contained-xxl
-.dd-section__item.l-box // default class
-.dd-section__item.ll-box
-.dd-section__item.dd-u-1-1 // default class
-.dd-section__item.dd-u-sm-1-*
-.dd-section__item.dd-u-md-1-*
-.dd-section__item.dd-u-lg-1-*
-.dd-section__item.dd-u-xl-1-*
-.dd-section__item.dd-u-xxl-1-*
-```css
+## Width Class Guidance
+
+Use `dd-u-*` classes on each `dd-section__item` to control layout per breakpoint, for example:
+
+- `dd-u-1-1`
+- `dd-u-sm-1-*`
+- `dd-u-md-1-*`
+- `dd-u-lg-1-*`
+- `dd-u-xl-1-*`
+- `dd-u-xxl-1-*`
