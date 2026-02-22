@@ -7,10 +7,11 @@ insert:
     alternating_type: "-default"
     alternating_class: "-default"
     alternating_data_aos: "fade-in"
-    group_name: "group1"
     items:
-      - alternating_title: "alternating Item"
-        alternating_copy: "alternating content"
+      - alternating_image: "https://dummyimage.com/600x400/000/fff"
+        alternating_image_alt: "Alternating image"
+        alternating_title: "Alternating Item"
+        alternating_copy: "Alternating content"
 fields:
   - id: alternating_type
     required: true
@@ -28,12 +29,20 @@ fields:
     type: enum
     options: ["fade-in","fade-up","fade-right","fade-down","fade-left","zoom-in","zoom-in-up","zoom-in-down"]
     default: "fade-in"
-    maps_to: ".dd-alternating[data-aos]"
+    maps_to: ".dd-alternating__image[data-aos], .dd-alternating__copy[data-aos]"
   - id: items
     required: true
     type: array
     min_items: 1
     item_fields:
+      - id: alternating_image
+        required: true
+        type: string
+        maps_to: ".dd-alternating__image img[src]"
+      - id: alternating_image_alt
+        required: true
+        type: string
+        maps_to: ".dd-alternating__image img[alt]"
       - id: alternating_title
         required: true
         type: string
@@ -45,6 +54,8 @@ edit_ui:
     - alternating_type
     - alternating_class
     - alternating_data_aos
+    - items[].alternating_image
+    - items[].alternating_image_alt
     - items[].alternating_title
     - items[].alternating_copy
   navigation_tree:
@@ -66,39 +77,46 @@ edit_ui:
       - alternating_class
       - alternating_data_aos
     item_edit_modes:
+      - items[].alternating_image
+      - items[].alternating_image_alt
       - items[].alternating_title
       - items[].alternating_copy
     scope_rule: "when editing an items[] row, parent alternating fields are not editable; when editing parent row, item fields are not editable"
     hide_when_editing_alternating:
       - column.id
       - column.width_class
+      - items[active].alternating_image
+      - items[active].alternating_image_alt
       - items[active].alternating_title
       - items[active].alternating_copy
 blueprint:
   label: "dd-alternating"
   show_fields:
+    - alternating_type
+    - alternating_class
     - "items[active].alternating_title"
+    - "items[active].alternating_image"
 ---
 
 ## HTML Template
 
 ```html
-<div class="dd-alternating" role="region">
+<div class="dd-alternating [alternating_type] [alternating_class]" role="region">
   <div class="dd-alternating__items dd-g">
     <!-- repeat: items -->
     <div class="dd-alternating__item dd-u-1-1">
       <div class="dd-alternating__content dd-g">
         <div class="dd-alternating__image dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-aos="[alternating_data_aos]" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
           <picture>
-            <img src="[atlernating_image]" class="dd-img" alt="[atlernating_image_alt]" />
+            <img src="[alternating_image]" class="dd-img" alt="[alternating_image_alt]" />
           </picture>
         </div>
         <div class="dd-alternating__copy l-box dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-aos="[alternating_data_aos]" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
           <div class="dd-alternating__title">
-            <h2>[atlernating_title]</h2>
+            <h2>[alternating_title]</h2>
           </div>
           <div class="dd-alternating__body">
-            [atlernating_copy]
+            [alternating_copy]
           </div>
         </div>
       </div>

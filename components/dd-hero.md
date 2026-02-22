@@ -6,7 +6,7 @@ insert:
   defaults:
     hero_class: "-full-full"
     hero_data_aos: "fade-in"
-    image: "/assets/images/hero.jpg"
+    image: "https://dummyimage.com/1920x1080/000/fff"
     title: "Build with dd-framework"
     subtitle: "Framework-native static page builder"
     copy: "Compose pages with typed component schemas."

@@ -72,6 +72,7 @@ struct App {
     show_help: bool,
     expanded_sections: HashSet<(usize, usize)>,
     expanded_accordion_items: HashSet<(usize, usize, usize, usize)>,
+    expanded_alternating_items: HashSet<(usize, usize, usize, usize)>,
 }
 
 struct ComponentPickerState {
@@ -115,6 +116,13 @@ enum InputMode {
     EditAccordionGroupName,
     EditAccordionFirstTitle,
     EditAccordionFirstContent,
+    EditAlternatingType,
+    EditAlternatingClass,
+    EditAlternatingDataAos,
+    EditAlternatingItemImage,
+    EditAlternatingItemImageAlt,
+    EditAlternatingItemTitle,
+    EditAlternatingItemCopy,
     EditModalTitle,
     EditModalContent,
     EditSliderFirstTitle,
@@ -133,6 +141,7 @@ enum ComponentKind {
     Banner,
     Tabs,
     Accordion,
+    Alternating,
     Cta,
     Modal,
     Slider,
@@ -199,6 +208,12 @@ enum NodeTreeKind {
         component_idx: usize,
         item_idx: usize,
     },
+    AlternatingItem {
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+        item_idx: usize,
+    },
 }
 
 impl App {
@@ -228,6 +243,7 @@ impl App {
             show_help: false,
             expanded_sections: HashSet::new(),
             expanded_accordion_items: HashSet::new(),
+            expanded_alternating_items: HashSet::new(),
         }
     }
 
@@ -343,7 +359,7 @@ impl App {
         frame.render_widget(details, main[1]);
 
         let footer_text = format!(
-            "F1 help | q quit | s save | / insert | Enter edit | Space expand/collapse | A add accordion item | X remove accordion item | {}",
+            "F1 help | q quit | s save | / insert | Enter edit | Space expand/collapse | A add collection item | X remove collection item | {}",
             self.status
         );
         let footer = Paragraph::new(footer_text)
@@ -602,8 +618,8 @@ impl App {
                 KeyCode::Char(')') => self.move_selected_column_down(),
                 KeyCode::Char('r') => self.begin_edit_selected_column_id(),
                 KeyCode::Char('f') => self.begin_edit_selected_column_width_class(),
-                KeyCode::Char('A') => self.add_selected_accordion_item(),
-                KeyCode::Char('X') => self.remove_selected_accordion_item(),
+                KeyCode::Char('A') => self.add_selected_collection_item(),
+                KeyCode::Char('X') => self.remove_selected_collection_item(),
                 _ => {}
             },
             Event::Mouse(m) => match m.kind {
@@ -680,6 +696,22 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
+                    Some(InputMode::EditAlternatingType) => {
+                        self.cycle_alternating_type(false);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditAlternatingType)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditAlternatingDataAos) => {
+                        self.cycle_alternating_data_aos(false);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditAlternatingDataAos)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
                     Some(InputMode::EditAccordionType) => {
                         self.cycle_accordion_type(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditAccordionType)
@@ -739,6 +771,22 @@ impl App {
                     Some(InputMode::EditAlertDataAos) => {
                         self.cycle_alert_data_aos(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditAlertDataAos)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditAlternatingType) => {
+                        self.cycle_alternating_type(true);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditAlternatingType)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditAlternatingDataAos) => {
+                        self.cycle_alternating_data_aos(true);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditAlternatingDataAos)
                         {
                             self.input_buffer = v;
                         }
@@ -842,6 +890,35 @@ impl App {
                 InputMode::EditAccordionClass,
                 InputMode::EditAccordionAos,
                 InputMode::EditAccordionGroupName,
+            ]);
+        }
+        let alternating_mode = matches!(
+            mode,
+            InputMode::EditAlternatingType
+                | InputMode::EditAlternatingClass
+                | InputMode::EditAlternatingDataAos
+                | InputMode::EditAlternatingItemImage
+                | InputMode::EditAlternatingItemImageAlt
+                | InputMode::EditAlternatingItemTitle
+                | InputMode::EditAlternatingItemCopy
+        );
+        if alternating_mode {
+            let rows = self.build_node_tree_rows();
+            let row_kind = rows
+                .get(self.selected_tree_row.min(rows.len().saturating_sub(1)))
+                .map(|r| r.kind);
+            if matches!(row_kind, Some(NodeTreeKind::AlternatingItem { .. })) {
+                return Some(vec![
+                    InputMode::EditAlternatingItemImage,
+                    InputMode::EditAlternatingItemImageAlt,
+                    InputMode::EditAlternatingItemTitle,
+                    InputMode::EditAlternatingItemCopy,
+                ]);
+            }
+            return Some(vec![
+                InputMode::EditAlternatingType,
+                InputMode::EditAlternatingClass,
+                InputMode::EditAlternatingDataAos,
             ]);
         }
         component_edit_group_for_mode(mode).map(|modes| modes.to_vec())
@@ -1058,6 +1135,27 @@ impl App {
             }
             InputMode::EditAlertCopy => {
                 "Editing dd-alert copy. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlternatingType => {
+                "Editing dd-alternating type. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlternatingClass => {
+                "Editing dd-alternating class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlternatingDataAos => {
+                "Editing dd-alternating data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlternatingItemImage => {
+                "Editing dd-alternating item image. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlternatingItemImageAlt => {
+                "Editing dd-alternating item image alt. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlternatingItemTitle => {
+                "Editing dd-alternating item title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlternatingItemCopy => {
+                "Editing dd-alternating item copy. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditBannerMessage => {
                 "Editing dd-banner message. Enter to save, esc to cancel.".to_string()
@@ -1438,6 +1536,130 @@ impl App {
                     "Section has no components.".to_string()
                 }
             }
+            (PageNode::Section(v), InputMode::EditAlternatingType) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.components[ci]
+                    {
+                        if let Some(vt) = parse_alternating_type(value.as_str()) {
+                            alt.alternating_type = vt;
+                            applied = true;
+                            "Updated dd-alternating type.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-alternating type option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-alternating.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditAlternatingClass) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.components[ci]
+                    {
+                        alt.alternating_class = value;
+                        applied = true;
+                        "Updated dd-alternating class.".to_string()
+                    } else {
+                        "Selected component is not dd-alternating.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditAlternatingDataAos) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.components[ci]
+                    {
+                        if let Some(va) = parse_hero_aos(value.as_str()) {
+                            alt.alternating_data_aos = va;
+                            applied = true;
+                            "Updated dd-alternating data-aos.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-alternating data-aos option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-alternating.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditAlternatingItemImage) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.components[ci]
+                    {
+                        if let Some(ni) = nested_index(alt.items.len(), selected_nested_item) {
+                            alt.items[ni].image = value;
+                            applied = true;
+                            format!("Updated dd-alternating item {} image.", ni + 1)
+                        } else {
+                            "dd-alternating has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-alternating.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditAlternatingItemImageAlt) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.components[ci]
+                    {
+                        if let Some(ni) = nested_index(alt.items.len(), selected_nested_item) {
+                            alt.items[ni].image_alt = value;
+                            applied = true;
+                            format!("Updated dd-alternating item {} image alt.", ni + 1)
+                        } else {
+                            "dd-alternating has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-alternating.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditAlternatingItemTitle) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.components[ci]
+                    {
+                        if let Some(ni) = nested_index(alt.items.len(), selected_nested_item) {
+                            alt.items[ni].title = value;
+                            applied = true;
+                            format!("Updated dd-alternating item {} title.", ni + 1)
+                        } else {
+                            "dd-alternating has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-alternating.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditAlternatingItemCopy) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.components[ci]
+                    {
+                        if let Some(ni) = nested_index(alt.items.len(), selected_nested_item) {
+                            alt.items[ni].copy = value;
+                            applied = true;
+                            format!("Updated dd-alternating item {} copy.", ni + 1)
+                        } else {
+                            "dd-alternating has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-alternating.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
             (PageNode::Section(v), InputMode::EditBannerMessage) => {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Banner(banner) = &mut v.components[ci] {
@@ -1813,6 +2035,26 @@ impl App {
                                         }
                                     }
                                 }
+                                if let Some(crate::model::SectionComponent::Alternating(alt)) =
+                                    col.components.get(component_idx)
+                                {
+                                    if self.is_alternating_items_expanded(
+                                        node_idx,
+                                        column_idx,
+                                        component_idx,
+                                    ) {
+                                        for (item_idx, _) in alt.items.iter().enumerate() {
+                                            rows.push(NodeTreeRow {
+                                                kind: NodeTreeKind::AlternatingItem {
+                                                    node_idx,
+                                                    column_idx,
+                                                    component_idx,
+                                                    item_idx,
+                                                },
+                                            });
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1874,6 +2116,13 @@ impl App {
                         "[+]"
                     };
                     format!("       - {} {} {}", comp_i + 1, marker, label)
+                } else if matches!(component, crate::model::SectionComponent::Alternating(_)) {
+                    let marker = if self.is_alternating_items_expanded(node_idx, col_i, comp_i) {
+                        "[-]"
+                    } else {
+                        "[+]"
+                    };
+                    format!("       - {} {} {}", comp_i + 1, marker, label)
                 } else {
                     format!("       - {} {}", comp_i + 1, label)
                 }
@@ -1894,6 +2143,44 @@ impl App {
                     columns[col_i].components.get(comp_i)
                 {
                     acc.items
+                        .get(item_idx)
+                        .map(|i| i.title.as_str())
+                        .unwrap_or("(none)")
+                } else {
+                    "(none)"
+                };
+                let marker = if node_idx == self.selected_node
+                    && col_i == self.selected_column
+                    && comp_i == self.selected_component
+                    && item_idx == self.selected_nested_item
+                {
+                    "*"
+                } else {
+                    "-"
+                };
+                format!(
+                    "          {} item {}: {}",
+                    marker,
+                    item_idx + 1,
+                    truncate_ascii(title, 48)
+                )
+            }
+            NodeTreeKind::AlternatingItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                    return format!("          - item {}", item_idx + 1);
+                };
+                let columns = section_columns_ref(section);
+                let col_i = column_idx.min(columns.len().saturating_sub(1));
+                let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
+                let title = if let Some(crate::model::SectionComponent::Alternating(alt)) =
+                    columns[col_i].components.get(comp_i)
+                {
+                    alt.items
                         .get(item_idx)
                         .map(|i| i.title.as_str())
                         .unwrap_or("(none)")
@@ -1963,6 +2250,17 @@ impl App {
                 self.selected_component = component_idx;
                 self.selected_nested_item = item_idx;
             }
+            NodeTreeKind::AlternatingItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                self.selected_node = node_idx;
+                self.selected_column = column_idx;
+                self.selected_component = component_idx;
+                self.selected_nested_item = item_idx;
+            }
         }
     }
 
@@ -1990,6 +2288,17 @@ impl App {
                     && self.selected_nested_item == 0
             }
             NodeTreeKind::AccordionItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                node_idx == self.selected_node
+                    && column_idx == self.selected_column
+                    && component_idx == self.selected_component
+                    && item_idx == self.selected_nested_item
+            }
+            NodeTreeKind::AlternatingItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -2060,6 +2369,35 @@ impl App {
         }
     }
 
+    fn is_alternating_items_expanded(
+        &self,
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+    ) -> bool {
+        !self.expanded_alternating_items.contains(&(
+            self.selected_page,
+            node_idx,
+            column_idx,
+            component_idx,
+        ))
+    }
+
+    fn set_alternating_items_expanded(
+        &mut self,
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+        expanded: bool,
+    ) {
+        let key = (self.selected_page, node_idx, column_idx, component_idx);
+        if expanded {
+            self.expanded_alternating_items.remove(&key);
+        } else {
+            self.expanded_alternating_items.insert(key);
+        }
+    }
+
     fn toggle_selected_tree_expanded(&mut self) {
         let rows = self.build_node_tree_rows();
         if rows.is_empty() {
@@ -2072,6 +2410,12 @@ impl App {
             component_idx,
         }
         | NodeTreeKind::AccordionItem {
+            node_idx,
+            column_idx,
+            component_idx,
+            ..
+        }
+        | NodeTreeKind::AlternatingItem {
             node_idx,
             column_idx,
             component_idx,
@@ -2104,12 +2448,31 @@ impl App {
                 self.sync_tree_row_with_selection();
                 return;
             }
+            if matches!(
+                columns[col_i].components.get(comp_i),
+                Some(crate::model::SectionComponent::Alternating(_))
+            ) {
+                let expanded = self.is_alternating_items_expanded(node_idx, col_i, comp_i);
+                self.set_alternating_items_expanded(node_idx, col_i, comp_i, !expanded);
+                self.selected_node = node_idx;
+                self.selected_column = col_i;
+                self.selected_component = comp_i;
+                self.selected_nested_item = 0;
+                self.status = if expanded {
+                    "Collapsed alternating items.".to_string()
+                } else {
+                    "Expanded alternating items.".to_string()
+                };
+                self.sync_tree_row_with_selection();
+                return;
+            }
         }
         let node_idx = match row.kind {
             NodeTreeKind::Section { node_idx } => node_idx,
             NodeTreeKind::Column { node_idx, .. } => node_idx,
             NodeTreeKind::Component { node_idx, .. } => node_idx,
             NodeTreeKind::AccordionItem { node_idx, .. } => node_idx,
+            NodeTreeKind::AlternatingItem { node_idx, .. } => node_idx,
             NodeTreeKind::Hero { .. } => {
                 self.status = "Selected row is not a section.".to_string();
                 return;
@@ -2147,6 +2510,12 @@ impl App {
             NodeTreeKind::Component { .. } => self.begin_edit_selected_component_primary(),
             NodeTreeKind::AccordionItem { .. } => {
                 if self.set_component_input_mode(InputMode::EditAccordionFirstTitle) {
+                    return;
+                }
+                self.begin_edit_selected_component_primary();
+            }
+            NodeTreeKind::AlternatingItem { .. } => {
+                if self.set_component_input_mode(InputMode::EditAlternatingItemTitle) {
                     return;
                 }
                 self.begin_edit_selected_component_primary();
@@ -2248,6 +2617,13 @@ impl App {
             Some(InputMode::EditAlertDataAos) => "dd-alert.data_aos",
             Some(InputMode::EditAlertTitle) => "dd-alert.title",
             Some(InputMode::EditAlertCopy) => "dd-alert.copy",
+            Some(InputMode::EditAlternatingType) => "dd-alternating.type",
+            Some(InputMode::EditAlternatingClass) => "dd-alternating.class",
+            Some(InputMode::EditAlternatingDataAos) => "dd-alternating.data_aos",
+            Some(InputMode::EditAlternatingItemImage) => "dd-alternating.active.image",
+            Some(InputMode::EditAlternatingItemImageAlt) => "dd-alternating.active.image_alt",
+            Some(InputMode::EditAlternatingItemTitle) => "dd-alternating.active.title",
+            Some(InputMode::EditAlternatingItemCopy) => "dd-alternating.active.copy",
             Some(InputMode::EditBannerMessage) => "dd-banner.message",
             Some(InputMode::EditBannerLinkUrl) => "dd-banner.link_url",
             Some(InputMode::EditTabsFirstTitle) => "dd-tabs.active.title",
@@ -2313,7 +2689,8 @@ impl App {
                         }
                     }
                     Some(NodeTreeKind::Component { .. })
-                    | Some(NodeTreeKind::AccordionItem { .. }) => {
+                    | Some(NodeTreeKind::AccordionItem { .. })
+                    | Some(NodeTreeKind::AlternatingItem { .. }) => {
                         let columns = section_columns_ref(section);
                         if let Some(col) =
                             columns.get(self.selected_column.min(columns.len().saturating_sub(1)))
@@ -2340,6 +2717,69 @@ impl App {
                                         format!("- alert_copy: {}", alert.alert_copy),
                                     ]
                                     .join("\n")
+                                } else if let crate::model::SectionComponent::Alternating(alt) =
+                                    component
+                                {
+                                    match self.input_mode {
+                                        Some(InputMode::EditAlternatingType)
+                                        | Some(InputMode::EditAlternatingClass)
+                                        | Some(InputMode::EditAlternatingDataAos) => vec![
+                                            format!(
+                                                "- alternating_type: {}",
+                                                alternating_type_to_str(alt.alternating_type)
+                                            ),
+                                            format!(
+                                                "- alternating.class: {}",
+                                                alt.alternating_class
+                                            ),
+                                            format!(
+                                                "- alternating.data_aos: {}",
+                                                hero_aos_to_str(alt.alternating_data_aos)
+                                            ),
+                                        ]
+                                        .join("\n"),
+                                        Some(InputMode::EditAlternatingItemImage)
+                                        | Some(InputMode::EditAlternatingItemImageAlt)
+                                        | Some(InputMode::EditAlternatingItemTitle)
+                                        | Some(InputMode::EditAlternatingItemCopy) => {
+                                            let image = nested_index(
+                                                alt.items.len(),
+                                                self.selected_nested_item,
+                                            )
+                                            .and_then(|i| alt.items.get(i))
+                                            .map(|i| i.image.as_str())
+                                            .unwrap_or("(none)");
+                                            let image_alt = nested_index(
+                                                alt.items.len(),
+                                                self.selected_nested_item,
+                                            )
+                                            .and_then(|i| alt.items.get(i))
+                                            .map(|i| i.image_alt.as_str())
+                                            .unwrap_or("(none)");
+                                            let title = nested_index(
+                                                alt.items.len(),
+                                                self.selected_nested_item,
+                                            )
+                                            .and_then(|i| alt.items.get(i))
+                                            .map(|i| i.title.as_str())
+                                            .unwrap_or("(none)");
+                                            let copy = nested_index(
+                                                alt.items.len(),
+                                                self.selected_nested_item,
+                                            )
+                                            .and_then(|i| alt.items.get(i))
+                                            .map(|i| i.copy.as_str())
+                                            .unwrap_or("(none)");
+                                            vec![
+                                                format!("- alternating_image: {}", image),
+                                                format!("- alternating_image_alt: {}", image_alt),
+                                                format!("- alternating_title: {}", title),
+                                                format!("- alternating_copy: {}", copy),
+                                            ]
+                                            .join("\n")
+                                        }
+                                        _ => component_form(component, self.selected_nested_item),
+                                    }
                                 } else if let crate::model::SectionComponent::Accordion(acc) =
                                     component
                                 {
@@ -2497,6 +2937,27 @@ impl App {
             InputMode::EditAlertCopy => {
                 "Editing dd-alert copy. Enter to save, esc to cancel.".to_string()
             }
+            InputMode::EditAlternatingType => {
+                "Editing dd-alternating type. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlternatingClass => {
+                "Editing dd-alternating class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlternatingDataAos => {
+                "Editing dd-alternating data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlternatingItemImage => {
+                "Editing dd-alternating item image. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlternatingItemImageAlt => {
+                "Editing dd-alternating item image alt. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlternatingItemTitle => {
+                "Editing dd-alternating item title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlternatingItemCopy => {
+                "Editing dd-alternating item copy. Enter to save, esc to cancel.".to_string()
+            }
             InputMode::EditBannerMessage => {
                 "Editing dd-banner message. Enter to save, esc to cancel.".to_string()
             }
@@ -2645,6 +3106,43 @@ impl App {
             }
             (InputMode::EditAlertCopy, crate::model::SectionComponent::Alert(v)) => {
                 Some(v.alert_copy.clone())
+            }
+            (InputMode::EditAlternatingType, crate::model::SectionComponent::Alternating(v)) => {
+                Some(alternating_type_to_str(v.alternating_type).to_string())
+            }
+            (InputMode::EditAlternatingClass, crate::model::SectionComponent::Alternating(v)) => {
+                Some(v.alternating_class.clone())
+            }
+            (InputMode::EditAlternatingDataAos, crate::model::SectionComponent::Alternating(v)) => {
+                Some(hero_aos_to_str(v.alternating_data_aos).to_string())
+            }
+            (
+                InputMode::EditAlternatingItemImage,
+                crate::model::SectionComponent::Alternating(v),
+            ) => {
+                let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                Some(v.items[ni].image.clone())
+            }
+            (
+                InputMode::EditAlternatingItemImageAlt,
+                crate::model::SectionComponent::Alternating(v),
+            ) => {
+                let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                Some(v.items[ni].image_alt.clone())
+            }
+            (
+                InputMode::EditAlternatingItemTitle,
+                crate::model::SectionComponent::Alternating(v),
+            ) => {
+                let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                Some(v.items[ni].title.clone())
+            }
+            (
+                InputMode::EditAlternatingItemCopy,
+                crate::model::SectionComponent::Alternating(v),
+            ) => {
+                let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                Some(v.items[ni].copy.clone())
             }
             (InputMode::EditBannerMessage, crate::model::SectionComponent::Banner(v)) => {
                 Some(v.message.clone())
@@ -3082,6 +3580,24 @@ impl App {
         );
     }
 
+    fn cycle_alternating_type(&mut self, forward: bool) {
+        self.mutate_selected_alternating(
+            |a| {
+                a.alternating_type = next_alternating_type(a.alternating_type, forward);
+            },
+            "Cycled dd-alternating type.",
+        );
+    }
+
+    fn cycle_alternating_data_aos(&mut self, forward: bool) {
+        self.mutate_selected_alternating(
+            |a| {
+                a.alternating_data_aos = next_hero_aos(a.alternating_data_aos, forward);
+            },
+            "Cycled dd-alternating data-aos.",
+        );
+    }
+
     fn mutate_selected_alert<F>(&mut self, mutator: F, success_message: &str)
     where
         F: FnOnce(&mut crate::model::DdAlert),
@@ -3108,6 +3624,42 @@ impl App {
                         success_message.to_string()
                     } else {
                         "Selected component is not dd-alert.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            _ => "Selected node is not a section.".to_string(),
+        };
+        self.status = result;
+    }
+
+    fn mutate_selected_alternating<F>(&mut self, mutator: F, success_message: &str)
+    where
+        F: FnOnce(&mut crate::model::DdAlternating),
+    {
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut components[ci] {
+                        mutator(alt);
+                        success_message.to_string()
+                    } else {
+                        "Selected component is not dd-alternating.".to_string()
                     }
                 } else {
                     "Section has no components.".to_string()
@@ -3181,6 +3733,42 @@ impl App {
             _ => "Selected node is not a section.".to_string(),
         };
         self.status = result;
+    }
+
+    fn add_selected_collection_item(&mut self) {
+        let component = self.selected_component_owned();
+        match component {
+            Some(crate::model::SectionComponent::Accordion(_)) => {
+                self.add_selected_accordion_item()
+            }
+            Some(crate::model::SectionComponent::Alternating(_)) => {
+                self.add_selected_alternating_item()
+            }
+            Some(_) => {
+                self.status = "Selected component does not support collection items.".to_string();
+            }
+            None => {
+                self.status = "No selected collection component.".to_string();
+            }
+        }
+    }
+
+    fn remove_selected_collection_item(&mut self) {
+        let component = self.selected_component_owned();
+        match component {
+            Some(crate::model::SectionComponent::Accordion(_)) => {
+                self.remove_selected_accordion_item()
+            }
+            Some(crate::model::SectionComponent::Alternating(_)) => {
+                self.remove_selected_alternating_item()
+            }
+            Some(_) => {
+                self.status = "Selected component does not support collection items.".to_string();
+            }
+            None => {
+                self.status = "No selected collection component.".to_string();
+            }
+        }
     }
 
     fn add_selected_accordion_item(&mut self) {
@@ -3295,6 +3883,130 @@ impl App {
             self.selected_component = component_idx;
             self.selected_nested_item = item_idx;
             self.set_accordion_items_expanded(node_idx, column_idx, component_idx, true);
+        }
+        self.status = result.1;
+    }
+
+    fn add_selected_alternating_item(&mut self) {
+        let rows = self.build_node_tree_rows();
+        if rows.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let preferred_insert_after = match row.kind {
+            NodeTreeKind::AlternatingItem { item_idx, .. } => Some(item_idx),
+            _ => None,
+        };
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut components[ci] {
+                        let insert_idx = preferred_insert_after
+                            .map(|i| (i + 1).min(alt.items.len()))
+                            .unwrap_or(alt.items.len());
+                        let next_num = alt.items.len() + 1;
+                        alt.items.insert(
+                            insert_idx,
+                            crate::model::AlternatingItem {
+                                image: "https://dummyimage.com/600x400/000/fff".to_string(),
+                                image_alt: format!("Alternating image {}", next_num),
+                                title: format!("Alternating Item {}", next_num),
+                                copy: "Alternating content".to_string(),
+                            },
+                        );
+                        (
+                            Some((ni, col_i, ci, insert_idx)),
+                            format!("Added alternating item {}.", insert_idx + 1),
+                        )
+                    } else {
+                        (
+                            None,
+                            "Selected component is not dd-alternating.".to_string(),
+                        )
+                    }
+                } else {
+                    (None, "Section has no components.".to_string())
+                }
+            }
+            _ => (None, "Selected node is not a section.".to_string()),
+        };
+        if let Some((node_idx, column_idx, component_idx, item_idx)) = result.0 {
+            self.selected_node = node_idx;
+            self.selected_column = column_idx;
+            self.selected_component = component_idx;
+            self.selected_nested_item = item_idx;
+            self.set_alternating_items_expanded(node_idx, column_idx, component_idx, true);
+        }
+        self.status = result.1;
+    }
+
+    fn remove_selected_alternating_item(&mut self) {
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let selected_nested_item = self.selected_nested_item;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut components[ci] {
+                        if alt.items.len() <= 1 {
+                            (
+                                None,
+                                "dd-alternating must keep at least one item.".to_string(),
+                            )
+                        } else {
+                            let remove_idx = selected_nested_item.min(alt.items.len() - 1);
+                            alt.items.remove(remove_idx);
+                            let next_item_idx = remove_idx.min(alt.items.len() - 1);
+                            (
+                                Some((ni, col_i, ci, next_item_idx)),
+                                format!("Removed alternating item {}.", remove_idx + 1),
+                            )
+                        }
+                    } else {
+                        (
+                            None,
+                            "Selected component is not dd-alternating.".to_string(),
+                        )
+                    }
+                } else {
+                    (None, "Section has no components.".to_string())
+                }
+            }
+            _ => (None, "Selected node is not a section.".to_string()),
+        };
+        if let Some((node_idx, column_idx, component_idx, item_idx)) = result.0 {
+            self.selected_node = node_idx;
+            self.selected_column = column_idx;
+            self.selected_component = component_idx;
+            self.selected_nested_item = item_idx;
+            self.set_alternating_items_expanded(node_idx, column_idx, component_idx, true);
         }
         self.status = result.1;
     }
@@ -3541,6 +4253,10 @@ impl App {
                                     InputMode::EditAccordionType,
                                     accordion_type_to_str(acc.accordion_type).to_string(),
                                 )),
+                                crate::model::SectionComponent::Alternating(alt) => Some((
+                                    InputMode::EditAlternatingType,
+                                    alternating_type_to_str(alt.alternating_type).to_string(),
+                                )),
                                 crate::model::SectionComponent::Modal(modal) => {
                                     Some((InputMode::EditModalTitle, modal.title.clone()))
                                 }
@@ -3618,6 +4334,9 @@ impl App {
             }
             InputMode::EditAccordionFirstTitle => {
                 "Editing dd-accordion first title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlternatingType => {
+                "Editing dd-alternating type. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditModalTitle => {
                 "Editing dd-modal title. Enter to save, esc to cancel.".to_string()
@@ -4128,6 +4847,44 @@ fn next_alert_class(current: crate::model::AlertClass, forward: bool) -> crate::
     all[next_idx]
 }
 
+fn alternating_type_to_str(v: crate::model::AlternatingType) -> &'static str {
+    match v {
+        crate::model::AlternatingType::Default => "-default",
+        crate::model::AlternatingType::Reverse => "-reverse",
+        crate::model::AlternatingType::NoAlternate => "-no-alternate",
+    }
+}
+
+fn parse_alternating_type(raw: &str) -> Option<crate::model::AlternatingType> {
+    match raw.trim() {
+        "-default" => Some(crate::model::AlternatingType::Default),
+        "-reverse" => Some(crate::model::AlternatingType::Reverse),
+        "-no-alternate" => Some(crate::model::AlternatingType::NoAlternate),
+        _ => None,
+    }
+}
+
+fn next_alternating_type(
+    current: crate::model::AlternatingType,
+    forward: bool,
+) -> crate::model::AlternatingType {
+    use crate::model::AlternatingType;
+    let all = [
+        AlternatingType::Default,
+        AlternatingType::Reverse,
+        AlternatingType::NoAlternate,
+    ];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
+}
+
 fn accordion_type_to_str(v: crate::model::AccordionType) -> &'static str {
     match v {
         crate::model::AccordionType::Default => "-default",
@@ -4258,6 +5015,7 @@ fn component_label(component: &crate::model::SectionComponent) -> &'static str {
         crate::model::SectionComponent::Banner(_) => "dd-banner",
         crate::model::SectionComponent::Tabs(_) => "dd-tabs",
         crate::model::SectionComponent::Accordion(_) => "dd-accordion",
+        crate::model::SectionComponent::Alternating(_) => "dd-alternating",
         crate::model::SectionComponent::Cta(_) => "dd-cta",
         crate::model::SectionComponent::Modal(_) => "dd-modal",
         crate::model::SectionComponent::Slider(_) => "dd-slider",
@@ -4273,6 +5031,13 @@ fn component_blueprint_label(component: &crate::model::SectionComponent) -> Stri
         }
         crate::model::SectionComponent::Accordion(v) => format!(
             "dd-accordion | accordion_title: {}",
+            v.items
+                .first()
+                .map(|i| i.title.as_str())
+                .unwrap_or("(none)")
+        ),
+        crate::model::SectionComponent::Alternating(v) => format!(
+            "dd-alternating | alternating_title: {}",
             v.items
                 .first()
                 .map(|i| i.title.as_str())
@@ -4349,6 +5114,38 @@ fn component_form(
                 active,
                 title,
                 content
+            )
+        }
+        crate::model::SectionComponent::Alternating(v) => {
+            let active = nested_index(v.items.len(), selected_nested_item)
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            let image = nested_index(v.items.len(), selected_nested_item)
+                .and_then(|i| v.items.get(i))
+                .map(|i| i.image.as_str())
+                .unwrap_or("(none)");
+            let image_alt = nested_index(v.items.len(), selected_nested_item)
+                .and_then(|i| v.items.get(i))
+                .map(|i| i.image_alt.as_str())
+                .unwrap_or("(none)");
+            let title = nested_index(v.items.len(), selected_nested_item)
+                .and_then(|i| v.items.get(i))
+                .map(|i| i.title.as_str())
+                .unwrap_or("(none)");
+            let copy = nested_index(v.items.len(), selected_nested_item)
+                .and_then(|i| v.items.get(i))
+                .map(|i| i.copy.as_str())
+                .unwrap_or("(none)");
+            format!(
+                "fields:\n  alternating_type: {}\n  alternating.class: {}\n  alternating.data_aos: {}\n  active_item: {}\n  alternating_image: {}\n  alternating_image_alt: {}\n  alternating_title: {}\n  alternating_copy: {}",
+                alternating_type_to_str(v.alternating_type),
+                v.alternating_class,
+                hero_aos_to_str(v.alternating_data_aos),
+                active,
+                image,
+                image_alt,
+                title,
+                copy
             )
         }
         crate::model::SectionComponent::Cta(v) => {
@@ -4807,6 +5604,21 @@ fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]
             InputMode::EditAccordionFirstTitle,
             InputMode::EditAccordionFirstContent,
         ]),
+        InputMode::EditAlternatingType
+        | InputMode::EditAlternatingClass
+        | InputMode::EditAlternatingDataAos
+        | InputMode::EditAlternatingItemImage
+        | InputMode::EditAlternatingItemImageAlt
+        | InputMode::EditAlternatingItemTitle
+        | InputMode::EditAlternatingItemCopy => Some(&[
+            InputMode::EditAlternatingType,
+            InputMode::EditAlternatingClass,
+            InputMode::EditAlternatingDataAos,
+            InputMode::EditAlternatingItemImage,
+            InputMode::EditAlternatingItemImageAlt,
+            InputMode::EditAlternatingItemTitle,
+            InputMode::EditAlternatingItemCopy,
+        ]),
         InputMode::EditModalTitle | InputMode::EditModalContent => {
             Some(&[InputMode::EditModalTitle, InputMode::EditModalContent])
         }
@@ -4834,9 +5646,9 @@ fn help_text() -> String {
         "Node navigation and edits:",
         "  Up/Down or mouse wheel: Select row in Nodes tree",
         "  Enter: Edit selected row",
-        "  Space: Expand/collapse selected section or accordion items",
+        "  Space: Expand/collapse selected section or accordion/alternating items",
         "  /: Open insert fuzzy finder (hero/section/components)",
-        "  A / X: Add/remove dd-accordion item on selected accordion",
+        "  A / X: Add/remove dd-accordion or dd-alternating item",
         "  d: Delete selected node",
         "  J / K: Move selected node down / up",
         "",
@@ -4850,7 +5662,7 @@ fn help_text() -> String {
         "Edit modal:",
         "  Any edit command opens a modal with editable fields",
         "  Tab / Shift+Tab: Next/previous editable field for selected hero/section",
-        "  Left / Right: Cycle section/hero/alert/accordion option fields when active",
+        "  Left / Right: Cycle section/hero/alert/accordion/alternating option fields when active",
         "  Enter: Confirm edit",
         "  Esc: Cancel edit",
         "  Backspace: Delete character",
@@ -4868,6 +5680,7 @@ impl ComponentKind {
             Self::Banner,
             Self::Tabs,
             Self::Accordion,
+            Self::Alternating,
             Self::Cta,
             Self::Modal,
             Self::Slider,
@@ -4885,6 +5698,7 @@ impl ComponentKind {
             ComponentKind::Banner => "dd-banner",
             ComponentKind::Tabs => "dd-tabs",
             ComponentKind::Accordion => "dd-accordion",
+            ComponentKind::Alternating => "dd-alternating",
             ComponentKind::Cta => "dd-cta",
             ComponentKind::Modal => "dd-modal",
             ComponentKind::Slider => "dd-slider",
@@ -4950,6 +5764,19 @@ impl ComponentKind {
                         content: "Accordion content".to_string(),
                     }],
                     multiple: Some(false),
+                })
+            }
+            ComponentKind::Alternating => {
+                crate::model::SectionComponent::Alternating(crate::model::DdAlternating {
+                    alternating_type: crate::model::AlternatingType::Default,
+                    alternating_class: "-default".to_string(),
+                    alternating_data_aos: crate::model::HeroAos::FadeIn,
+                    items: vec![crate::model::AlternatingItem {
+                        image: "https://dummyimage.com/600x400/000/fff".to_string(),
+                        image_alt: "Alternating image".to_string(),
+                        title: "Alternating Item".to_string(),
+                        copy: "Alternating content".to_string(),
+                    }],
                 })
             }
             ComponentKind::Cta => crate::model::SectionComponent::Cta(crate::model::DdCta {

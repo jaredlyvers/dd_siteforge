@@ -160,6 +160,28 @@ fn validate_section_component(
                 ));
             }
         }
+        SectionComponent::Alternating(alternating) => {
+            if alternating.items.is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' has dd-alternating with no items.",
+                    page_id, section_id
+                ));
+            }
+            for (idx, item) in alternating.items.iter().enumerate() {
+                if item.image.trim().is_empty()
+                    || item.image_alt.trim().is_empty()
+                    || item.title.trim().is_empty()
+                    || item.copy.trim().is_empty()
+                {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-alternating item {} has missing required fields.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+            }
+        }
         SectionComponent::Banner(banner) => {
             if banner.message.trim().is_empty() {
                 errors.push(format!(

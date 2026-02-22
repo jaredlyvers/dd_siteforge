@@ -79,6 +79,7 @@ pub struct SectionColumn {
 pub enum SectionComponent {
     Card(DdCard),
     Alert(DdAlert),
+    Alternating(DdAlternating),
     Banner(DdBanner),
     Tabs(DdTabs),
     Accordion(DdAccordion),
@@ -114,6 +115,25 @@ pub struct DdAlert {
     pub alert_title: String,
     #[serde(default, alias = "message")]
     pub alert_copy: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DdAlternating {
+    #[serde(default = "default_alternating_type")]
+    pub alternating_type: AlternatingType,
+    #[serde(default = "default_alternating_class")]
+    pub alternating_class: String,
+    #[serde(default = "default_alternating_data_aos")]
+    pub alternating_data_aos: HeroAos,
+    pub items: Vec<AlternatingItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlternatingItem {
+    pub image: String,
+    pub image_alt: String,
+    pub title: String,
+    pub copy: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -183,6 +203,18 @@ fn default_alert_class() -> AlertClass {
 }
 
 fn default_alert_data_aos() -> HeroAos {
+    HeroAos::FadeIn
+}
+
+fn default_alternating_type() -> AlternatingType {
+    AlternatingType::Default
+}
+
+fn default_alternating_class() -> String {
+    "-default".to_string()
+}
+
+fn default_alternating_data_aos() -> HeroAos {
     HeroAos::FadeIn
 }
 
@@ -360,6 +392,16 @@ pub enum AlertClass {
     Default,
     #[serde(rename = "-compact")]
     Compact,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AlternatingType {
+    #[serde(rename = "-default")]
+    Default,
+    #[serde(rename = "-reverse")]
+    Reverse,
+    #[serde(rename = "-no-alternate")]
+    NoAlternate,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

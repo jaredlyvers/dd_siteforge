@@ -6,8 +6,8 @@ use handlebars::Handlebars;
 use serde_json::{Value, json};
 
 use crate::model::{
-    DdAccordion, DdAlert, DdBanner, DdCard, DdCta, DdHero, DdModal, DdSection, DdSlider, DdTabs,
-    DdTimeline, Page, PageNode, SectionColumn, SectionComponent, Site,
+    DdAccordion, DdAlert, DdAlternating, DdBanner, DdCard, DdCta, DdHero, DdModal, DdSection,
+    DdSlider, DdTabs, DdTimeline, Page, PageNode, SectionColumn, SectionComponent, Site,
 };
 
 const PAGE_TEMPLATE: &str = r#"<!DOCTYPE html>
@@ -124,6 +124,7 @@ fn render_section(section: &DdSection) -> anyhow::Result<String> {
             let html = match component {
                 SectionComponent::Card(v) => render_card(v)?,
                 SectionComponent::Alert(v) => render_alert(v)?,
+                SectionComponent::Alternating(v) => render_alternating(v)?,
                 SectionComponent::Banner(v) => render_banner(v)?,
                 SectionComponent::Tabs(v) => render_tabs(v)?,
                 SectionComponent::Accordion(v) => render_accordion(v)?,
@@ -251,6 +252,52 @@ fn render_alert(alert: &DdAlert) -> anyhow::Result<String> {
             "alert_data_aos".to_string(),
             Value::String(
                 serde_json::to_value(alert.alert_data_aos)
+                    .map(|raw| stringify_json(&raw))
+                    .unwrap_or_else(|_| "fade-in".to_string()),
+            ),
+        );
+    }
+    render_inline(template, v)
+}
+
+fn render_alternating(alternating: &DdAlternating) -> anyhow::Result<String> {
+    let template = r#"<div class="dd-alternating {{alternating_type}} {{alternating_class}}" role="region">
+  <div class="dd-alternating__items dd-g">
+    {{#each items}}
+    <div class="dd-alternating__item dd-u-1-1">
+      <div class="dd-alternating__content dd-g">
+        <div class="dd-alternating__image dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-aos="{{../alternating_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+          <picture>
+            <img src="{{image}}" class="dd-img" alt="{{image_alt}}" />
+          </picture>
+        </div>
+        <div class="dd-alternating__copy l-box dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-aos="{{../alternating_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+          <div class="dd-alternating__title">
+            <h2>{{title}}</h2>
+          </div>
+          <div class="dd-alternating__body">
+            {{copy}}
+          </div>
+        </div>
+      </div>
+    </div>
+    {{/each}}
+  </div>
+</div>"#;
+    let mut v = serde_json::to_value(alternating)?;
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert(
+            "alternating_type".to_string(),
+            Value::String(
+                serde_json::to_value(alternating.alternating_type)
+                    .map(|raw| stringify_json(&raw))
+                    .unwrap_or_else(|_| "-default".to_string()),
+            ),
+        );
+        obj.insert(
+            "alternating_data_aos".to_string(),
+            Value::String(
+                serde_json::to_value(alternating.alternating_data_aos)
                     .map(|raw| stringify_json(&raw))
                     .unwrap_or_else(|_| "fade-in".to_string()),
             ),
