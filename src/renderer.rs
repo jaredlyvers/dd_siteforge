@@ -70,8 +70,8 @@ pub fn render_page_html(page: &Page) -> anyhow::Result<String> {
 }
 
 fn render_hero(hero: &DdHero) -> anyhow::Result<String> {
-    let template = r#"<section class="dd-hero" aria-label="Hero section">
-  <div class="dd-hero__image">
+    let template = r#"<section class="dd-hero{{#if hero_class}} {{hero_class}}{{/if}}" aria-label="Introduction">
+  {{#if has_image}}<div class="dd-hero__image {{image_class}}">
     <picture>
       {{#if image_mobile}}<source media="(max-width: 767px)" srcset="{{image_mobile}}">{{/if}}
       {{#if image_tablet}}<source media="(max-width: 1199px)" srcset="{{image_tablet}}">{{/if}}
@@ -79,12 +79,31 @@ fn render_hero(hero: &DdHero) -> anyhow::Result<String> {
       <img src="{{image}}" alt="{{image_alt}}" class="dd-img">
     </picture>
   </div>
-  <div class="dd-hero__content dd-g" data-aos="fade-in">
+  <style>
+    .dd-hero__image {
+      background-image: url('{{bg_mobile}}');
+    }
+    @media only screen and (min-width: 64em) {
+      .dd-hero__image {
+        background-image: url('{{bg_desktop}}');
+      }
+    }
+  </style>{{/if}}
+  <div class="dd-hero__content dd-g" data-aos="{{hero_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
     <div class="dd-hero__copy dd-u-1-1 dd-u-lg-12-24">
       <div class="dd-hero__title"><h1>{{title}}</h1></div>
-      <div class="dd-hero__subtitle"><strong>{{subtitle}}</strong></div>
-      {{#if copy}}<div class="dd-hero__body"><p>{{copy}}</p></div>{{/if}}
-      {{#if cta_text}}<div class="dd-hero__cta"><a href="{{cta_link}}" target="{{cta_target}}" class="dd-button -primary">{{cta_text}}</a></div>{{/if}}
+      {{#if subtitle}}<div class="dd-hero__subtitle"><strong>{{subtitle}}</strong></div>{{/if}}
+      {{#if has_body}}<div class="dd-hero__body">
+        {{#if copy}}<p>{{copy}}</p>{{/if}}
+        {{#if has_links}}<div class="dd-hero__links dd-g">
+          {{#if has_primary_cta}}<div class="dd-hero__link">
+            <a href="{{cta_link}}" target="{{cta_target}}" class="dd-button -primary">{{cta_text}}</a>
+          </div>{{/if}}
+          {{#if has_secondary_cta}}<div class="dd-hero__link">
+            <a href="{{cta_link_2}}" target="{{cta_target_2}}" class="dd-button -ghost">{{cta_text_2}}</a>
+          </div>{{/if}}
+        </div>{{/if}}
+      </div>{{/if}}
     </div>
   </div>
 </section>"#;
@@ -302,19 +321,87 @@ fn hero_to_json(hero: &DdHero) -> Value {
         .and_then(|v| serde_json::to_value(v).ok())
         .map(|v| stringify_json(&v))
         .unwrap_or_else(|| "_self".to_string());
+    let cta_target_2 = hero
+        .cta_target_2
+        .as_ref()
+        .and_then(|v| serde_json::to_value(v).ok())
+        .map(|v| stringify_json(&v))
+        .unwrap_or_else(|| "_self".to_string());
+    let image = hero.image.trim();
+    let subtitle = hero.subtitle.trim();
+    let hero_class = hero
+        .hero_class
+        .as_ref()
+        .and_then(|v| serde_json::to_value(v).ok())
+        .map(|v| stringify_json(&v));
+    let hero_aos = hero
+        .hero_aos
+        .as_ref()
+        .and_then(|v| serde_json::to_value(v).ok())
+        .map(|v| stringify_json(&v))
+        .unwrap_or_else(|| "fade-in".to_string());
+    let has_primary_cta = hero
+        .cta_text
+        .as_deref()
+        .is_some_and(|v| !v.trim().is_empty())
+        && hero
+            .cta_link
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty());
+    let has_secondary_cta = hero
+        .cta_text_2
+        .as_deref()
+        .is_some_and(|v| !v.trim().is_empty())
+        && hero
+            .cta_link_2
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty());
+    let bg_mobile = hero
+        .image_mobile
+        .as_deref()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or(image);
+    let bg_desktop = hero
+        .image_desktop
+        .as_deref()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or(image);
+    let image_class = hero
+        .image_class
+        .as_ref()
+        .and_then(|v| serde_json::to_value(v).ok())
+        .map(|v| stringify_json(&v))
+        .unwrap_or_else(|| "-full-full".to_string());
+    let has_image = !image.is_empty();
+    let has_body = hero.copy.as_deref().is_some_and(|v| !v.trim().is_empty())
+        || has_primary_cta
+        || has_secondary_cta;
 
     json!({
         "image": hero.image,
+        "hero_class": hero_class,
+        "hero_aos": hero_aos,
         "title": hero.title,
-        "subtitle": hero.subtitle,
+        "subtitle": if subtitle.is_empty() { None } else { Some(hero.subtitle.clone()) },
         "copy": hero.copy,
         "cta_text": hero.cta_text,
         "cta_link": hero.cta_link,
         "cta_target": cta_target,
+        "cta_text_2": hero.cta_text_2,
+        "cta_link_2": hero.cta_link_2,
+        "cta_target_2": cta_target_2,
         "image_alt": hero.image_alt.clone().unwrap_or_default(),
         "image_mobile": hero.image_mobile,
         "image_tablet": hero.image_tablet,
-        "image_desktop": hero.image_desktop
+        "image_desktop": hero.image_desktop,
+        "image_class": image_class,
+        "has_image": has_image,
+        "has_body": has_body,
+        "has_links": has_primary_cta || has_secondary_cta,
+        "has_primary_cta": has_primary_cta,
+        "has_secondary_cta": has_secondary_cta,
+        "bg_mobile": bg_mobile,
+        "bg_desktop": bg_desktop
     })
 }
 

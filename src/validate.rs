@@ -23,14 +23,8 @@ pub fn validate_site(site: &Site) -> Vec<String> {
         for node in &page.nodes {
             match node {
                 PageNode::Hero(hero) => {
-                    if hero.image.trim().is_empty() {
-                        errors.push(format!("Page '{}' hero is missing image.", page.id));
-                    }
                     if hero.title.trim().is_empty() {
                         errors.push(format!("Page '{}' hero is missing title.", page.id));
-                    }
-                    if hero.subtitle.trim().is_empty() {
-                        errors.push(format!("Page '{}' hero is missing subtitle.", page.id));
                     }
                     if !hero.image.trim().is_empty()
                         && hero.image_alt.as_deref().unwrap_or("").trim().is_empty()
@@ -49,6 +43,17 @@ pub fn validate_site(site: &Site) -> Vec<String> {
                     if let Some(link) = &hero.cta_link {
                         if !is_valid_url(link) {
                             errors.push(format!("Page '{}' hero CTA link is invalid.", page.id));
+                        }
+                    }
+                    if hero.cta_text_2.is_some() ^ hero.cta_link_2.is_some() {
+                        errors.push(format!(
+                            "Page '{}' hero must provide both cta_text_2 and cta_link_2 together.",
+                            page.id
+                        ));
+                    }
+                    if let Some(link) = &hero.cta_link_2 {
+                        if !is_valid_url(link) {
+                            errors.push(format!("Page '{}' hero secondary CTA link is invalid.", page.id));
                         }
                     }
                 }
@@ -357,8 +362,8 @@ mod tests {
         }
         let errors = validate_site(&site);
         assert!(errors.iter().any(|e| e.contains("missing title")));
-        assert!(errors.iter().any(|e| e.contains("missing subtitle")));
-        assert!(errors.iter().any(|e| e.contains("missing image")));
+        assert!(!errors.iter().any(|e| e.contains("missing subtitle")));
+        assert!(!errors.iter().any(|e| e.contains("missing image")));
     }
 
     #[test]

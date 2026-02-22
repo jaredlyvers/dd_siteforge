@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "id": "site-1",
+  "name": "My Site",
+  "theme": {
+    "primary_color": "#88d9f7",
+    "secondary_color": "#ffca76",
+    "tertiary_color": "#f98971",
+    "support_color": "#46be8c"
+  },
+  "pages": [
+    {
+      "id": "page-home",
+      "slug": "index",
+      "title": "Home",
+      "meta_description": "Starter page",
+      "nodes": [
+        {
+          "node_type": "hero",
+          "image": "/assets/images/hero.jpg",
+          "title": "title",
+          "subtitle": "",
+          "copy": "lorum ipsum copy",
+          "cta_text": "blog",
+          "cta_link": "/blog/",
+          "cta_target": "_self",
+          "cta_text_2": null,
+          "cta_link_2": null,
+          "cta_target_2": "_self",
+          "image_alt": "Decorative hero",
+          "image_mobile": null,
+          "image_tablet": null,
+          "image_desktop": null,
+          "image_class": "-full-full"
+        }
+      ]
+    }
+  ]
+}

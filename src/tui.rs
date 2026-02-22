@@ -80,8 +80,16 @@ struct ComponentPickerState {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum InputMode {
+    EditHeroImage,
+    EditHeroClass,
+    EditHeroAos,
     EditHeroTitle,
     EditHeroSubtitle,
+    EditHeroCopy,
+    EditHeroCtaText,
+    EditHeroCtaLink,
+    EditHeroCtaText2,
+    EditHeroCtaLink2,
     EditSectionId,
     EditColumnId,
     EditColumnWidthClass,
@@ -594,8 +602,6 @@ impl App {
                 KeyCode::Char('}') => self.move_selected_nested_item_down(),
                 KeyCode::Char('i') => self.add_nested_item_to_selected_component(),
                 KeyCode::Char('o') => self.remove_nested_item_from_selected_component(),
-                KeyCode::Char('e') => self.begin_edit_selected(),
-                KeyCode::Char('u') => self.begin_edit_hero_subtitle(),
                 KeyCode::Char('m') => self.begin_edit_selected_component_primary(),
                 KeyCode::Char('l') => self.begin_edit_selected_component_secondary(),
                 _ => {}
@@ -635,6 +641,44 @@ impl App {
                     self.tab_prev_component_field();
                     self.sync_tree_row_with_selection();
                 }
+                KeyCode::Left => {
+                    match self.input_mode {
+                        Some(InputMode::EditHeroClass) => {
+                            self.cycle_hero_class(false);
+                            if let Some(v) = self.value_for_component_mode(InputMode::EditHeroClass)
+                            {
+                                self.input_buffer = v;
+                            }
+                        }
+                        Some(InputMode::EditHeroAos) => {
+                            self.cycle_hero_aos(false);
+                            if let Some(v) = self.value_for_component_mode(InputMode::EditHeroAos)
+                            {
+                                self.input_buffer = v;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                KeyCode::Right => {
+                    match self.input_mode {
+                        Some(InputMode::EditHeroClass) => {
+                            self.cycle_hero_class(true);
+                            if let Some(v) = self.value_for_component_mode(InputMode::EditHeroClass)
+                            {
+                                self.input_buffer = v;
+                            }
+                        }
+                        Some(InputMode::EditHeroAos) => {
+                            self.cycle_hero_aos(true);
+                            if let Some(v) = self.value_for_component_mode(InputMode::EditHeroAos)
+                            {
+                                self.input_buffer = v;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 KeyCode::Backspace => {
                     self.input_buffer.pop();
                 }
@@ -660,8 +704,8 @@ impl App {
             return;
         };
         let Some(group) = component_edit_group_for_mode(current) else {
-            self.status =
-                "Tab field navigation is available while editing a component.".to_string();
+            self.status = "Tab field navigation is available while editing hero/component fields."
+                .to_string();
             return;
         };
         let Some(idx) = group.iter().position(|m| *m == current) else {
@@ -810,7 +854,7 @@ impl App {
             } else {
                 let idx = self.selected_node.min(page.nodes.len() - 1);
                 Some(match &page.nodes[idx] {
-                    PageNode::Hero(v) => (InputMode::EditHeroTitle, v.title.clone()),
+                    PageNode::Hero(v) => (InputMode::EditHeroImage, v.image.clone()),
                     PageNode::Section(v) => (InputMode::EditSectionId, v.id.clone()),
                 })
             }
@@ -824,11 +868,35 @@ impl App {
         self.input_mode = Some(mode);
         self.input_buffer = value;
         self.status = match mode {
+            InputMode::EditHeroImage => {
+                "Editing hero image URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroClass => {
+                "Editing hero default class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroAos => {
+                "Editing hero data-aos option. Enter to save, esc to cancel.".to_string()
+            }
             InputMode::EditHeroTitle => {
                 "Editing hero title. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditHeroSubtitle => {
                 "Editing hero subtitle. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroCopy => {
+                "Editing hero copy. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroCtaText => {
+                "Editing hero primary link text. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroCtaLink => {
+                "Editing hero primary link URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroCtaText2 => {
+                "Editing hero secondary link text. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroCtaLink2 => {
+                "Editing hero secondary link URL. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditSectionId => {
                 "Editing section id. Enter to save, esc to cancel.".to_string()
@@ -901,28 +969,6 @@ impl App {
         };
     }
 
-    fn begin_edit_hero_subtitle(&mut self) {
-        let selected = {
-            let page = self.current_page();
-            if page.nodes.is_empty() {
-                None
-            } else {
-                let idx = self.selected_node.min(page.nodes.len() - 1);
-                match &page.nodes[idx] {
-                    PageNode::Hero(v) => Some((InputMode::EditHeroSubtitle, v.subtitle.clone())),
-                    PageNode::Section(_) => None,
-                }
-            }
-        };
-        let Some((mode, value)) = selected else {
-            self.status = "Selected node is not a hero.".to_string();
-            return;
-        };
-        self.input_mode = Some(mode);
-        self.input_buffer = value;
-        self.status = "Editing hero subtitle. Enter to save, esc to cancel.".to_string();
-    }
-
     fn begin_edit_selected_column_id(&mut self) {
         let selected = {
             let page = self.current_page();
@@ -984,7 +1030,18 @@ impl App {
             return false;
         };
         let value = self.input_buffer.trim().to_string();
-        if value.is_empty() {
+        let allow_empty = matches!(
+            mode,
+            InputMode::EditHeroImage
+                | InputMode::EditHeroClass
+                | InputMode::EditHeroSubtitle
+                | InputMode::EditHeroCopy
+                | InputMode::EditHeroCtaText
+                | InputMode::EditHeroCtaLink
+                | InputMode::EditHeroCtaText2
+                | InputMode::EditHeroCtaLink2
+        );
+        if value.is_empty() && !allow_empty {
             self.status = "Value cannot be empty.".to_string();
             return false;
         }
@@ -1008,6 +1065,33 @@ impl App {
             pull_selected_column_into_legacy_components(section, selected_column);
         }
         status = match (&mut page.nodes[idx], mode) {
+            (PageNode::Hero(v), InputMode::EditHeroImage) => {
+                v.image = value;
+                applied = true;
+                "Updated hero image.".to_string()
+            }
+            (PageNode::Hero(v), InputMode::EditHeroClass) => {
+                let parsed = parse_hero_image_class(value.as_str());
+                if let Some(hero_class) = parsed {
+                    v.hero_class = Some(hero_class);
+                    applied = true;
+                    "Updated hero default class.".to_string()
+                } else {
+                    clear_input = false;
+                    "Invalid hero class option.".to_string()
+                }
+            }
+            (PageNode::Hero(v), InputMode::EditHeroAos) => {
+                let parsed = parse_hero_aos(value.as_str());
+                if let Some(aos) = parsed {
+                    v.hero_aos = Some(aos);
+                    applied = true;
+                    "Updated hero data-aos option.".to_string()
+                } else {
+                    clear_input = false;
+                    "Invalid hero data-aos option.".to_string()
+                }
+            }
             (PageNode::Hero(v), InputMode::EditHeroTitle) => {
                 v.title = value;
                 applied = true;
@@ -1017,6 +1101,31 @@ impl App {
                 v.subtitle = value;
                 applied = true;
                 "Updated hero subtitle.".to_string()
+            }
+            (PageNode::Hero(v), InputMode::EditHeroCopy) => {
+                v.copy = if value.is_empty() { None } else { Some(value) };
+                applied = true;
+                "Updated hero copy.".to_string()
+            }
+            (PageNode::Hero(v), InputMode::EditHeroCtaText) => {
+                v.cta_text = if value.is_empty() { None } else { Some(value) };
+                applied = true;
+                "Updated hero primary link text.".to_string()
+            }
+            (PageNode::Hero(v), InputMode::EditHeroCtaLink) => {
+                v.cta_link = if value.is_empty() { None } else { Some(value) };
+                applied = true;
+                "Updated hero primary link URL.".to_string()
+            }
+            (PageNode::Hero(v), InputMode::EditHeroCtaText2) => {
+                v.cta_text_2 = if value.is_empty() { None } else { Some(value) };
+                applied = true;
+                "Updated hero secondary link text.".to_string()
+            }
+            (PageNode::Hero(v), InputMode::EditHeroCtaLink2) => {
+                v.cta_link_2 = if value.is_empty() { None } else { Some(value) };
+                applied = true;
+                "Updated hero secondary link URL.".to_string()
             }
             (PageNode::Section(v), InputMode::EditSectionId) => {
                 v.id = value;
@@ -1663,8 +1772,16 @@ impl App {
 
     fn current_input_mode_label(&self) -> &'static str {
         match self.input_mode {
+            Some(InputMode::EditHeroImage) => "hero.image",
+            Some(InputMode::EditHeroClass) => "hero.class",
+            Some(InputMode::EditHeroAos) => "hero.data_aos",
             Some(InputMode::EditHeroTitle) => "hero.title",
             Some(InputMode::EditHeroSubtitle) => "hero.subtitle",
+            Some(InputMode::EditHeroCopy) => "hero.copy",
+            Some(InputMode::EditHeroCtaText) => "hero.link_1.text",
+            Some(InputMode::EditHeroCtaLink) => "hero.link_1.url",
+            Some(InputMode::EditHeroCtaText2) => "hero.link_2.text",
+            Some(InputMode::EditHeroCtaLink2) => "hero.link_2.url",
             Some(InputMode::EditSectionId) => "section.id",
             Some(InputMode::EditColumnId) => "section.column.id",
             Some(InputMode::EditColumnWidthClass) => "section.column.width_class",
@@ -1699,8 +1816,17 @@ impl App {
         let ni = self.selected_node.min(page.nodes.len().saturating_sub(1));
         match &page.nodes[ni] {
             PageNode::Hero(v) => format!(
-                "- hero.title: {}\n- hero.subtitle: {}\n- hero.image: {}",
-                v.title, v.subtitle, v.image
+                "- hero.image: {}\n- hero.class: {}\n- hero.data_aos: {}\n- hero.title: {}\n- hero.subtitle: {}\n- hero.copy: {}\n- hero.link_1.text: {}\n- hero.link_1.url: {}\n- hero.link_2.text: {}\n- hero.link_2.url: {}",
+                v.image,
+                hero_image_class_to_str(v.hero_class.unwrap_or(crate::model::HeroImageClass::FullFull)),
+                hero_aos_to_str(v.hero_aos.unwrap_or(crate::model::HeroAos::FadeIn)),
+                v.title,
+                v.subtitle,
+                v.copy.as_deref().unwrap_or("(none)"),
+                v.cta_text.as_deref().unwrap_or("(none)"),
+                v.cta_link.as_deref().unwrap_or("(none)"),
+                v.cta_text_2.as_deref().unwrap_or("(none)"),
+                v.cta_link_2.as_deref().unwrap_or("(none)")
             ),
             PageNode::Section(section) => {
                 let mut lines = vec![
@@ -1742,6 +1868,36 @@ impl App {
         self.input_mode = Some(mode);
         self.input_buffer = value;
         self.status = match mode {
+            InputMode::EditHeroImage => {
+                "Editing hero image URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroClass => {
+                "Editing hero default class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroAos => {
+                "Editing hero data-aos option. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroTitle => {
+                "Editing hero title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroSubtitle => {
+                "Editing hero subtitle. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroCopy => {
+                "Editing hero copy. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroCtaText => {
+                "Editing hero primary link text. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroCtaLink => {
+                "Editing hero primary link URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroCtaText2 => {
+                "Editing hero secondary link text. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroCtaLink2 => {
+                "Editing hero secondary link URL. Enter to save, esc to cancel.".to_string()
+            }
             InputMode::EditCardTitle => {
                 "Editing dd-card title. Enter to save, esc to cancel.".to_string()
             }
@@ -1806,6 +1962,47 @@ impl App {
     }
 
     fn value_for_component_mode(&self, mode: InputMode) -> Option<String> {
+        let page = self.current_page();
+        if !page.nodes.is_empty() {
+            let ni = self.selected_node.min(page.nodes.len().saturating_sub(1));
+            if let PageNode::Hero(hero) = &page.nodes[ni] {
+                match mode {
+                    InputMode::EditHeroImage => return Some(hero.image.clone()),
+                    InputMode::EditHeroClass => {
+                        return Some(hero_image_class_to_str(
+                            hero.hero_class
+                                .unwrap_or(crate::model::HeroImageClass::FullFull),
+                        )
+                        .to_string());
+                    }
+                    InputMode::EditHeroAos => {
+                        return Some(
+                            hero_aos_to_str(hero.hero_aos.unwrap_or(crate::model::HeroAos::FadeIn))
+                                .to_string(),
+                        );
+                    }
+                    InputMode::EditHeroTitle => return Some(hero.title.clone()),
+                    InputMode::EditHeroSubtitle => return Some(hero.subtitle.clone()),
+                    InputMode::EditHeroCopy => {
+                        return Some(hero.copy.clone().unwrap_or_default());
+                    }
+                    InputMode::EditHeroCtaText => {
+                        return Some(hero.cta_text.clone().unwrap_or_default());
+                    }
+                    InputMode::EditHeroCtaLink => {
+                        return Some(hero.cta_link.clone().unwrap_or_default());
+                    }
+                    InputMode::EditHeroCtaText2 => {
+                        return Some(hero.cta_text_2.clone().unwrap_or_default());
+                    }
+                    InputMode::EditHeroCtaLink2 => {
+                        return Some(hero.cta_link_2.clone().unwrap_or_default());
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         let component = self.selected_component_owned()?;
         match (mode, component) {
             (InputMode::EditCardTitle, crate::model::SectionComponent::Card(v)) => {
@@ -2010,16 +2207,22 @@ impl App {
         };
         let hero = crate::model::DdHero {
             image: "/assets/images/hero-new.jpg".to_string(),
+            hero_class: Some(crate::model::HeroImageClass::FullFull),
+            hero_aos: Some(crate::model::HeroAos::FadeIn),
             title: "New Hero".to_string(),
             subtitle: "Add subtitle".to_string(),
             copy: None,
             cta_text: None,
             cta_link: None,
             cta_target: Some(crate::model::CtaTarget::SelfTarget),
+            cta_text_2: None,
+            cta_link_2: None,
+            cta_target_2: Some(crate::model::CtaTarget::SelfTarget),
             image_alt: Some("Hero image".to_string()),
             image_mobile: None,
             image_tablet: None,
             image_desktop: None,
+            image_class: Some(crate::model::HeroImageClass::FullFull),
         };
         let idx = Self::selected_index_for_page(page, selected)
             .map(|v| v + 1)
@@ -2290,6 +2493,59 @@ impl App {
             },
             "Cycled section alignment.",
         );
+    }
+
+    fn cycle_hero_class(&mut self, forward: bool) {
+        let selected = self.selected_node;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected hero.".to_string();
+            return;
+        }
+        let idx = selected.min(page.nodes.len() - 1);
+        match &mut page.nodes[idx] {
+            PageNode::Hero(hero) => {
+                let current = hero
+                    .hero_class
+                    .unwrap_or(crate::model::HeroImageClass::FullFull);
+                let next = next_hero_image_class(current, forward);
+                hero.hero_class = Some(next);
+                self.status = format!(
+                    "Hero default class: {}",
+                    hero_image_class_to_str(next)
+                );
+            }
+            _ => {
+                self.status = "Left/Right hero class cycling works on a selected hero row."
+                    .to_string();
+            }
+        }
+    }
+
+    fn cycle_hero_aos(&mut self, forward: bool) {
+        let selected = self.selected_node;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected hero.".to_string();
+            return;
+        }
+        let idx = selected.min(page.nodes.len() - 1);
+        match &mut page.nodes[idx] {
+            PageNode::Hero(hero) => {
+                let current = hero.hero_aos.unwrap_or(crate::model::HeroAos::FadeIn);
+                let next = next_hero_aos(current, forward);
+                hero.hero_aos = Some(next);
+                self.status = format!("Hero data-aos: {}", hero_aos_to_str(next));
+            }
+            _ => {
+                self.status = "Shift+Left/Right hero data-aos cycling works on a selected hero row."
+                    .to_string();
+            }
+        }
     }
 
     fn mutate_selected_section<F>(&mut self, mutator: F, success_message: &str)
@@ -3447,7 +3703,24 @@ fn hero_ascii_map(hero: &crate::model::DdHero, panel_width: usize) -> String {
     let inner_width = panel_width.saturating_sub(4).max(8);
     let border = format!("+{}+", "-".repeat(inner_width + 2));
     let lines = [
-        fit_ascii_cell("HERO (full width)", inner_width),
+        fit_ascii_cell("HERO", inner_width),
+        fit_ascii_cell(
+            &format!(
+                "class: {}",
+                hero_image_class_to_str(
+                    hero.hero_class
+                        .unwrap_or(crate::model::HeroImageClass::FullFull)
+                ),
+            ),
+            inner_width,
+        ),
+        fit_ascii_cell(
+            &format!(
+                "aos: {}",
+                hero_aos_to_str(hero.hero_aos.unwrap_or(crate::model::HeroAos::FadeIn))
+            ),
+            inner_width,
+        ),
         fit_ascii_cell(&format!("title: {}", hero.title), inner_width),
         fit_ascii_cell(&format!("subtitle: {}", hero.subtitle), inner_width),
         fit_ascii_cell(
@@ -3455,6 +3728,14 @@ fn hero_ascii_map(hero: &crate::model::DdHero, panel_width: usize) -> String {
                 "cta: {} -> {}",
                 hero.cta_text.as_deref().unwrap_or("(none)"),
                 hero.cta_link.as_deref().unwrap_or("(none)")
+            ),
+            inner_width,
+        ),
+        fit_ascii_cell(
+            &format!(
+                "cta_2: {} -> {}",
+                hero.cta_text_2.as_deref().unwrap_or("(none)"),
+                hero.cta_link_2.as_deref().unwrap_or("(none)")
             ),
             inner_width,
         ),
@@ -3719,6 +4000,122 @@ fn parse_spacer_height(raw: &str) -> Option<crate::model::SpacerHeight> {
     }
 }
 
+fn hero_image_class_to_str(v: crate::model::HeroImageClass) -> &'static str {
+    match v {
+        crate::model::HeroImageClass::Contained => "-contained",
+        crate::model::HeroImageClass::ContainedMd => "-contained-md",
+        crate::model::HeroImageClass::ContainedLg => "-contained-lg",
+        crate::model::HeroImageClass::ContainedXl => "-contained-xl",
+        crate::model::HeroImageClass::ContainedXxl => "-contained-xxl",
+        crate::model::HeroImageClass::FullFull => "-full-full",
+        crate::model::HeroImageClass::FullContained => "-full-contained",
+        crate::model::HeroImageClass::FullContainedMd => "-full-contained-md",
+        crate::model::HeroImageClass::FullContainedLg => "-full-contained-lg",
+        crate::model::HeroImageClass::FullContainedXl => "-full-contained-xl",
+        crate::model::HeroImageClass::FullContainedXxl => "-full-contained-xxl",
+    }
+}
+
+fn hero_aos_to_str(v: crate::model::HeroAos) -> &'static str {
+    match v {
+        crate::model::HeroAos::FadeIn => "fade-in",
+        crate::model::HeroAos::FadeUp => "fade-up",
+        crate::model::HeroAos::FadeRight => "fade-right",
+        crate::model::HeroAos::FadeDown => "fade-down",
+        crate::model::HeroAos::FadeLeft => "fade-left",
+        crate::model::HeroAos::ZoomIn => "zoom-in",
+        crate::model::HeroAos::ZoomInUp => "zoom-in-up",
+        crate::model::HeroAos::ZoomInDown => "zoom-in-down",
+    }
+}
+
+fn parse_hero_image_class(raw: &str) -> Option<crate::model::HeroImageClass> {
+    let trimmed = raw.trim();
+    let normalized = trimmed
+        .strip_prefix(".dd-hero__image.")
+        .unwrap_or(trimmed);
+    match normalized {
+        "-contained" => Some(crate::model::HeroImageClass::Contained),
+        "-contained-md" => Some(crate::model::HeroImageClass::ContainedMd),
+        "-contained-lg" => Some(crate::model::HeroImageClass::ContainedLg),
+        "-contained-xl" => Some(crate::model::HeroImageClass::ContainedXl),
+        "-contained-xxl" => Some(crate::model::HeroImageClass::ContainedXxl),
+        "-full-full" => Some(crate::model::HeroImageClass::FullFull),
+        "-full-contained" => Some(crate::model::HeroImageClass::FullContained),
+        "-full-contained-md" => Some(crate::model::HeroImageClass::FullContainedMd),
+        "-full-contained-lg" => Some(crate::model::HeroImageClass::FullContainedLg),
+        "-full-contained-xl" => Some(crate::model::HeroImageClass::FullContainedXl),
+        "-full-contained-xxl" => Some(crate::model::HeroImageClass::FullContainedXxl),
+        _ => None,
+    }
+}
+
+fn parse_hero_aos(raw: &str) -> Option<crate::model::HeroAos> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "fade-in" => Some(crate::model::HeroAos::FadeIn),
+        "fade-up" => Some(crate::model::HeroAos::FadeUp),
+        "fade-right" => Some(crate::model::HeroAos::FadeRight),
+        "fade-down" => Some(crate::model::HeroAos::FadeDown),
+        "fade-left" => Some(crate::model::HeroAos::FadeLeft),
+        "zoom-in" => Some(crate::model::HeroAos::ZoomIn),
+        "zoom-in-up" => Some(crate::model::HeroAos::ZoomInUp),
+        "zoom-in-down" => Some(crate::model::HeroAos::ZoomInDown),
+        _ => None,
+    }
+}
+
+fn next_hero_image_class(
+    current: crate::model::HeroImageClass,
+    forward: bool,
+) -> crate::model::HeroImageClass {
+    use crate::model::HeroImageClass;
+    let all = [
+        HeroImageClass::Contained,
+        HeroImageClass::ContainedMd,
+        HeroImageClass::ContainedLg,
+        HeroImageClass::ContainedXl,
+        HeroImageClass::ContainedXxl,
+        HeroImageClass::FullFull,
+        HeroImageClass::FullContained,
+        HeroImageClass::FullContainedMd,
+        HeroImageClass::FullContainedLg,
+        HeroImageClass::FullContainedXl,
+        HeroImageClass::FullContainedXxl,
+    ];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
+}
+
+fn next_hero_aos(current: crate::model::HeroAos, forward: bool) -> crate::model::HeroAos {
+    use crate::model::HeroAos;
+    let all = [
+        HeroAos::FadeIn,
+        HeroAos::FadeUp,
+        HeroAos::FadeRight,
+        HeroAos::FadeDown,
+        HeroAos::FadeLeft,
+        HeroAos::ZoomIn,
+        HeroAos::ZoomInUp,
+        HeroAos::ZoomInDown,
+    ];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
+}
+
 impl AppTheme {
     fn load() -> anyhow::Result<Self> {
         let path = theme_file_candidates()
@@ -3922,6 +4319,27 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 
 fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]> {
     match mode {
+        InputMode::EditHeroImage
+        | InputMode::EditHeroClass
+        | InputMode::EditHeroAos
+        | InputMode::EditHeroTitle
+        | InputMode::EditHeroSubtitle
+        | InputMode::EditHeroCopy
+        | InputMode::EditHeroCtaText
+        | InputMode::EditHeroCtaLink
+        | InputMode::EditHeroCtaText2
+        | InputMode::EditHeroCtaLink2 => Some(&[
+            InputMode::EditHeroImage,
+            InputMode::EditHeroClass,
+            InputMode::EditHeroAos,
+            InputMode::EditHeroTitle,
+            InputMode::EditHeroSubtitle,
+            InputMode::EditHeroCopy,
+            InputMode::EditHeroCtaText,
+            InputMode::EditHeroCtaLink,
+            InputMode::EditHeroCtaText2,
+            InputMode::EditHeroCtaLink2,
+        ]),
         InputMode::EditCardTitle | InputMode::EditCardCopy => {
             Some(&[InputMode::EditCardTitle, InputMode::EditCardCopy])
         }
@@ -3968,11 +4386,10 @@ fn help_text() -> String {
         "",
         "Node navigation and edits:",
         "  Up/Down or mouse wheel: Select row in Nodes tree",
-        "  Enter: Expand/collapse section row or edit selected item row",
+        "  Enter: Expand/collapse section row or edit selected row",
         "  h / n: Add hero / section",
         "  d: Delete selected node",
         "  J / K: Move selected node down / up",
-        "  e / u: Edit node primary field / hero subtitle",
         "",
         "Section layout:",
         "  b / w / g / t: Cycle background / width / spacing / alignment",
@@ -3998,7 +4415,8 @@ fn help_text() -> String {
         "",
         "Edit modal:",
         "  Any edit command opens a modal with editable fields",
-        "  Tab / Shift+Tab: Next/previous editable field for selected component",
+        "  Tab / Shift+Tab: Next/previous editable field for selected hero/component",
+        "  Left / Right: Cycle hero.class or hero.data_aos when those fields are active",
         "  Enter: Confirm edit",
         "  Esc: Cancel edit",
         "  Backspace: Delete character",

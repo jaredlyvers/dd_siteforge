@@ -43,6 +43,26 @@ enum PageNode {
     Section(DdSection),
 }
 
+struct DdHero {
+    image: String,
+    hero_class: HeroImageClass,        // -contained|-contained-md|...|-full-contained-xxl
+    hero_aos: HeroAos,                 // fade-in|fade-up|fade-right|fade-down|fade-left|zoom-in|zoom-in-up|zoom-in-down
+    title: String,
+    subtitle: String,
+    copy: Option<String>,
+    cta_text: Option<String>,
+    cta_link: Option<String>,
+    cta_text_2: Option<String>,
+    cta_link_2: Option<String>,
+    cta_target: Option<CtaTarget>,
+    cta_target_2: Option<CtaTarget>,
+    image_alt: Option<String>,
+    image_mobile: Option<String>,
+    image_tablet: Option<String>,
+    image_desktop: Option<String>,
+    image_class: Option<HeroImageClass>, // dd-hero__image class token
+}
+
 struct DdSection {
     id: String,
     background: SectionBackground, // primary|secondary|tertiary|gray|white|black
@@ -71,8 +91,8 @@ enum SectionComponent {
 All components below are available and should be first-class in the editor.
 
 1. `dd-hero`
-- Required: `image`, `image_alt`, `title`
-- Optional: `subtitle`, `copy`, `cta_text`, `cta_link`, `cta_target`, `image_mobile`, `image_tablet`, `image_desktop`
+- Required: `title`
+- Optional: `image`, `image_alt` (required when `image` is present), `subtitle`, `copy`, `cta_text`, `cta_link`, `cta_target`, `cta_text_2`, `cta_link_2`, `cta_target_2`, `image_mobile`, `image_tablet`, `image_desktop`, `hero_class`, `hero_aos`, `image_class`
 - Placement: top-level page node (no `dd-section` wrapper)
 
 2. `dd-card`
@@ -127,6 +147,8 @@ Expose these options directly in TUI controls (dropdown/select lists) and valida
 - `dd-card.columns`: `2`, `3`, `4`
 - `dd-card.animate`: `fade-up`, `fade-in`, `slide-up`
 - `dd-tabs.orientation`: `horizontal`, `vertical`
+- `dd-hero.hero_class`: `-contained`, `-contained-md`, `-contained-lg`, `-contained-xl`, `-contained-xxl`, `-full-full`, `-full-contained`, `-full-contained-md`, `-full-contained-lg`, `-full-contained-xl`, `-full-contained-xxl`
+- `dd-hero.hero_aos`: `fade-in`, `fade-up`, `fade-right`, `fade-down`, `fade-left`, `zoom-in`, `zoom-in-up`, `zoom-in-down`
 
 Framework utility classes to preserve during output where applicable:
 - Grid: `dd-u-1-1`, `dd-u-md-12-24`, `dd-u-lg-8-24`, `dd-u-xl-6-24`
@@ -138,6 +160,13 @@ Framework utility classes to preserve during output where applicable:
 
 - Render `Page.nodes` in order.
 - `dd-hero` renders as a standalone block.
+- `dd-hero` root class is rendered as `dd-hero {hero_class}`.
+- `dd-hero__content` renders configurable AOS attributes:
+  - `data-aos="{hero_aos}"`
+  - `data-aos-duration="1000"`
+  - `data-aos-easing="linear"`
+  - `data-aos-anchor-placement="center-bottom"`
+  - `data-aos-delay="100"`
 - All other components render inside `dd-section` wrappers.
 - Use framework template structure and class names (for example `dd-section`, `dd-section__container`, `dd-section__item dd-u-1-1`).
 - Prefer template-backed output for each component:
@@ -185,6 +214,14 @@ Validation runs on create, update, and export.
 - Event model:
   - Keyboard: arrows, tab/shift-tab, enter, esc
   - Mouse: click-select, click-edit, wheel-scroll
+
+Hero editing controls currently implemented:
+- Select hero row, press `Enter` to open edit mode.
+- `Tab` / `Shift+Tab` cycles hero fields:
+  - `image`, `class`, `data_aos`, `title`, `subtitle`, `copy`, `link_1_text`, `link_1_url`, `link_2_text`, `link_2_url`
+- While editing hero:
+  - `Left` / `Right` cycles `hero.class` when that field is active.
+  - `Left` / `Right` cycles `hero.data_aos` when that field is active.
 
 **Application Layer:**
 - Command handlers: add/move/delete node, update fields, clone component, reorder sections/components

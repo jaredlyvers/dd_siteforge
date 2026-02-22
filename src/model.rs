@@ -36,16 +36,22 @@ pub enum PageNode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DdHero {
     pub image: String,
+    pub hero_class: Option<HeroImageClass>,
+    pub hero_aos: Option<HeroAos>,
     pub title: String,
     pub subtitle: String,
     pub copy: Option<String>,
     pub cta_text: Option<String>,
     pub cta_link: Option<String>,
     pub cta_target: Option<CtaTarget>,
+    pub cta_text_2: Option<String>,
+    pub cta_link_2: Option<String>,
+    pub cta_target_2: Option<CtaTarget>,
     pub image_alt: Option<String>,
     pub image_mobile: Option<String>,
     pub image_tablet: Option<String>,
     pub image_desktop: Option<String>,
+    pub image_class: Option<HeroImageClass>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -195,6 +201,52 @@ pub enum CtaTarget {
     Parent,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HeroImageClass {
+    #[serde(rename = "-contained")]
+    Contained,
+    #[serde(rename = "-contained-md")]
+    ContainedMd,
+    #[serde(rename = "-contained-lg")]
+    ContainedLg,
+    #[serde(rename = "-contained-xl")]
+    ContainedXl,
+    #[serde(rename = "-contained-xxl")]
+    ContainedXxl,
+    #[serde(rename = "-full-full")]
+    FullFull,
+    #[serde(rename = "-full-contained")]
+    FullContained,
+    #[serde(rename = "-full-contained-md")]
+    FullContainedMd,
+    #[serde(rename = "-full-contained-lg")]
+    FullContainedLg,
+    #[serde(rename = "-full-contained-xl")]
+    FullContainedXl,
+    #[serde(rename = "-full-contained-xxl")]
+    FullContainedXxl,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HeroAos {
+    #[serde(rename = "fade-in")]
+    FadeIn,
+    #[serde(rename = "fade-up")]
+    FadeUp,
+    #[serde(rename = "fade-right")]
+    FadeRight,
+    #[serde(rename = "fade-down")]
+    FadeDown,
+    #[serde(rename = "fade-left")]
+    FadeLeft,
+    #[serde(rename = "zoom-in")]
+    ZoomIn,
+    #[serde(rename = "zoom-in-up")]
+    ZoomInUp,
+    #[serde(rename = "zoom-in-down")]
+    ZoomInDown,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SectionBackground {
@@ -296,16 +348,22 @@ impl Site {
                 nodes: vec![
                     PageNode::Hero(DdHero {
                         image: "/assets/images/hero.jpg".to_string(),
+                        hero_class: Some(HeroImageClass::FullFull),
+                        hero_aos: Some(HeroAos::FadeIn),
                         title: "Build with dd-framework".to_string(),
                         subtitle: "Framework-native static page builder".to_string(),
                         copy: Some("Compose pages with typed component schemas.".to_string()),
                         cta_text: Some("Get Started".to_string()),
                         cta_link: Some("/start".to_string()),
                         cta_target: Some(CtaTarget::SelfTarget),
+                        cta_text_2: Some("Learn More".to_string()),
+                        cta_link_2: Some("/learn-more".to_string()),
+                        cta_target_2: Some(CtaTarget::SelfTarget),
                         image_alt: Some("Decorative hero".to_string()),
                         image_mobile: None,
                         image_tablet: None,
                         image_desktop: None,
+                        image_class: Some(HeroImageClass::FullFull),
                     }),
                     PageNode::Section(DdSection {
                         id: "section-1".to_string(),
