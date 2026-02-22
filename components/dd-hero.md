@@ -6,14 +6,17 @@ insert:
   defaults:
     hero_class: "-full-full"
     hero_data_aos: "fade-in"
+    custom_css: ""
     image: "https://dummyimage.com/1920x1080/000/fff"
     title: "Build with dd-framework"
     subtitle: "Framework-native static page builder"
     copy: "Compose pages with typed component schemas."
     link_1_text: "Get Started"
     link_1_url: "/start"
+    link_1_target: "_self"
     link_2_text: "Learn More"
     link_2_url: "/learn-more"
+    link_2_target: "_self"
 fields:
   - id: image
     required: true
@@ -31,6 +34,11 @@ fields:
     options: ["fade-in", "fade-up", "fade-right", "fade-down", "fade-left", "zoom-in", "zoom-in-up", "zoom-in-down"]
     default: "fade-in"
     maps_to: ".dd-hero__content[data-aos]"
+  - id: custom_css
+    required: false
+    type: string
+    default: ""
+    maps_to: ".dd-hero class token"
   - id: title
     required: true
     type: string
@@ -41,8 +49,11 @@ fields:
     maps_to: ".dd-hero__subtitle"
   - id: copy
     required: false
-    type: string
-    maps_to: ".dd-hero__body p"
+    type: textarea
+    rows: 3
+    accepts: ["markdown", "html"]
+    export_transform: "render markdown to html (raw html passthrough)"
+    maps_to: ".dd-hero__body"
   - id: link_1_text
     required: false
     type: string
@@ -51,6 +62,11 @@ fields:
     required: false
     type: string
     maps_to: ".dd-hero__links .dd-hero__link:first-child a[href]"
+  - id: link_1_target
+    required: false
+    type: enum
+    options: ["_self", "_blank"]
+    maps_to: ".dd-hero__links .dd-hero__link:first-child a[target]"
   - id: link_2_text
     required: false
     type: string
@@ -59,23 +75,32 @@ fields:
     required: false
     type: string
     maps_to: ".dd-hero__links .dd-hero__link:nth-child(2) a[href]"
+  - id: link_2_target
+    required: false
+    type: enum
+    options: ["_self", "_blank"]
+    maps_to: ".dd-hero__links .dd-hero__link:nth-child(2) a[target]"
 edit_ui:
   tab_order:
     - image
     - hero_class
     - hero_data_aos
+    - custom_css
     - title
     - subtitle
     - copy
     - link_1_text
     - link_1_url
+    - link_1_target
     - link_2_text
     - link_2_url
+    - link_2_target
 blueprint:
   label: "dd-hero"
   show_fields:
     - hero_class
     - hero_data_aos
+    - custom_css
     - title
     - subtitle
     - link_1_text
@@ -100,8 +125,8 @@ blueprint:
       <!-- if [subtitle] --><div class="dd-hero__subtitle"><strong>[subtitle]</strong></div><!-- endif -->
       <!-- if [copy] --><div class="dd-hero__body"><p>[copy]</p></div><!-- endif -->
       <!-- if [link_1_text] --><div class="dd-hero__links dd-g">
-        <div class="dd-hero__link"><a href="[link_1_url]" class="dd-button -primary">[link_1_text]</a></div>
-        <!-- if [link_2_text] --><div class="dd-hero__link"><a href="[link_2_url]" class="dd-button -ghost">[link_2_text]</a></div><!-- endif -->
+        <div class="dd-hero__link"><a href="[link_1_url]" class="dd-button -primary" target="[link_1_target]">[link_1_text]</a></div>
+        <!-- if [link_2_text] --><div class="dd-hero__link"><a href="[link_2_url]" class="dd-button -ghost" target="[link_2_target]">[link_2_text]</a></div><!-- endif -->
       </div><!-- endif -->
     </div>
   </div>

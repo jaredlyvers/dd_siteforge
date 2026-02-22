@@ -38,6 +38,7 @@ pub struct DdHero {
     pub image: String,
     pub hero_class: Option<HeroImageClass>,
     pub hero_aos: Option<HeroAos>,
+    pub custom_css: Option<String>,
     pub title: String,
     pub subtitle: String,
     pub copy: Option<String>,
@@ -77,44 +78,9 @@ pub struct SectionColumn {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "component_type", rename_all = "snake_case")]
 pub enum SectionComponent {
-    Card(DdCard),
-    Alert(DdAlert),
     Alternating(DdAlternating),
     Banner(DdBanner),
-    Tabs(DdTabs),
     Accordion(DdAccordion),
-    Cta(DdCta),
-    Modal(DdModal),
-    Slider(DdSlider),
-    Spacer(DdSpacer),
-    Timeline(DdTimeline),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DdCard {
-    pub title: String,
-    pub image: String,
-    pub subtitle: Option<String>,
-    pub copy: Option<String>,
-    pub cta_text: Option<String>,
-    pub cta_link: Option<String>,
-    pub image_alt: Option<String>,
-    pub columns: Option<CardColumns>,
-    pub animate: Option<CardAnimate>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DdAlert {
-    #[serde(default = "default_alert_type", alias = "type")]
-    pub alert_type: AlertType,
-    #[serde(default = "default_alert_class")]
-    pub alert_class: AlertClass,
-    #[serde(default = "default_alert_data_aos", alias = "alert_aos")]
-    pub alert_data_aos: HeroAos,
-    #[serde(default, alias = "title")]
-    pub alert_title: String,
-    #[serde(default, alias = "message")]
-    pub alert_copy: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,24 +104,12 @@ pub struct AlternatingItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DdBanner {
-    pub message: String,
-    pub background: String,
-    pub link_text: Option<String>,
-    pub link_url: Option<String>,
-    pub dismissible: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DdTabs {
-    pub tabs: Vec<TabItem>,
-    pub default_tab: Option<usize>,
-    pub orientation: Option<TabsOrientation>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TabItem {
-    pub title: String,
-    pub content: String,
+    #[serde(default = "default_banner_class")]
+    pub banner_class: BannerClass,
+    #[serde(default = "default_banner_data_aos")]
+    pub banner_data_aos: HeroAos,
+    pub banner_image_url: String,
+    pub banner_image_alt: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -194,18 +148,6 @@ fn default_accordion_aos() -> HeroAos {
     HeroAos::FadeIn
 }
 
-fn default_alert_type() -> AlertType {
-    AlertType::Default
-}
-
-fn default_alert_class() -> AlertClass {
-    AlertClass::Default
-}
-
-fn default_alert_data_aos() -> HeroAos {
-    HeroAos::FadeIn
-}
-
 fn default_alternating_type() -> AlternatingType {
     AlternatingType::Default
 }
@@ -218,53 +160,15 @@ fn default_alternating_data_aos() -> HeroAos {
     HeroAos::FadeIn
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DdCta {
-    pub title: String,
-    pub copy: String,
-    pub cta_text: String,
-    pub cta_link: String,
+fn default_banner_class() -> BannerClass {
+    BannerClass::BgCenterCenter
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DdModal {
-    pub trigger_text: String,
-    pub title: String,
-    pub content: String,
+fn default_banner_data_aos() -> HeroAos {
+    HeroAos::FadeIn
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DdSlider {
-    pub slides: Vec<SlideItem>,
-    pub autoplay: Option<bool>,
-    pub speed: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SlideItem {
-    pub image: String,
-    pub title: String,
-    pub copy: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DdSpacer {
-    pub height: SpacerHeight,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DdTimeline {
-    pub events: Vec<TimelineEvent>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TimelineEvent {
-    pub date: String,
-    pub title: String,
-    pub description: String,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CtaTarget {
     #[serde(rename = "_self")]
     SelfTarget,
@@ -354,46 +258,6 @@ pub enum SectionItemBoxClass {
     LlBox,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum CardColumns {
-    #[serde(rename = "2")]
-    Two,
-    #[serde(rename = "3")]
-    Three,
-    #[serde(rename = "4")]
-    Four,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum CardAnimate {
-    FadeUp,
-    FadeIn,
-    SlideUp,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AlertType {
-    #[serde(rename = "-default")]
-    Default,
-    #[serde(rename = "-info -minor")]
-    InfoMinor,
-    #[serde(rename = "-warning -moderate -serious")]
-    WarningModerateSerious,
-    #[serde(rename = "-error -critical")]
-    ErrorCritical,
-    #[serde(rename = "-success")]
-    Success,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AlertClass {
-    #[serde(rename = "-default")]
-    Default,
-    #[serde(rename = "-compact")]
-    Compact,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AlternatingType {
     #[serde(rename = "-default")]
@@ -404,21 +268,26 @@ pub enum AlternatingType {
     NoAlternate,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TabsOrientation {
-    Horizontal,
-    Vertical,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SpacerHeight {
-    Sm,
-    Md,
-    Lg,
-    Xl,
-    Xxl,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BannerClass {
+    #[serde(rename = "-bg-top-left")]
+    BgTopLeft,
+    #[serde(rename = "-bg-top-center")]
+    BgTopCenter,
+    #[serde(rename = "-bg-top-right")]
+    BgTopRight,
+    #[serde(rename = "-bg-center-left")]
+    BgCenterLeft,
+    #[serde(rename = "-bg-center-center")]
+    BgCenterCenter,
+    #[serde(rename = "-bg-center-right")]
+    BgCenterRight,
+    #[serde(rename = "-bg-bottom-left")]
+    BgBottomLeft,
+    #[serde(rename = "-bg-bottom-center")]
+    BgBottomCenter,
+    #[serde(rename = "-bg-bottom-right")]
+    BgBottomRight,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -465,6 +334,7 @@ impl Site {
                         image: "/assets/images/hero.jpg".to_string(),
                         hero_class: Some(HeroImageClass::FullFull),
                         hero_aos: Some(HeroAos::FadeIn),
+                        custom_css: None,
                         title: "Build with dd-framework".to_string(),
                         subtitle: "Framework-native static page builder".to_string(),
                         copy: Some("Compose pages with typed component schemas.".to_string()),

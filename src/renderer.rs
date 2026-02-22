@@ -6,8 +6,8 @@ use handlebars::Handlebars;
 use serde_json::{Value, json};
 
 use crate::model::{
-    DdAccordion, DdAlert, DdAlternating, DdBanner, DdCard, DdCta, DdHero, DdModal, DdSection,
-    DdSlider, DdTabs, DdTimeline, Page, PageNode, SectionColumn, SectionComponent, Site,
+    DdAccordion, DdAlternating, DdBanner, DdHero, DdSection, Page, PageNode, SectionColumn,
+    SectionComponent, Site,
 };
 
 const PAGE_TEMPLATE: &str = r#"<!DOCTYPE html>
@@ -70,7 +70,7 @@ pub fn render_page_html(page: &Page) -> anyhow::Result<String> {
 }
 
 fn render_hero(hero: &DdHero) -> anyhow::Result<String> {
-    let template = r#"<section class="dd-hero{{#if hero_class}} {{hero_class}}{{/if}}" aria-label="Introduction">
+    let template = r#"<section class="dd-hero{{#if hero_class}} {{hero_class}}{{/if}}{{#if custom_css}} {{custom_css}}{{/if}}" aria-label="Introduction">
   {{#if has_image}}<div class="dd-hero__image {{image_class}}">
     <picture>
       {{#if image_mobile}}<source media="(max-width: 767px)" srcset="{{image_mobile}}">{{/if}}
@@ -94,7 +94,7 @@ fn render_hero(hero: &DdHero) -> anyhow::Result<String> {
       <div class="dd-hero__title"><h1>{{title}}</h1></div>
       {{#if subtitle}}<div class="dd-hero__subtitle"><strong>{{subtitle}}</strong></div>{{/if}}
       {{#if has_body}}<div class="dd-hero__body">
-        {{#if copy}}<p>{{copy}}</p>{{/if}}
+        {{#if copy_html}}{{{copy_html}}}{{/if}}
         {{#if has_links}}<div class="dd-hero__links dd-g">
           {{#if has_primary_cta}}<div class="dd-hero__link">
             <a href="{{cta_link}}" target="{{cta_target}}" class="dd-button -primary">{{cta_text}}</a>
@@ -122,20 +122,9 @@ fn render_section(section: &DdSection) -> anyhow::Result<String> {
         let mut inner = String::new();
         for component in &column.components {
             let html = match component {
-                SectionComponent::Card(v) => render_card(v)?,
-                SectionComponent::Alert(v) => render_alert(v)?,
                 SectionComponent::Alternating(v) => render_alternating(v)?,
                 SectionComponent::Banner(v) => render_banner(v)?,
-                SectionComponent::Tabs(v) => render_tabs(v)?,
                 SectionComponent::Accordion(v) => render_accordion(v)?,
-                SectionComponent::Cta(v) => render_cta(v)?,
-                SectionComponent::Modal(v) => render_modal(v)?,
-                SectionComponent::Slider(v) => render_slider(v)?,
-                SectionComponent::Spacer(v) => render_inline(
-                    r#"<div class="dd-spacer dd-spacer--{{height}}" aria-hidden="true"></div>"#,
-                    serde_json::to_value(v)?,
-                )?,
-                SectionComponent::Timeline(v) => render_timeline(v)?,
             };
             inner.push_str(&html);
             inner.push('\n');
@@ -181,83 +170,6 @@ fn section_columns(section: &DdSection) -> Vec<SectionColumn> {
             components: section.components.clone(),
         }]
     }
-}
-
-fn render_card(card: &DdCard) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-card">
-  <div class="dd-card__items dd-g">
-    <div class="dd-card__item l-box dd-u-1-1" data-aos="{{animate}}">
-      <div class="dd-card__body dd-g">
-        <div class="dd-card__image"><img src="{{image}}" alt="{{image_alt}}" class="dd-image" loading="lazy"></div>
-        <div class="dd-card__copy l-box">
-          <div class="dd-card__title"><h3>{{title}}</h3></div>
-          {{#if subtitle}}<div class="dd-card__sub-title"><strong>{{subtitle}}</strong></div>{{/if}}
-          {{#if copy}}<p>{{copy}}</p>{{/if}}
-          {{#if cta_text}}<div class="dd-card__links"><a href="{{cta_link}}" class="dd-button -primary">{{cta_text}}</a></div>{{/if}}
-        </div>
-      </div>
-    </div>
-  </div>
-</div>"#;
-    let mut v = serde_json::to_value(card)?;
-    if let Some(obj) = v.as_object_mut() {
-        obj.insert(
-            "animate".to_string(),
-            Value::String(
-                card.animate
-                    .as_ref()
-                    .and_then(|a| serde_json::to_value(a).ok())
-                    .map(|a| stringify_json(&a))
-                    .unwrap_or_else(|| "fade-up".to_string()),
-            ),
-        );
-    }
-    render_inline(template, v)
-}
-
-fn render_alert(alert: &DdAlert) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-alert {{alert_type}} {{alert_class}}" role="alert" data-aos="{{alert_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
-  <div class="dd-alert__content dd-g">
-    <div class="dd-u-1-1">
-      <div class="l-box">
-        <div class="dd-alert__title">
-          {{alert_title}}
-        </div>
-        <div class="dd-alert__copy">
-          <p>{{alert_copy}}</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>"#;
-    let mut v = serde_json::to_value(alert)?;
-    if let Some(obj) = v.as_object_mut() {
-        obj.insert(
-            "alert_type".to_string(),
-            Value::String(
-                serde_json::to_value(alert.alert_type)
-                    .map(|raw| stringify_json(&raw))
-                    .unwrap_or_else(|_| "-default".to_string()),
-            ),
-        );
-        obj.insert(
-            "alert_class".to_string(),
-            Value::String(
-                serde_json::to_value(alert.alert_class)
-                    .map(|raw| stringify_json(&raw))
-                    .unwrap_or_else(|_| "-default".to_string()),
-            ),
-        );
-        obj.insert(
-            "alert_data_aos".to_string(),
-            Value::String(
-                serde_json::to_value(alert.alert_data_aos)
-                    .map(|raw| stringify_json(&raw))
-                    .unwrap_or_else(|_| "fade-in".to_string()),
-            ),
-        );
-    }
-    render_inline(template, v)
 }
 
 fn render_alternating(alternating: &DdAlternating) -> anyhow::Result<String> {
@@ -307,31 +219,31 @@ fn render_alternating(alternating: &DdAlternating) -> anyhow::Result<String> {
 }
 
 fn render_banner(banner: &DdBanner) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-banner" style="background: {{background}};">
-  <p>{{message}}</p>
-  {{#if link_text}}<a href="{{link_url}}">{{link_text}}</a>{{/if}}
+    let template = r#"<div class="dd-banner {{banner_class}}" data-aos="{{banner_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100" style="background-image: url({{banner_image_url}});">
+  <div class="dd-banner__image">
+    <picture>
+      <img src="{{banner_image_url}}" class="dd-img" alt="{{banner_image_alt}}" />
+    </picture>
+  </div>
 </div>"#;
-    render_inline(template, serde_json::to_value(banner)?)
-}
-
-fn render_tabs(tabs: &DdTabs) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-tabs dd-tabs--{{orientation}}">
-  {{#each tabs}}
-  <article class="dd-tabs__panel">
-    <h3>{{title}}</h3>
-    <div>{{content}}</div>
-  </article>
-  {{/each}}
-</div>"#;
-    let mut v = serde_json::to_value(tabs)?;
+    let mut v = serde_json::to_value(banner)?;
     if let Some(obj) = v.as_object_mut() {
-        let orientation = tabs
-            .orientation
-            .as_ref()
-            .and_then(|o| serde_json::to_value(o).ok())
-            .map(|o| stringify_json(&o))
-            .unwrap_or_else(|| "horizontal".to_string());
-        obj.insert("orientation".to_string(), Value::String(orientation));
+        obj.insert(
+            "banner_class".to_string(),
+            Value::String(
+                serde_json::to_value(banner.banner_class)
+                    .map(|raw| stringify_json(&raw))
+                    .unwrap_or_else(|_| "-bg-center-center".to_string()),
+            ),
+        );
+        obj.insert(
+            "banner_data_aos".to_string(),
+            Value::String(
+                serde_json::to_value(banner.banner_data_aos)
+                    .map(|raw| stringify_json(&raw))
+                    .unwrap_or_else(|_| "fade-in".to_string()),
+            ),
+        );
     }
     render_inline(template, v)
 }
@@ -401,58 +313,6 @@ fn render_accordion(accordion: &DdAccordion) -> anyhow::Result<String> {
     render_inline(template, v)
 }
 
-fn render_cta(cta: &DdCta) -> anyhow::Result<String> {
-    let template = r#"<section class="dd-cta">
-  <h2>{{title}}</h2>
-  <p>{{copy}}</p>
-  <a href="{{cta_link}}" class="dd-button -primary">{{cta_text}}</a>
-</section>"#;
-    render_inline(template, serde_json::to_value(cta)?)
-}
-
-fn render_modal(modal: &DdModal) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-modal">
-  <button class="dd-button -secondary">{{trigger_text}}</button>
-  <div class="dd-modal__content" hidden>
-    <h3>{{title}}</h3>
-    <div>{{content}}</div>
-  </div>
-</div>"#;
-    render_inline(template, serde_json::to_value(modal)?)
-}
-
-fn render_slider(slider: &DdSlider) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-slider" data-autoplay="{{autoplay}}" data-speed="{{speed}}">
-  {{#each slides}}
-  <article class="dd-slider__slide">
-    <img src="{{image}}" alt="{{title}}" class="dd-image" loading="lazy">
-    <h3>{{title}}</h3>
-    <p>{{copy}}</p>
-  </article>
-  {{/each}}
-</div>"#;
-    let mut v = serde_json::to_value(slider)?;
-    if let Some(obj) = v.as_object_mut() {
-        obj.entry("autoplay".to_string())
-            .or_insert(Value::Bool(false));
-        obj.entry("speed".to_string()).or_insert(Value::from(400));
-    }
-    render_inline(template, v)
-}
-
-fn render_timeline(timeline: &DdTimeline) -> anyhow::Result<String> {
-    let template = r#"<section class="dd-timeline">
-  {{#each events}}
-  <article class="dd-timeline__event">
-    <time>{{date}}</time>
-    <h3>{{title}}</h3>
-    <p>{{description}}</p>
-  </article>
-  {{/each}}
-</section>"#;
-    render_inline(template, serde_json::to_value(timeline)?)
-}
-
 fn render_inline(template: &str, data: Value) -> anyhow::Result<String> {
     let mut hbs = Handlebars::new();
     hbs.register_template_string("inline", template)
@@ -487,6 +347,17 @@ fn hero_to_json(hero: &DdHero) -> Value {
         .and_then(|v| serde_json::to_value(v).ok())
         .map(|v| stringify_json(&v))
         .unwrap_or_else(|| "fade-in".to_string());
+    let custom_css = hero
+        .custom_css
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string);
+    let copy_html = hero
+        .copy
+        .as_deref()
+        .filter(|v| !v.trim().is_empty())
+        .map(markdown_to_html);
     let has_primary_cta = hero
         .cta_text
         .as_deref()
@@ -528,9 +399,10 @@ fn hero_to_json(hero: &DdHero) -> Value {
         "image": hero.image,
         "hero_class": hero_class,
         "hero_aos": hero_aos,
+        "custom_css": custom_css,
         "title": hero.title,
         "subtitle": if subtitle.is_empty() { None } else { Some(hero.subtitle.clone()) },
-        "copy": hero.copy,
+        "copy_html": copy_html,
         "cta_text": hero.cta_text,
         "cta_link": hero.cta_link,
         "cta_target": cta_target,
@@ -550,6 +422,91 @@ fn hero_to_json(hero: &DdHero) -> Value {
         "bg_mobile": bg_mobile,
         "bg_desktop": bg_desktop
     })
+}
+
+fn markdown_to_html(input: &str) -> String {
+    let blocks = input.split("\n\n");
+    let mut out = String::new();
+    for block in blocks {
+        let trimmed = block.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if looks_like_html_block(trimmed) {
+            out.push_str(trimmed);
+            out.push('\n');
+            continue;
+        }
+        let inline = inline_markdown_to_html(trimmed)
+            .replace('\n', "<br/>\n");
+        out.push_str("<p>");
+        out.push_str(&inline);
+        out.push_str("</p>\n");
+    }
+    out
+}
+
+fn looks_like_html_block(input: &str) -> bool {
+    input.starts_with('<') && input.ends_with('>')
+}
+
+fn inline_markdown_to_html(input: &str) -> String {
+    let mut escaped = input.to_string();
+    escaped = replace_md_link(&escaped);
+    escaped = replace_md_wrapped(&escaped, "**", "<strong>", "</strong>");
+    escaped = replace_md_wrapped(&escaped, "*", "<em>", "</em>");
+    replace_md_wrapped(&escaped, "`", "<code>", "</code>")
+}
+
+fn replace_md_wrapped(input: &str, token: &str, open: &str, close: &str) -> String {
+    let mut out = String::new();
+    let mut rest = input;
+    let mut open_state = false;
+    while let Some(pos) = rest.find(token) {
+        out.push_str(&rest[..pos]);
+        out.push_str(if open_state { close } else { open });
+        open_state = !open_state;
+        rest = &rest[pos + token.len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn replace_md_link(input: &str) -> String {
+    let mut out = String::new();
+    let mut rest = input;
+    loop {
+        let Some(lb) = rest.find('[') else {
+            out.push_str(rest);
+            break;
+        };
+        out.push_str(&rest[..lb]);
+        let after_lb = &rest[lb + 1..];
+        let Some(rb) = after_lb.find(']') else {
+            out.push_str(&rest[lb..]);
+            break;
+        };
+        let link_text = &after_lb[..rb];
+        let after_rb = &after_lb[rb + 1..];
+        if !after_rb.starts_with('(') {
+            out.push('[');
+            rest = after_lb;
+            continue;
+        }
+        let after_paren = &after_rb[1..];
+        let Some(cp) = after_paren.find(')') else {
+            out.push_str(&rest[lb..]);
+            break;
+        };
+        let href = &after_paren[..cp];
+        out.push_str("<a href=\"");
+        out.push_str(href);
+        out.push_str("\">");
+        out.push_str(link_text);
+        out.push_str("</a>");
+        rest = &after_paren[cp + 1..];
+    }
+    out
 }
 
 fn stringify_json(value: &Value) -> String {

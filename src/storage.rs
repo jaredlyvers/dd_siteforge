@@ -20,11 +20,11 @@ pub fn load_site<P: AsRef<Path>>(path: P) -> anyhow::Result<Site> {
 #[cfg(test)]
 mod tests {
     use super::{load_site, save_site};
-    use crate::model::{SectionComponent, Site, TabItem};
+    use crate::model::{SectionComponent, Site};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn save_and_load_round_trip_preserves_tui_like_edits() {
+    fn save_and_load_round_trip_preserves_supported_components() {
         let mut site = Site::starter();
         let page = &mut site.pages[0];
 
@@ -33,51 +33,48 @@ mod tests {
 
             section
                 .components
-                .push(SectionComponent::Tabs(crate::model::DdTabs {
-                    tabs: vec![
-                        TabItem {
-                            title: "Tab A".to_string(),
-                            content: "A content".to_string(),
+                .push(SectionComponent::Banner(crate::model::DdBanner {
+                    banner_class: crate::model::BannerClass::BgCenterCenter,
+                    banner_data_aos: crate::model::HeroAos::FadeIn,
+                    banner_image_url: "/assets/images/banner.jpg".to_string(),
+                    banner_image_alt: "Banner A".to_string(),
+                }));
+
+            section
+                .components
+                .push(SectionComponent::Accordion(crate::model::DdAccordion {
+                    accordion_type: crate::model::AccordionType::Default,
+                    accordion_class: crate::model::AccordionClass::Primary,
+                    accordion_aos: crate::model::HeroAos::FadeIn,
+                    group_name: "group1".to_string(),
+                    items: vec![
+                        crate::model::AccordionItem {
+                            title: "Acc 1".to_string(),
+                            content: "One".to_string(),
                         },
-                        TabItem {
-                            title: "Tab B".to_string(),
-                            content: "B content".to_string(),
+                        crate::model::AccordionItem {
+                            title: "Acc 2".to_string(),
+                            content: "Two".to_string(),
                         },
                     ],
-                    default_tab: Some(0),
-                    orientation: Some(crate::model::TabsOrientation::Horizontal),
+                    multiple: Some(false),
                 }));
 
             section
                 .components
-                .push(SectionComponent::Cta(crate::model::DdCta {
-                    title: "Old CTA".to_string(),
-                    copy: "CTA copy".to_string(),
-                    cta_text: "Go".to_string(),
-                    cta_link: "/go".to_string(),
+                .push(SectionComponent::Alternating(crate::model::DdAlternating {
+                    alternating_type: crate::model::AlternatingType::Default,
+                    alternating_class: "-default".to_string(),
+                    alternating_data_aos: crate::model::HeroAos::FadeIn,
+                    items: vec![crate::model::AlternatingItem {
+                        image: "/assets/images/alternating.jpg".to_string(),
+                        image_alt: "Alt".to_string(),
+                        title: "Item A".to_string(),
+                        copy: "Copy A".to_string(),
+                    }],
                 }));
-
-            section
-                .components
-                .push(SectionComponent::Alert(crate::model::DdAlert {
-                    alert_type: crate::model::AlertType::InfoMinor,
-                    alert_class: crate::model::AlertClass::Default,
-                    alert_data_aos: crate::model::HeroAos::FadeIn,
-                    alert_title: "Initial".to_string(),
-                    alert_copy: "Info".to_string(),
-                }));
-
-            if let SectionComponent::Tabs(tabs) = &mut section.components[0] {
-                tabs.tabs.swap(0, 1);
-                tabs.tabs[0].title = "Tab B Edited".to_string();
-            }
 
             section.components.swap(0, 2);
-
-            if let SectionComponent::Cta(cta) = &mut section.components[1] {
-                cta.title = "Updated CTA".to_string();
-                cta.cta_link = "/updated".to_string();
-            }
         } else {
             panic!("starter site expected section at node index 1");
         }
@@ -95,30 +92,31 @@ mod tests {
         assert_eq!(loaded_section.components.len(), 3);
 
         match &loaded_section.components[0] {
-            SectionComponent::Alert(alert) => assert_eq!(alert.alert_copy, "Info"),
-            other => panic!("expected alert at index 0, got {:?}", other),
+            SectionComponent::Alternating(alternating) => {
+                assert_eq!(alternating.items[0].title, "Item A");
+            }
+            other => panic!("expected alternating at index 0, got {:?}", other),
         }
 
         match &loaded_section.components[1] {
-            SectionComponent::Cta(cta) => {
-                assert_eq!(cta.title, "Updated CTA");
-                assert_eq!(cta.cta_link, "/updated");
+            SectionComponent::Accordion(acc) => {
+                assert_eq!(acc.items.len(), 2);
+                assert_eq!(acc.items[0].title, "Acc 1");
             }
-            other => panic!("expected cta at index 1, got {:?}", other),
+            other => panic!("expected accordion at index 1, got {:?}", other),
         }
 
         match &loaded_section.components[2] {
-            SectionComponent::Tabs(tabs) => {
-                assert_eq!(tabs.tabs.len(), 2);
-                assert_eq!(tabs.tabs[0].title, "Tab B Edited");
-                assert_eq!(tabs.tabs[1].title, "Tab A");
+            SectionComponent::Banner(banner) => {
+                assert_eq!(banner.banner_image_url, "/assets/images/banner.jpg");
+                assert_eq!(banner.banner_image_alt, "Banner A");
             }
-            other => panic!("expected tabs at index 2, got {:?}", other),
+            other => panic!("expected banner at index 2, got {:?}", other),
         }
     }
 
     #[test]
-    fn save_and_load_preserves_nested_reorders_for_all_collection_components() {
+    fn save_and_load_preserves_nested_reorders_for_supported_collection_components() {
         let mut site = Site::starter();
         let page = &mut site.pages[0];
 
@@ -151,36 +149,22 @@ mod tests {
 
             section
                 .components
-                .push(SectionComponent::Slider(crate::model::DdSlider {
-                    slides: vec![
-                        crate::model::SlideItem {
-                            image: "/assets/images/s1.jpg".to_string(),
-                            title: "Slide 1".to_string(),
+                .push(SectionComponent::Alternating(crate::model::DdAlternating {
+                    alternating_type: crate::model::AlternatingType::Default,
+                    alternating_class: "-default".to_string(),
+                    alternating_data_aos: crate::model::HeroAos::FadeIn,
+                    items: vec![
+                        crate::model::AlternatingItem {
+                            image: "/assets/images/a1.jpg".to_string(),
+                            image_alt: "A1".to_string(),
+                            title: "Alt 1".to_string(),
                             copy: "One".to_string(),
                         },
-                        crate::model::SlideItem {
-                            image: "/assets/images/s2.jpg".to_string(),
-                            title: "Slide 2".to_string(),
+                        crate::model::AlternatingItem {
+                            image: "/assets/images/a2.jpg".to_string(),
+                            image_alt: "A2".to_string(),
+                            title: "Alt 2".to_string(),
                             copy: "Two".to_string(),
-                        },
-                    ],
-                    autoplay: Some(false),
-                    speed: Some(400),
-                }));
-
-            section
-                .components
-                .push(SectionComponent::Timeline(crate::model::DdTimeline {
-                    events: vec![
-                        crate::model::TimelineEvent {
-                            date: "2026-01-01".to_string(),
-                            title: "Event A".to_string(),
-                            description: "A".to_string(),
-                        },
-                        crate::model::TimelineEvent {
-                            date: "2026-01-02".to_string(),
-                            title: "Event B".to_string(),
-                            description: "B".to_string(),
                         },
                     ],
                 }));
@@ -188,11 +172,8 @@ mod tests {
             if let SectionComponent::Accordion(acc) = &mut section.components[0] {
                 acc.items.swap(0, 2);
             }
-            if let SectionComponent::Slider(slider) = &mut section.components[1] {
-                slider.slides.swap(0, 1);
-            }
-            if let SectionComponent::Timeline(tl) = &mut section.components[2] {
-                tl.events.swap(0, 1);
+            if let SectionComponent::Alternating(alt) = &mut section.components[1] {
+                alt.items.swap(0, 1);
             }
         } else {
             panic!("starter site expected section at node index 1");
@@ -219,21 +200,12 @@ mod tests {
         }
 
         match &loaded_section.components[1] {
-            SectionComponent::Slider(slider) => {
-                assert_eq!(slider.slides.len(), 2);
-                assert_eq!(slider.slides[0].title, "Slide 2");
-                assert_eq!(slider.slides[1].title, "Slide 1");
+            SectionComponent::Alternating(alt) => {
+                assert_eq!(alt.items.len(), 2);
+                assert_eq!(alt.items[0].title, "Alt 2");
+                assert_eq!(alt.items[1].title, "Alt 1");
             }
-            other => panic!("expected slider at index 1, got {:?}", other),
-        }
-
-        match &loaded_section.components[2] {
-            SectionComponent::Timeline(tl) => {
-                assert_eq!(tl.events.len(), 2);
-                assert_eq!(tl.events[0].title, "Event B");
-                assert_eq!(tl.events[1].title, "Event A");
-            }
-            other => panic!("expected timeline at index 2, got {:?}", other),
+            other => panic!("expected alternating at index 1, got {:?}", other),
         }
     }
 

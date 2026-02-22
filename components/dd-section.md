@@ -8,6 +8,7 @@ insert:
     section_title: ""
     section_class: "-full-contained"
     item_box_class: "l-box"
+    custom_css: ""
     items:
       - item_id: "column-1"
         width_class: "dd-u-1-1"
@@ -33,6 +34,11 @@ fields:
     options: ["l-box", "ll-box"]
     default: "l-box"
     maps_to: ".dd-section__item class token"
+  - id: custom_css
+    required: false
+    type: string
+    default: ""
+    maps_to: ".dd-section class token"
   - id: items
     required: true
     type: array
@@ -55,6 +61,7 @@ edit_ui:
     - id
     - section_title
     - section_class
+    - custom_css
   row_editing:
     section_item:
       - item_id
@@ -65,6 +72,7 @@ blueprint:
     - id
     - section_title
     - section_class
+    - custom_css
     - items[].item_id
     - items[].width_class
 ---

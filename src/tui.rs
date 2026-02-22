@@ -5,7 +5,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton, MouseEventKind,
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton,
+    MouseEventKind,
 };
 use crossterm::execute;
 use crossterm::terminal::{
@@ -67,6 +68,8 @@ struct App {
     save_input: String,
     input_mode: Option<InputMode>,
     input_buffer: String,
+    input_cursor: usize,
+    hero_copy_value_area: Option<Rect>,
     component_picker: Option<ComponentPickerState>,
     component_kind: ComponentKind,
     show_help: bool,
@@ -85,31 +88,25 @@ enum InputMode {
     EditHeroImage,
     EditHeroClass,
     EditHeroAos,
+    EditHeroCustomCss,
     EditHeroTitle,
     EditHeroSubtitle,
     EditHeroCopy,
     EditHeroCtaText,
     EditHeroCtaLink,
+    EditHeroCtaTarget,
     EditHeroCtaText2,
     EditHeroCtaLink2,
+    EditHeroCtaTarget2,
     EditSectionId,
     EditSectionTitle,
     EditSectionClass,
     EditColumnId,
     EditColumnWidthClass,
-    EditCardTitle,
-    EditCardCopy,
-    EditCtaTitle,
-    EditCtaLink,
-    EditAlertType,
-    EditAlertClass,
-    EditAlertDataAos,
-    EditAlertTitle,
-    EditAlertCopy,
-    EditBannerMessage,
-    EditBannerLinkUrl,
-    EditTabsFirstTitle,
-    EditTabsFirstContent,
+    EditBannerClass,
+    EditBannerDataAos,
+    EditBannerImageUrl,
+    EditBannerImageAlt,
     EditAccordionType,
     EditAccordionClass,
     EditAccordionAos,
@@ -123,30 +120,15 @@ enum InputMode {
     EditAlternatingItemImageAlt,
     EditAlternatingItemTitle,
     EditAlternatingItemCopy,
-    EditModalTitle,
-    EditModalContent,
-    EditSliderFirstTitle,
-    EditSliderFirstCopy,
-    EditSpacerHeight,
-    EditTimelineFirstTitle,
-    EditTimelineFirstDescription,
 }
 
 #[derive(Clone, Copy)]
 enum ComponentKind {
     Hero,
     Section,
-    Card,
-    Alert,
     Banner,
-    Tabs,
     Accordion,
     Alternating,
-    Cta,
-    Modal,
-    Slider,
-    Spacer,
-    Timeline,
 }
 
 #[derive(Clone, Copy)]
@@ -238,8 +220,10 @@ impl App {
             save_input: String::new(),
             input_mode: None,
             input_buffer: String::new(),
+            input_cursor: 0,
+            hero_copy_value_area: None,
             component_picker: None,
-            component_kind: ComponentKind::Card,
+            component_kind: ComponentKind::Banner,
             show_help: false,
             expanded_sections: HashSet::new(),
             expanded_accordion_items: HashSet::new(),
@@ -264,6 +248,7 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut ratatui::Frame) {
+        self.hero_copy_value_area = None;
         let page = self.current_page();
         let root = Layout::default()
             .direction(Direction::Vertical)
@@ -419,10 +404,39 @@ impl App {
             let area = centered_rect(72, 60, frame.area());
             frame.render_widget(Clear, area);
             let edit_help = self.current_modal_fields();
+            let value_block = if matches!(self.input_mode, Some(InputMode::EditHeroCopy)) {
+                let inner_width = area.width.saturating_sub(2) as usize;
+                let box_inner = inner_width.saturating_sub(2).max(10);
+                let mut lines = self
+                    .input_buffer
+                    .lines()
+                    .take(3)
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>();
+                while lines.len() < 3 {
+                    lines.push(String::new());
+                }
+                self.hero_copy_value_area = Some(Rect {
+                    x: area.x.saturating_add(2),
+                    y: area.y.saturating_add(5),
+                    width: box_inner.min(u16::MAX as usize) as u16,
+                    height: 3,
+                });
+                format!(
+                    "Value (textarea, 3 rows; Enter newline | Ctrl+S save):\n+{}+\n|{}|\n|{}|\n|{}|\n+{}+",
+                    "-".repeat(box_inner),
+                    fit_ascii_cell(&lines[0], box_inner),
+                    fit_ascii_cell(&lines[1], box_inner),
+                    fit_ascii_cell(&lines[2], box_inner),
+                    "-".repeat(box_inner)
+                )
+            } else {
+                format!("Value:\n{}", self.input_buffer)
+            };
             let modal = Paragraph::new(format!(
-                "Editing: {}\n\nValue:\n{}\n\nEditable fields:\n{}\n\nEnter: save | Esc: cancel",
+                "Editing: {}\n\n{}\n\nEditable fields:\n{}\n\nEnter: save | Esc: cancel",
                 self.current_input_mode_label(),
-                self.input_buffer,
+                value_block,
                 edit_help
             ))
             .style(
@@ -466,7 +480,7 @@ impl App {
                 }
             }
             lines.push(String::new());
-            lines.push("Type to fuzzy search (e.g. card, dd_card).".to_string());
+            lines.push("Type to fuzzy search (e.g. hero, dd-accordion).".to_string());
             lines.push("Up/Down to choose, Enter to add, Esc to cancel.".to_string());
             let picker_widget = Paragraph::new(lines.join("\n"))
                 .style(
@@ -526,22 +540,54 @@ impl App {
             frame.render_widget(prompt, area);
         }
 
-        self.set_cursor_for_active_input(frame);
+        let cursor_overlay = self.set_cursor_for_active_input(frame);
+        if let Some((x, y, ch)) = cursor_overlay {
+            let cursor_cell = Paragraph::new(ch.to_string()).style(
+                Style::default()
+                    .fg(self.theme.selected_foreground)
+                    .bg(self.theme.selected_background)
+                    .add_modifier(Modifier::BOLD),
+            );
+            frame.render_widget(
+                cursor_cell,
+                Rect {
+                    x,
+                    y,
+                    width: 1,
+                    height: 1,
+                },
+            );
+        }
     }
 
-    fn set_cursor_for_active_input(&self, frame: &mut ratatui::Frame) {
+    fn set_cursor_for_active_input(&self, frame: &mut ratatui::Frame) -> Option<(u16, u16, char)> {
         if self.input_mode.is_some() {
             let area = centered_rect(72, 60, frame.area());
             let inner_width = area.width.saturating_sub(2) as usize;
-            let x = area.x.saturating_add(1).saturating_add(
-                self.input_buffer
-                    .chars()
-                    .count()
-                    .min(inner_width.saturating_sub(1)) as u16,
-            );
-            let y = area.y.saturating_add(4);
+            let (x, y) = if matches!(self.input_mode, Some(InputMode::EditHeroCopy)) {
+                let (row_idx, col_count) = cursor_row_col(&self.input_buffer, self.input_cursor);
+                let value_area = self.hero_copy_value_area.unwrap_or(Rect {
+                    x: area.x.saturating_add(2),
+                    y: area.y.saturating_add(5),
+                    width: inner_width.saturating_sub(2).min(u16::MAX as usize) as u16,
+                    height: 3,
+                });
+                let max_col = value_area.width.saturating_sub(1) as usize;
+                (
+                    value_area.x.saturating_add(col_count.min(max_col) as u16),
+                    value_area.y.saturating_add(row_idx.min(2) as u16),
+                )
+            } else {
+                (
+                    area.x.saturating_add(1).saturating_add(
+                        self.input_cursor
+                            .min(inner_width.saturating_sub(1)) as u16,
+                    ),
+                    area.y.saturating_add(4),
+                )
+            };
             frame.set_cursor_position((x, y));
-            return;
+            return Some((x, y, self.current_input_cursor_glyph()));
         }
 
         if self.save_prompt_open {
@@ -555,7 +601,12 @@ impl App {
             );
             let y = area.y.saturating_add(2);
             frame.set_cursor_position((x, y));
-            return;
+            let ch = self
+                .save_input
+                .chars()
+                .nth(self.save_input.chars().count())
+                .unwrap_or(' ');
+            return Some((x, y, ch));
         }
 
         if let Some(picker) = &self.component_picker {
@@ -566,11 +617,21 @@ impl App {
             let x = area
                 .x
                 .saturating_add(1)
-                .saturating_add(prefix.chars().count() as u16)
-                .saturating_add(picker.query.chars().count().min(max_query_width) as u16);
+                    .saturating_add(prefix.chars().count() as u16)
+                    .saturating_add(picker.query.chars().count().min(max_query_width) as u16);
             let y = area.y.saturating_add(1);
             frame.set_cursor_position((x, y));
+            return Some((x, y, ' '));
         }
+        None
+    }
+
+    fn current_input_cursor_glyph(&self) -> char {
+        if self.input_cursor >= self.input_buffer.chars().count() {
+            return ' ';
+        }
+        let ch = self.input_buffer.chars().nth(self.input_cursor).unwrap_or(' ');
+        if ch == '\n' { ' ' } else { ch }
     }
 
     fn handle_event(&mut self, evt: Event) -> anyhow::Result<()> {
@@ -637,15 +698,36 @@ impl App {
     }
 
     fn handle_input_mode(&mut self, evt: Event) -> anyhow::Result<()> {
-        if let Event::Key(key) = evt {
-            match key.code {
+        match evt {
+            Event::Key(key) => match key.code {
                 KeyCode::Esc => {
                     self.input_mode = None;
                     self.input_buffer.clear();
+                    self.input_cursor = 0;
                     self.status = "Edit cancelled.".to_string();
                     self.sync_tree_row_with_selection();
                 }
                 KeyCode::Enter => {
+                    if matches!(self.input_mode, Some(InputMode::EditHeroCopy))
+                        && !key.modifiers.contains(KeyModifiers::CONTROL)
+                    {
+                        let rows = self.input_buffer.lines().count().max(1);
+                        if rows < 3 {
+                            self.insert_char_at_cursor('\n');
+                        } else {
+                            self.status =
+                                "hero.copy supports up to 3 lines. Press Ctrl+S to save."
+                                    .to_string();
+                        }
+                        return Ok(());
+                    }
+                    let _ = self.commit_input_edit();
+                    self.sync_tree_row_with_selection();
+                }
+                KeyCode::Char('s')
+                    if key.modifiers.contains(KeyModifiers::CONTROL)
+                        && matches!(self.input_mode, Some(InputMode::EditHeroCopy)) =>
+                {
                     let _ = self.commit_input_edit();
                     self.sync_tree_row_with_selection();
                 }
@@ -670,6 +752,22 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
+                    Some(InputMode::EditHeroCtaTarget) => {
+                        self.cycle_hero_cta_target(false, false);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditHeroCtaTarget)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditHeroCtaTarget2) => {
+                        self.cycle_hero_cta_target(true, false);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditHeroCtaTarget2)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
                     Some(InputMode::EditSectionClass) => {
                         self.cycle_section_class(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditSectionClass)
@@ -677,21 +775,16 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
-                    Some(InputMode::EditAlertType) => {
-                        self.cycle_alert_type(false);
-                        if let Some(v) = self.value_for_component_mode(InputMode::EditAlertType) {
+                    Some(InputMode::EditBannerClass) => {
+                        self.cycle_banner_class(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditBannerClass) {
                             self.input_buffer = v;
                         }
                     }
-                    Some(InputMode::EditAlertClass) => {
-                        self.cycle_alert_class(false);
-                        if let Some(v) = self.value_for_component_mode(InputMode::EditAlertClass) {
-                            self.input_buffer = v;
-                        }
-                    }
-                    Some(InputMode::EditAlertDataAos) => {
-                        self.cycle_alert_data_aos(false);
-                        if let Some(v) = self.value_for_component_mode(InputMode::EditAlertDataAos)
+                    Some(InputMode::EditBannerDataAos) => {
+                        self.cycle_banner_data_aos(false);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditBannerDataAos)
                         {
                             self.input_buffer = v;
                         }
@@ -734,7 +827,7 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
-                    _ => {}
+                    _ => self.move_cursor_left(),
                 },
                 KeyCode::Right => match self.input_mode {
                     Some(InputMode::EditHeroClass) => {
@@ -749,6 +842,22 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
+                    Some(InputMode::EditHeroCtaTarget) => {
+                        self.cycle_hero_cta_target(false, true);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditHeroCtaTarget)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditHeroCtaTarget2) => {
+                        self.cycle_hero_cta_target(true, true);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditHeroCtaTarget2)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
                     Some(InputMode::EditSectionClass) => {
                         self.cycle_section_class(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditSectionClass)
@@ -756,21 +865,16 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
-                    Some(InputMode::EditAlertType) => {
-                        self.cycle_alert_type(true);
-                        if let Some(v) = self.value_for_component_mode(InputMode::EditAlertType) {
+                    Some(InputMode::EditBannerClass) => {
+                        self.cycle_banner_class(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditBannerClass) {
                             self.input_buffer = v;
                         }
                     }
-                    Some(InputMode::EditAlertClass) => {
-                        self.cycle_alert_class(true);
-                        if let Some(v) = self.value_for_component_mode(InputMode::EditAlertClass) {
-                            self.input_buffer = v;
-                        }
-                    }
-                    Some(InputMode::EditAlertDataAos) => {
-                        self.cycle_alert_data_aos(true);
-                        if let Some(v) = self.value_for_component_mode(InputMode::EditAlertDataAos)
+                    Some(InputMode::EditBannerDataAos) => {
+                        self.cycle_banner_data_aos(true);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditBannerDataAos)
                         {
                             self.input_buffer = v;
                         }
@@ -813,18 +917,111 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
-                    _ => {}
+                    _ => self.move_cursor_right(),
                 },
                 KeyCode::Backspace => {
-                    self.input_buffer.pop();
+                    self.delete_char_before_cursor();
                 }
                 KeyCode::Char(c) => {
-                    self.input_buffer.push(c);
+                    self.insert_char_at_cursor(c);
                 }
                 _ => {}
+            },
+            Event::Mouse(m) => {
+                if let MouseEventKind::Down(MouseButton::Left) = m.kind
+                    && matches!(self.input_mode, Some(InputMode::EditHeroCopy))
+                {
+                    self.set_hero_copy_cursor_from_point(m.column, m.row);
+                }
             }
+            _ => {}
         }
         Ok(())
+    }
+
+    fn clamp_hero_copy_input_if_needed(&mut self) {
+        if !matches!(self.input_mode, Some(InputMode::EditHeroCopy)) {
+            return;
+        }
+        let mut lines = self
+            .input_buffer
+            .lines()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+        if lines.len() > 3 {
+            lines.truncate(3);
+            self.input_buffer = lines.join("\n");
+        }
+    }
+
+    fn move_cursor_left(&mut self) {
+        if self.input_cursor > 0 {
+            self.input_cursor -= 1;
+        }
+    }
+
+    fn move_cursor_right(&mut self) {
+        let len = self.input_buffer.chars().count();
+        if self.input_cursor < len {
+            self.input_cursor += 1;
+        }
+    }
+
+    fn delete_char_before_cursor(&mut self) {
+        if self.input_cursor == 0 {
+            return;
+        }
+        let remove_at = self.input_cursor - 1;
+        let byte_start = byte_index_for_char(&self.input_buffer, remove_at);
+        let byte_end = byte_index_for_char(&self.input_buffer, self.input_cursor);
+        self.input_buffer.replace_range(byte_start..byte_end, "");
+        self.input_cursor = remove_at;
+    }
+
+    fn insert_char_at_cursor(&mut self, c: char) {
+        if matches!(self.input_mode, Some(InputMode::EditHeroCopy)) && c == '\n' {
+            let mut candidate = self.input_buffer.clone();
+            let at = byte_index_for_char(&candidate, self.input_cursor);
+            candidate.insert(at, '\n');
+            if candidate.lines().count().max(1) > 3 {
+                self.status = "hero.copy supports up to 3 lines.".to_string();
+                return;
+            }
+            self.input_buffer = candidate;
+            self.input_cursor += 1;
+            return;
+        }
+        let at = byte_index_for_char(&self.input_buffer, self.input_cursor);
+        self.input_buffer.insert(at, c);
+        self.input_cursor += 1;
+    }
+
+    fn set_hero_copy_cursor_from_point(&mut self, x: u16, y: u16) {
+        let Some(area) = self.hero_copy_value_area else {
+            return;
+        };
+        if !contains(area, x, y) {
+            return;
+        }
+        let row = y.saturating_sub(area.y).min(2) as usize;
+        let col = x.saturating_sub(area.x) as usize;
+        let lines = self.input_buffer.lines().collect::<Vec<_>>();
+        let mut cursor = 0usize;
+        for i in 0..row {
+            if let Some(line) = lines.get(i) {
+                cursor += line.chars().count() + 1;
+            } else {
+                return;
+            }
+        }
+        if let Some(line) = lines.get(row) {
+            cursor += col.min(line.chars().count());
+        } else if row == lines.len() {
+            cursor += 0;
+        } else {
+            return;
+        }
+        self.input_cursor = cursor.min(self.input_buffer.chars().count());
     }
 
     fn tab_next_component_field(&mut self) {
@@ -1063,6 +1260,8 @@ impl App {
 
         self.input_mode = Some(mode);
         self.input_buffer = value;
+        self.clamp_hero_copy_input_if_needed();
+        self.input_cursor = self.input_buffer.chars().count();
         self.status = match mode {
             InputMode::EditHeroImage => {
                 "Editing hero image URL. Enter to save, esc to cancel.".to_string()
@@ -1072,6 +1271,9 @@ impl App {
             }
             InputMode::EditHeroAos => {
                 "Editing hero data-aos option. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroCustomCss => {
+                "Editing hero custom CSS classes. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditHeroTitle => {
                 "Editing hero title. Enter to save, esc to cancel.".to_string()
@@ -1088,11 +1290,17 @@ impl App {
             InputMode::EditHeroCtaLink => {
                 "Editing hero primary link URL. Enter to save, esc to cancel.".to_string()
             }
+            InputMode::EditHeroCtaTarget => {
+                "Editing hero primary link target. Enter to save, esc to cancel.".to_string()
+            }
             InputMode::EditHeroCtaText2 => {
                 "Editing hero secondary link text. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditHeroCtaLink2 => {
                 "Editing hero secondary link URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroCtaTarget2 => {
+                "Editing hero secondary link target. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditSectionId => {
                 "Editing section id. Enter to save, esc to cancel.".to_string()
@@ -1108,33 +1316,6 @@ impl App {
             }
             InputMode::EditColumnWidthClass => {
                 "Editing column width class. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditCardTitle => {
-                "Editing dd-card title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditCardCopy => {
-                "Editing dd-card copy. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditCtaTitle => {
-                "Editing dd-cta title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditCtaLink => {
-                "Editing dd-cta link. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAlertType => {
-                "Editing dd-alert type. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAlertClass => {
-                "Editing dd-alert class. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAlertDataAos => {
-                "Editing dd-alert data-aos. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAlertTitle => {
-                "Editing dd-alert title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAlertCopy => {
-                "Editing dd-alert copy. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAlternatingType => {
                 "Editing dd-alternating type. Enter to save, esc to cancel.".to_string()
@@ -1157,17 +1338,17 @@ impl App {
             InputMode::EditAlternatingItemCopy => {
                 "Editing dd-alternating item copy. Enter to save, esc to cancel.".to_string()
             }
-            InputMode::EditBannerMessage => {
-                "Editing dd-banner message. Enter to save, esc to cancel.".to_string()
+            InputMode::EditBannerClass => {
+                "Editing dd-banner class. Enter to save, esc to cancel.".to_string()
             }
-            InputMode::EditBannerLinkUrl => {
-                "Editing dd-banner link_url. Enter to save, esc to cancel.".to_string()
+            InputMode::EditBannerDataAos => {
+                "Editing dd-banner data-aos. Enter to save, esc to cancel.".to_string()
             }
-            InputMode::EditTabsFirstTitle => {
-                "Editing dd-tabs first title. Enter to save, esc to cancel.".to_string()
+            InputMode::EditBannerImageUrl => {
+                "Editing dd-banner image URL. Enter to save, esc to cancel.".to_string()
             }
-            InputMode::EditTabsFirstContent => {
-                "Editing dd-tabs first content. Enter to save, esc to cancel.".to_string()
+            InputMode::EditBannerImageAlt => {
+                "Editing dd-banner image alt text. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAccordionType => {
                 "Editing dd-accordion type. Enter to save, esc to cancel.".to_string()
@@ -1186,29 +1367,6 @@ impl App {
             }
             InputMode::EditAccordionFirstContent => {
                 "Editing dd-accordion first content. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditModalTitle => {
-                "Editing dd-modal title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditModalContent => {
-                "Editing dd-modal content. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditSliderFirstTitle => {
-                "Editing dd-slider first slide title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditSliderFirstCopy => {
-                "Editing dd-slider first slide copy. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditSpacerHeight => {
-                "Editing dd-spacer height (sm|md|lg|xl|xxl). Enter to save, esc to cancel."
-                    .to_string()
-            }
-            InputMode::EditTimelineFirstTitle => {
-                "Editing dd-timeline first event title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditTimelineFirstDescription => {
-                "Editing dd-timeline first event description. Enter to save, esc to cancel."
-                    .to_string()
             }
         };
     }
@@ -1236,6 +1394,7 @@ impl App {
         };
         self.input_mode = Some(mode);
         self.input_buffer = value;
+        self.input_cursor = self.input_buffer.chars().count();
         self.status = "Editing selected column id. Enter to save, esc to cancel.".to_string();
     }
 
@@ -1265,6 +1424,7 @@ impl App {
         };
         self.input_mode = Some(mode);
         self.input_buffer = value;
+        self.input_cursor = self.input_buffer.chars().count();
         self.status =
             "Editing selected column width class. Enter to save, esc to cancel.".to_string();
     }
@@ -1273,17 +1433,24 @@ impl App {
         let Some(mode) = self.input_mode else {
             return false;
         };
-        let value = self.input_buffer.trim().to_string();
+        let value = if matches!(mode, InputMode::EditHeroCopy) {
+            self.input_buffer.clone()
+        } else {
+            self.input_buffer.trim().to_string()
+        };
         let allow_empty = matches!(
             mode,
             InputMode::EditHeroImage
                 | InputMode::EditHeroClass
+                | InputMode::EditHeroCustomCss
                 | InputMode::EditHeroSubtitle
                 | InputMode::EditHeroCopy
                 | InputMode::EditHeroCtaText
                 | InputMode::EditHeroCtaLink
+                | InputMode::EditHeroCtaTarget
                 | InputMode::EditHeroCtaText2
                 | InputMode::EditHeroCtaLink2
+                | InputMode::EditHeroCtaTarget2
                 | InputMode::EditSectionTitle
         );
         if value.is_empty() && !allow_empty {
@@ -1337,6 +1504,11 @@ impl App {
                     "Invalid hero data-aos option.".to_string()
                 }
             }
+            (PageNode::Hero(v), InputMode::EditHeroCustomCss) => {
+                v.custom_css = if value.is_empty() { None } else { Some(value) };
+                applied = true;
+                "Updated hero custom CSS classes.".to_string()
+            }
             (PageNode::Hero(v), InputMode::EditHeroTitle) => {
                 v.title = value;
                 applied = true;
@@ -1362,6 +1534,20 @@ impl App {
                 applied = true;
                 "Updated hero primary link URL.".to_string()
             }
+            (PageNode::Hero(v), InputMode::EditHeroCtaTarget) => {
+                if value.is_empty() {
+                    v.cta_target = None;
+                    applied = true;
+                    "Updated hero primary link target.".to_string()
+                } else if let Some(target) = parse_cta_target(value.as_str()) {
+                    v.cta_target = Some(target);
+                    applied = true;
+                    "Updated hero primary link target.".to_string()
+                } else {
+                    clear_input = false;
+                    "Invalid hero primary link target.".to_string()
+                }
+            }
             (PageNode::Hero(v), InputMode::EditHeroCtaText2) => {
                 v.cta_text_2 = if value.is_empty() { None } else { Some(value) };
                 applied = true;
@@ -1371,6 +1557,20 @@ impl App {
                 v.cta_link_2 = if value.is_empty() { None } else { Some(value) };
                 applied = true;
                 "Updated hero secondary link URL.".to_string()
+            }
+            (PageNode::Hero(v), InputMode::EditHeroCtaTarget2) => {
+                if value.is_empty() {
+                    v.cta_target_2 = None;
+                    applied = true;
+                    "Updated hero secondary link target.".to_string()
+                } else if let Some(target) = parse_cta_target(value.as_str()) {
+                    v.cta_target_2 = Some(target);
+                    applied = true;
+                    "Updated hero secondary link target.".to_string()
+                } else {
+                    clear_input = false;
+                    "Invalid hero secondary link target.".to_string()
+                }
             }
             (PageNode::Section(v), InputMode::EditSectionId) => {
                 v.id = value;
@@ -1403,138 +1603,6 @@ impl App {
                 v.columns[col_i].width_class = value;
                 applied = true;
                 "Updated column width class.".to_string()
-            }
-            (PageNode::Section(v), InputMode::EditCardTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
-                        card.title = value;
-                        applied = true;
-                        "Updated dd-card title.".to_string()
-                    } else {
-                        "Selected component is not dd-card.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            (PageNode::Section(v), InputMode::EditCardCopy) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
-                        card.copy = Some(value);
-                        applied = true;
-                        "Updated dd-card copy.".to_string()
-                    } else {
-                        "Selected component is not dd-card.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            (PageNode::Section(v), InputMode::EditCtaTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
-                        cta.title = value;
-                        applied = true;
-                        "Updated dd-cta title.".to_string()
-                    } else {
-                        "Selected component is not dd-cta.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            (PageNode::Section(v), InputMode::EditCtaLink) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
-                        cta.cta_link = value;
-                        applied = true;
-                        "Updated dd-cta link.".to_string()
-                    } else {
-                        "Selected component is not dd-cta.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            (PageNode::Section(v), InputMode::EditAlertType) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Alert(alert) = &mut v.components[ci] {
-                        if let Some(vt) = parse_alert_type(value.as_str()) {
-                            alert.alert_type = vt;
-                            applied = true;
-                            "Updated dd-alert type.".to_string()
-                        } else {
-                            clear_input = false;
-                            "Invalid dd-alert type option.".to_string()
-                        }
-                    } else {
-                        "Selected component is not dd-alert.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            (PageNode::Section(v), InputMode::EditAlertClass) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Alert(alert) = &mut v.components[ci] {
-                        if let Some(vc) = parse_alert_class(value.as_str()) {
-                            alert.alert_class = vc;
-                            applied = true;
-                            "Updated dd-alert class.".to_string()
-                        } else {
-                            clear_input = false;
-                            "Invalid dd-alert class option.".to_string()
-                        }
-                    } else {
-                        "Selected component is not dd-alert.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            (PageNode::Section(v), InputMode::EditAlertDataAos) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Alert(alert) = &mut v.components[ci] {
-                        if let Some(va) = parse_hero_aos(value.as_str()) {
-                            alert.alert_data_aos = va;
-                            applied = true;
-                            "Updated dd-alert data-aos.".to_string()
-                        } else {
-                            clear_input = false;
-                            "Invalid dd-alert data-aos option.".to_string()
-                        }
-                    } else {
-                        "Selected component is not dd-alert.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            (PageNode::Section(v), InputMode::EditAlertTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Alert(alert) = &mut v.components[ci] {
-                        alert.alert_title = value;
-                        applied = true;
-                        "Updated dd-alert title.".to_string()
-                    } else {
-                        "Selected component is not dd-alert.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            (PageNode::Section(v), InputMode::EditAlertCopy) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Alert(alert) = &mut v.components[ci] {
-                        alert.alert_copy = value;
-                        applied = true;
-                        "Updated dd-alert copy.".to_string()
-                    } else {
-                        "Selected component is not dd-alert.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
             }
             (PageNode::Section(v), InputMode::EditAlternatingType) => {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
@@ -1660,12 +1728,17 @@ impl App {
                     "Section has no components.".to_string()
                 }
             }
-            (PageNode::Section(v), InputMode::EditBannerMessage) => {
+            (PageNode::Section(v), InputMode::EditBannerClass) => {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Banner(banner) = &mut v.components[ci] {
-                        banner.message = value;
-                        applied = true;
-                        "Updated dd-banner message.".to_string()
+                        if let Some(vc) = parse_banner_class(value.as_str()) {
+                            banner.banner_class = vc;
+                            applied = true;
+                            "Updated dd-banner class.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-banner class option.".to_string()
+                        }
                     } else {
                         "Selected component is not dd-banner.".to_string()
                     }
@@ -1673,12 +1746,17 @@ impl App {
                     "Section has no components.".to_string()
                 }
             }
-            (PageNode::Section(v), InputMode::EditBannerLinkUrl) => {
+            (PageNode::Section(v), InputMode::EditBannerDataAos) => {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Banner(banner) = &mut v.components[ci] {
-                        banner.link_url = Some(value);
-                        applied = true;
-                        "Updated dd-banner link_url.".to_string()
+                        if let Some(va) = parse_hero_aos(value.as_str()) {
+                            banner.banner_data_aos = va;
+                            applied = true;
+                            "Updated dd-banner data-aos.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-banner data-aos option.".to_string()
+                        }
                     } else {
                         "Selected component is not dd-banner.".to_string()
                     }
@@ -1686,35 +1764,27 @@ impl App {
                     "Section has no components.".to_string()
                 }
             }
-            (PageNode::Section(v), InputMode::EditTabsFirstTitle) => {
+            (PageNode::Section(v), InputMode::EditBannerImageUrl) => {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Tabs(tabs) = &mut v.components[ci] {
-                        if let Some(ni) = nested_index(tabs.tabs.len(), selected_nested_item) {
-                            tabs.tabs[ni].title = value;
-                            applied = true;
-                            format!("Updated dd-tabs item {} title.", ni + 1)
-                        } else {
-                            "dd-tabs has no items.".to_string()
-                        }
+                    if let crate::model::SectionComponent::Banner(banner) = &mut v.components[ci] {
+                        banner.banner_image_url = value;
+                        applied = true;
+                        "Updated dd-banner image URL.".to_string()
                     } else {
-                        "Selected component is not dd-tabs.".to_string()
+                        "Selected component is not dd-banner.".to_string()
                     }
                 } else {
                     "Section has no components.".to_string()
                 }
             }
-            (PageNode::Section(v), InputMode::EditTabsFirstContent) => {
+            (PageNode::Section(v), InputMode::EditBannerImageAlt) => {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Tabs(tabs) = &mut v.components[ci] {
-                        if let Some(ni) = nested_index(tabs.tabs.len(), selected_nested_item) {
-                            tabs.tabs[ni].content = value;
-                            applied = true;
-                            format!("Updated dd-tabs item {} content.", ni + 1)
-                        } else {
-                            "dd-tabs has no items.".to_string()
-                        }
+                    if let crate::model::SectionComponent::Banner(banner) = &mut v.components[ci] {
+                        banner.banner_image_alt = value;
+                        applied = true;
+                        "Updated dd-banner image alt text.".to_string()
                     } else {
-                        "Selected component is not dd-tabs.".to_string()
+                        "Selected component is not dd-banner.".to_string()
                     }
                 } else {
                     "Section has no components.".to_string()
@@ -1821,118 +1891,6 @@ impl App {
                     "Section has no components.".to_string()
                 }
             }
-            (PageNode::Section(v), InputMode::EditModalTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Modal(modal) = &mut v.components[ci] {
-                        modal.title = value;
-                        applied = true;
-                        "Updated dd-modal title.".to_string()
-                    } else {
-                        "Selected component is not dd-modal.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            (PageNode::Section(v), InputMode::EditModalContent) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Modal(modal) = &mut v.components[ci] {
-                        modal.content = value;
-                        applied = true;
-                        "Updated dd-modal content.".to_string()
-                    } else {
-                        "Selected component is not dd-modal.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            (PageNode::Section(v), InputMode::EditSliderFirstTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
-                        if let Some(ni) = nested_index(slider.slides.len(), selected_nested_item) {
-                            slider.slides[ni].title = value;
-                            applied = true;
-                            format!("Updated dd-slider slide {} title.", ni + 1)
-                        } else {
-                            "dd-slider has no slides.".to_string()
-                        }
-                    } else {
-                        "Selected component is not dd-slider.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            (PageNode::Section(v), InputMode::EditSliderFirstCopy) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
-                        if let Some(ni) = nested_index(slider.slides.len(), selected_nested_item) {
-                            slider.slides[ni].copy = value;
-                            applied = true;
-                            format!("Updated dd-slider slide {} copy.", ni + 1)
-                        } else {
-                            "dd-slider has no slides.".to_string()
-                        }
-                    } else {
-                        "Selected component is not dd-slider.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            (PageNode::Section(v), InputMode::EditSpacerHeight) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Spacer(spacer) = &mut v.components[ci] {
-                        if let Some(height) = parse_spacer_height(&value) {
-                            spacer.height = height;
-                            applied = true;
-                            "Updated dd-spacer height.".to_string()
-                        } else {
-                            clear_input = false;
-                            "Invalid spacer height. Use sm|md|lg|xl|xxl.".to_string()
-                        }
-                    } else {
-                        "Selected component is not dd-spacer.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            (PageNode::Section(v), InputMode::EditTimelineFirstTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Timeline(tl) = &mut v.components[ci] {
-                        if let Some(ni) = nested_index(tl.events.len(), selected_nested_item) {
-                            tl.events[ni].title = value;
-                            applied = true;
-                            format!("Updated dd-timeline event {} title.", ni + 1)
-                        } else {
-                            "dd-timeline has no events.".to_string()
-                        }
-                    } else {
-                        "Selected component is not dd-timeline.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            (PageNode::Section(v), InputMode::EditTimelineFirstDescription) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Timeline(tl) = &mut v.components[ci] {
-                        if let Some(ni) = nested_index(tl.events.len(), selected_nested_item) {
-                            tl.events[ni].description = value;
-                            applied = true;
-                            format!("Updated dd-timeline event {} description.", ni + 1)
-                        } else {
-                            "dd-timeline has no events.".to_string()
-                        }
-                    } else {
-                        "Selected component is not dd-timeline.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
             _ => "Edit type no longer matches selected node.".to_string(),
         };
         if let PageNode::Section(section) = &mut page.nodes[idx] {
@@ -1942,6 +1900,7 @@ impl App {
         if clear_input {
             self.input_mode = None;
             self.input_buffer.clear();
+            self.input_cursor = 0;
         }
         applied
     }
@@ -2596,27 +2555,21 @@ impl App {
             Some(InputMode::EditHeroImage) => "hero.image",
             Some(InputMode::EditHeroClass) => "hero.class",
             Some(InputMode::EditHeroAos) => "hero.data_aos",
+            Some(InputMode::EditHeroCustomCss) => "hero.custom_css",
             Some(InputMode::EditHeroTitle) => "hero.title",
             Some(InputMode::EditHeroSubtitle) => "hero.subtitle",
             Some(InputMode::EditHeroCopy) => "hero.copy",
             Some(InputMode::EditHeroCtaText) => "hero.link_1.text",
             Some(InputMode::EditHeroCtaLink) => "hero.link_1.url",
+            Some(InputMode::EditHeroCtaTarget) => "hero.link_1.target",
             Some(InputMode::EditHeroCtaText2) => "hero.link_2.text",
             Some(InputMode::EditHeroCtaLink2) => "hero.link_2.url",
+            Some(InputMode::EditHeroCtaTarget2) => "hero.link_2.target",
             Some(InputMode::EditSectionId) => "section.id",
             Some(InputMode::EditSectionTitle) => "section.title",
             Some(InputMode::EditSectionClass) => "section.class",
             Some(InputMode::EditColumnId) => "section.column.id",
             Some(InputMode::EditColumnWidthClass) => "section.column.width_class",
-            Some(InputMode::EditCardTitle) => "dd-card.title",
-            Some(InputMode::EditCardCopy) => "dd-card.copy",
-            Some(InputMode::EditCtaTitle) => "dd-cta.title",
-            Some(InputMode::EditCtaLink) => "dd-cta.cta_link",
-            Some(InputMode::EditAlertType) => "dd-alert.type",
-            Some(InputMode::EditAlertClass) => "dd-alert.class",
-            Some(InputMode::EditAlertDataAos) => "dd-alert.data_aos",
-            Some(InputMode::EditAlertTitle) => "dd-alert.title",
-            Some(InputMode::EditAlertCopy) => "dd-alert.copy",
             Some(InputMode::EditAlternatingType) => "dd-alternating.type",
             Some(InputMode::EditAlternatingClass) => "dd-alternating.class",
             Some(InputMode::EditAlternatingDataAos) => "dd-alternating.data_aos",
@@ -2624,23 +2577,16 @@ impl App {
             Some(InputMode::EditAlternatingItemImageAlt) => "dd-alternating.active.image_alt",
             Some(InputMode::EditAlternatingItemTitle) => "dd-alternating.active.title",
             Some(InputMode::EditAlternatingItemCopy) => "dd-alternating.active.copy",
-            Some(InputMode::EditBannerMessage) => "dd-banner.message",
-            Some(InputMode::EditBannerLinkUrl) => "dd-banner.link_url",
-            Some(InputMode::EditTabsFirstTitle) => "dd-tabs.active.title",
-            Some(InputMode::EditTabsFirstContent) => "dd-tabs.active.content",
+            Some(InputMode::EditBannerClass) => "dd-banner.class",
+            Some(InputMode::EditBannerDataAos) => "dd-banner.data_aos",
+            Some(InputMode::EditBannerImageUrl) => "dd-banner_image_url",
+            Some(InputMode::EditBannerImageAlt) => "dd-banner_image_alt",
             Some(InputMode::EditAccordionType) => "dd-accordion.type",
             Some(InputMode::EditAccordionClass) => "dd-accordion.class",
             Some(InputMode::EditAccordionAos) => "dd-accordion.data_aos",
             Some(InputMode::EditAccordionGroupName) => "dd-accordion.group_name",
             Some(InputMode::EditAccordionFirstTitle) => "dd-accordion.active.title",
             Some(InputMode::EditAccordionFirstContent) => "dd-accordion.active.content",
-            Some(InputMode::EditModalTitle) => "dd-modal.title",
-            Some(InputMode::EditModalContent) => "dd-modal.content",
-            Some(InputMode::EditSliderFirstTitle) => "dd-slider.active.title",
-            Some(InputMode::EditSliderFirstCopy) => "dd-slider.active.copy",
-            Some(InputMode::EditSpacerHeight) => "dd-spacer.height",
-            Some(InputMode::EditTimelineFirstTitle) => "dd-timeline.active.title",
-            Some(InputMode::EditTimelineFirstDescription) => "dd-timeline.active.description",
             None => "field",
         }
     }
@@ -2653,20 +2599,23 @@ impl App {
         let ni = self.selected_node.min(page.nodes.len().saturating_sub(1));
         match &page.nodes[ni] {
             PageNode::Hero(v) => format!(
-                "- hero.image: {}\n- hero.class: {}\n- hero.data_aos: {}\n- hero.title: {}\n- hero.subtitle: {}\n- hero.copy: {}\n- hero.link_1.text: {}\n- hero.link_1.url: {}\n- hero.link_2.text: {}\n- hero.link_2.url: {}",
+                "- hero.image: {}\n- hero.class: {}\n- hero.data_aos: {}\n- hero.custom_css: {}\n- hero.title: {}\n- hero.subtitle: {}\n- hero.copy: {}\n- hero.link_1.text: {}\n- hero.link_1.url: {}\n- hero.link_1.target: {}\n- hero.link_2.text: {}\n- hero.link_2.url: {}\n- hero.link_2.target: {}",
                 v.image,
                 hero_image_class_to_str(
                     v.hero_class
                         .unwrap_or(crate::model::HeroImageClass::FullFull)
                 ),
                 hero_aos_to_str(v.hero_aos.unwrap_or(crate::model::HeroAos::FadeIn)),
+                v.custom_css.as_deref().unwrap_or("(none)"),
                 v.title,
                 v.subtitle,
                 v.copy.as_deref().unwrap_or("(none)"),
                 v.cta_text.as_deref().unwrap_or("(none)"),
                 v.cta_link.as_deref().unwrap_or("(none)"),
+                cta_target_to_str(v.cta_target.unwrap_or(crate::model::CtaTarget::SelfTarget)),
                 v.cta_text_2.as_deref().unwrap_or("(none)"),
-                v.cta_link_2.as_deref().unwrap_or("(none)")
+                v.cta_link_2.as_deref().unwrap_or("(none)"),
+                cta_target_to_str(v.cta_target_2.unwrap_or(crate::model::CtaTarget::SelfTarget))
             ),
             PageNode::Section(section) => {
                 let rows = self.build_node_tree_rows();
@@ -2699,25 +2648,7 @@ impl App {
                                 self.selected_component
                                     .min(col.components.len().saturating_sub(1)),
                             ) {
-                                if let crate::model::SectionComponent::Alert(alert) = component {
-                                    vec![
-                                        format!(
-                                            "- alert_type: {}",
-                                            alert_type_to_str(alert.alert_type)
-                                        ),
-                                        format!(
-                                            "- alert.class: {}",
-                                            alert_class_to_str(alert.alert_class)
-                                        ),
-                                        format!(
-                                            "- alert.data_aos: {}",
-                                            hero_aos_to_str(alert.alert_data_aos)
-                                        ),
-                                        format!("- alert_title: {}", alert.alert_title),
-                                        format!("- alert_copy: {}", alert.alert_copy),
-                                    ]
-                                    .join("\n")
-                                } else if let crate::model::SectionComponent::Alternating(alt) =
+                                if let crate::model::SectionComponent::Alternating(alt) =
                                     component
                                 {
                                     match self.input_mode {
@@ -2828,13 +2759,7 @@ impl App {
                                         _ => component_form(component, self.selected_nested_item),
                                     }
                                 } else {
-                                    let mut lines = vec![
-                                        format!("- column.id: {}", col.id),
-                                        format!("- column.width_class: {}", col.width_class),
-                                    ];
-                                    lines
-                                        .push(component_form(component, self.selected_nested_item));
-                                    lines.join("\n")
+                                    component_form(component, self.selected_nested_item)
                                 }
                             } else {
                                 "(none)".to_string()
@@ -2870,6 +2795,8 @@ impl App {
         };
         self.input_mode = Some(mode);
         self.input_buffer = value;
+        self.clamp_hero_copy_input_if_needed();
+        self.input_cursor = self.input_buffer.chars().count();
         self.status = match mode {
             InputMode::EditHeroImage => {
                 "Editing hero image URL. Enter to save, esc to cancel.".to_string()
@@ -2879,6 +2806,9 @@ impl App {
             }
             InputMode::EditHeroAos => {
                 "Editing hero data-aos option. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroCustomCss => {
+                "Editing hero custom CSS classes. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditHeroTitle => {
                 "Editing hero title. Enter to save, esc to cancel.".to_string()
@@ -2895,11 +2825,17 @@ impl App {
             InputMode::EditHeroCtaLink => {
                 "Editing hero primary link URL. Enter to save, esc to cancel.".to_string()
             }
+            InputMode::EditHeroCtaTarget => {
+                "Editing hero primary link target. Enter to save, esc to cancel.".to_string()
+            }
             InputMode::EditHeroCtaText2 => {
                 "Editing hero secondary link text. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditHeroCtaLink2 => {
                 "Editing hero secondary link URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeroCtaTarget2 => {
+                "Editing hero secondary link target. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditSectionId => {
                 "Editing section id. Enter to save, esc to cancel.".to_string()
@@ -2909,33 +2845,6 @@ impl App {
             }
             InputMode::EditSectionClass => {
                 "Editing section class. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditCardTitle => {
-                "Editing dd-card title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditCardCopy => {
-                "Editing dd-card copy. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditCtaTitle => {
-                "Editing dd-cta title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditCtaLink => {
-                "Editing dd-cta link. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAlertType => {
-                "Editing dd-alert type. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAlertClass => {
-                "Editing dd-alert class. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAlertDataAos => {
-                "Editing dd-alert data-aos. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAlertTitle => {
-                "Editing dd-alert title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAlertCopy => {
-                "Editing dd-alert copy. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAlternatingType => {
                 "Editing dd-alternating type. Enter to save, esc to cancel.".to_string()
@@ -2958,17 +2867,17 @@ impl App {
             InputMode::EditAlternatingItemCopy => {
                 "Editing dd-alternating item copy. Enter to save, esc to cancel.".to_string()
             }
-            InputMode::EditBannerMessage => {
-                "Editing dd-banner message. Enter to save, esc to cancel.".to_string()
+            InputMode::EditBannerClass => {
+                "Editing dd-banner class. Enter to save, esc to cancel.".to_string()
             }
-            InputMode::EditBannerLinkUrl => {
-                "Editing dd-banner link_url. Enter to save, esc to cancel.".to_string()
+            InputMode::EditBannerDataAos => {
+                "Editing dd-banner data-aos. Enter to save, esc to cancel.".to_string()
             }
-            InputMode::EditTabsFirstTitle => {
-                "Editing dd-tabs item title. Enter to save, esc to cancel.".to_string()
+            InputMode::EditBannerImageUrl => {
+                "Editing dd-banner image URL. Enter to save, esc to cancel.".to_string()
             }
-            InputMode::EditTabsFirstContent => {
-                "Editing dd-tabs item content. Enter to save, esc to cancel.".to_string()
+            InputMode::EditBannerImageAlt => {
+                "Editing dd-banner image alt text. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAccordionType => {
                 "Editing dd-accordion type. Enter to save, esc to cancel.".to_string()
@@ -2988,28 +2897,6 @@ impl App {
             InputMode::EditAccordionFirstContent => {
                 "Editing dd-accordion item content. Enter to save, esc to cancel.".to_string()
             }
-            InputMode::EditModalTitle => {
-                "Editing dd-modal title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditModalContent => {
-                "Editing dd-modal content. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditSliderFirstTitle => {
-                "Editing dd-slider slide title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditSliderFirstCopy => {
-                "Editing dd-slider slide copy. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditSpacerHeight => {
-                "Editing dd-spacer height (sm|md|lg|xl|xxl). Enter to save, esc to cancel."
-                    .to_string()
-            }
-            InputMode::EditTimelineFirstTitle => {
-                "Editing dd-timeline event title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditTimelineFirstDescription => {
-                "Editing dd-timeline event description. Enter to save, esc to cancel.".to_string()
-            }
             _ => "Editing field. Enter to save, esc to cancel.".to_string(),
         };
         true
@@ -3017,199 +2904,131 @@ impl App {
 
     fn value_for_component_mode(&self, mode: InputMode) -> Option<String> {
         let page = self.current_page();
-        if !page.nodes.is_empty() {
-            let ni = self.selected_node.min(page.nodes.len().saturating_sub(1));
-            if let PageNode::Hero(hero) = &page.nodes[ni] {
-                match mode {
-                    InputMode::EditHeroImage => return Some(hero.image.clone()),
-                    InputMode::EditHeroClass => {
-                        return Some(
-                            hero_image_class_to_str(
-                                hero.hero_class
-                                    .unwrap_or(crate::model::HeroImageClass::FullFull),
-                            )
-                            .to_string(),
-                        );
-                    }
-                    InputMode::EditHeroAos => {
-                        return Some(
-                            hero_aos_to_str(hero.hero_aos.unwrap_or(crate::model::HeroAos::FadeIn))
-                                .to_string(),
-                        );
-                    }
-                    InputMode::EditHeroTitle => return Some(hero.title.clone()),
-                    InputMode::EditHeroSubtitle => return Some(hero.subtitle.clone()),
-                    InputMode::EditHeroCopy => {
-                        return Some(hero.copy.clone().unwrap_or_default());
-                    }
-                    InputMode::EditHeroCtaText => {
-                        return Some(hero.cta_text.clone().unwrap_or_default());
-                    }
-                    InputMode::EditHeroCtaLink => {
-                        return Some(hero.cta_link.clone().unwrap_or_default());
-                    }
-                    InputMode::EditHeroCtaText2 => {
-                        return Some(hero.cta_text_2.clone().unwrap_or_default());
-                    }
-                    InputMode::EditHeroCtaLink2 => {
-                        return Some(hero.cta_link_2.clone().unwrap_or_default());
-                    }
-                    _ => {}
-                }
-            }
-            if let PageNode::Section(section) = &page.nodes[ni] {
-                match mode {
-                    InputMode::EditSectionId => return Some(section.id.clone()),
-                    InputMode::EditSectionTitle => {
-                        return Some(section.section_title.clone().unwrap_or_default());
-                    }
-                    InputMode::EditSectionClass => {
-                        return Some(
-                            section_class_to_str(
-                                section
-                                    .section_class
-                                    .unwrap_or(crate::model::SectionClass::FullContained),
-                            )
-                            .to_string(),
-                        );
-                    }
-                    _ => {}
-                }
-            }
+        if page.nodes.is_empty() {
+            return None;
         }
-
-        let component = self.selected_component_owned()?;
-        match (mode, component) {
-            (InputMode::EditCardTitle, crate::model::SectionComponent::Card(v)) => {
-                Some(v.title.clone())
-            }
-            (InputMode::EditCardCopy, crate::model::SectionComponent::Card(v)) => {
-                Some(v.copy.clone().unwrap_or_default())
-            }
-            (InputMode::EditCtaTitle, crate::model::SectionComponent::Cta(v)) => {
-                Some(v.title.clone())
-            }
-            (InputMode::EditCtaLink, crate::model::SectionComponent::Cta(v)) => {
-                Some(v.cta_link.clone())
-            }
-            (InputMode::EditAlertTitle, crate::model::SectionComponent::Alert(v)) => {
-                Some(v.alert_title.clone())
-            }
-            (InputMode::EditAlertType, crate::model::SectionComponent::Alert(v)) => {
-                Some(alert_type_to_str(v.alert_type).to_string())
-            }
-            (InputMode::EditAlertClass, crate::model::SectionComponent::Alert(v)) => {
-                Some(alert_class_to_str(v.alert_class).to_string())
-            }
-            (InputMode::EditAlertDataAos, crate::model::SectionComponent::Alert(v)) => {
-                Some(hero_aos_to_str(v.alert_data_aos).to_string())
-            }
-            (InputMode::EditAlertCopy, crate::model::SectionComponent::Alert(v)) => {
-                Some(v.alert_copy.clone())
-            }
-            (InputMode::EditAlternatingType, crate::model::SectionComponent::Alternating(v)) => {
-                Some(alternating_type_to_str(v.alternating_type).to_string())
-            }
-            (InputMode::EditAlternatingClass, crate::model::SectionComponent::Alternating(v)) => {
-                Some(v.alternating_class.clone())
-            }
-            (InputMode::EditAlternatingDataAos, crate::model::SectionComponent::Alternating(v)) => {
-                Some(hero_aos_to_str(v.alternating_data_aos).to_string())
-            }
-            (
-                InputMode::EditAlternatingItemImage,
-                crate::model::SectionComponent::Alternating(v),
-            ) => {
-                let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                Some(v.items[ni].image.clone())
-            }
-            (
-                InputMode::EditAlternatingItemImageAlt,
-                crate::model::SectionComponent::Alternating(v),
-            ) => {
-                let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                Some(v.items[ni].image_alt.clone())
-            }
-            (
-                InputMode::EditAlternatingItemTitle,
-                crate::model::SectionComponent::Alternating(v),
-            ) => {
-                let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                Some(v.items[ni].title.clone())
-            }
-            (
-                InputMode::EditAlternatingItemCopy,
-                crate::model::SectionComponent::Alternating(v),
-            ) => {
-                let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                Some(v.items[ni].copy.clone())
-            }
-            (InputMode::EditBannerMessage, crate::model::SectionComponent::Banner(v)) => {
-                Some(v.message.clone())
-            }
-            (InputMode::EditBannerLinkUrl, crate::model::SectionComponent::Banner(v)) => {
-                Some(v.link_url.clone().unwrap_or_default())
-            }
-            (InputMode::EditModalTitle, crate::model::SectionComponent::Modal(v)) => {
-                Some(v.title.clone())
-            }
-            (InputMode::EditModalContent, crate::model::SectionComponent::Modal(v)) => {
-                Some(v.content.clone())
-            }
-            (InputMode::EditSpacerHeight, crate::model::SectionComponent::Spacer(v)) => {
-                Some(spacer_height_to_str(v.height).to_string())
-            }
-            (InputMode::EditTabsFirstTitle, crate::model::SectionComponent::Tabs(v)) => {
-                let ni = nested_index(v.tabs.len(), self.selected_nested_item)?;
-                Some(v.tabs[ni].title.clone())
-            }
-            (InputMode::EditTabsFirstContent, crate::model::SectionComponent::Tabs(v)) => {
-                let ni = nested_index(v.tabs.len(), self.selected_nested_item)?;
-                Some(v.tabs[ni].content.clone())
-            }
-            (InputMode::EditAccordionType, crate::model::SectionComponent::Accordion(v)) => {
-                Some(accordion_type_to_str(v.accordion_type).to_string())
-            }
-            (InputMode::EditAccordionClass, crate::model::SectionComponent::Accordion(v)) => {
-                Some(accordion_class_to_str(v.accordion_class).to_string())
-            }
-            (InputMode::EditAccordionAos, crate::model::SectionComponent::Accordion(v)) => {
-                Some(hero_aos_to_str(v.accordion_aos).to_string())
-            }
-            (InputMode::EditAccordionGroupName, crate::model::SectionComponent::Accordion(v)) => {
-                Some(v.group_name.clone())
-            }
-            (InputMode::EditAccordionFirstTitle, crate::model::SectionComponent::Accordion(v)) => {
-                let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                Some(v.items[ni].title.clone())
-            }
-            (
-                InputMode::EditAccordionFirstContent,
-                crate::model::SectionComponent::Accordion(v),
-            ) => {
-                let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                Some(v.items[ni].content.clone())
-            }
-            (InputMode::EditSliderFirstTitle, crate::model::SectionComponent::Slider(v)) => {
-                let ni = nested_index(v.slides.len(), self.selected_nested_item)?;
-                Some(v.slides[ni].title.clone())
-            }
-            (InputMode::EditSliderFirstCopy, crate::model::SectionComponent::Slider(v)) => {
-                let ni = nested_index(v.slides.len(), self.selected_nested_item)?;
-                Some(v.slides[ni].copy.clone())
-            }
-            (InputMode::EditTimelineFirstTitle, crate::model::SectionComponent::Timeline(v)) => {
-                let ni = nested_index(v.events.len(), self.selected_nested_item)?;
-                Some(v.events[ni].title.clone())
-            }
-            (
-                InputMode::EditTimelineFirstDescription,
-                crate::model::SectionComponent::Timeline(v),
-            ) => {
-                let ni = nested_index(v.events.len(), self.selected_nested_item)?;
-                Some(v.events[ni].description.clone())
-            }
-            _ => None,
+        let node_idx = self.selected_node.min(page.nodes.len() - 1);
+        match &page.nodes[node_idx] {
+            PageNode::Hero(hero) => match mode {
+                InputMode::EditHeroImage => Some(hero.image.clone()),
+                InputMode::EditHeroClass => Some(
+                    hero_image_class_to_str(
+                        hero.hero_class
+                            .unwrap_or(crate::model::HeroImageClass::FullFull),
+                    )
+                    .to_string(),
+                ),
+                InputMode::EditHeroAos => Some(
+                    hero_aos_to_str(hero.hero_aos.unwrap_or(crate::model::HeroAos::FadeIn))
+                        .to_string(),
+                ),
+                InputMode::EditHeroCustomCss => Some(hero.custom_css.clone().unwrap_or_default()),
+                InputMode::EditHeroTitle => Some(hero.title.clone()),
+                InputMode::EditHeroSubtitle => Some(hero.subtitle.clone()),
+                InputMode::EditHeroCopy => Some(hero.copy.clone().unwrap_or_default()),
+                InputMode::EditHeroCtaText => Some(hero.cta_text.clone().unwrap_or_default()),
+                InputMode::EditHeroCtaLink => Some(hero.cta_link.clone().unwrap_or_default()),
+                InputMode::EditHeroCtaTarget => Some(
+                    cta_target_to_str(hero.cta_target.unwrap_or(crate::model::CtaTarget::SelfTarget))
+                        .to_string(),
+                ),
+                InputMode::EditHeroCtaText2 => Some(hero.cta_text_2.clone().unwrap_or_default()),
+                InputMode::EditHeroCtaLink2 => Some(hero.cta_link_2.clone().unwrap_or_default()),
+                InputMode::EditHeroCtaTarget2 => Some(
+                    cta_target_to_str(
+                        hero.cta_target_2.unwrap_or(crate::model::CtaTarget::SelfTarget),
+                    )
+                    .to_string(),
+                ),
+                _ => None,
+            },
+            PageNode::Section(section) => match mode {
+                InputMode::EditSectionId => Some(section.id.clone()),
+                InputMode::EditSectionTitle => Some(section.section_title.clone().unwrap_or_default()),
+                InputMode::EditSectionClass => Some(
+                    section_class_to_str(
+                        section
+                            .section_class
+                            .unwrap_or(crate::model::SectionClass::FullContained),
+                    )
+                    .to_string(),
+                ),
+                InputMode::EditColumnId | InputMode::EditColumnWidthClass => {
+                    let columns = section_columns_ref(section);
+                    let col_i = self.selected_column.min(columns.len().saturating_sub(1));
+                    match mode {
+                        InputMode::EditColumnId => Some(columns[col_i].id.clone()),
+                        InputMode::EditColumnWidthClass => Some(columns[col_i].width_class.clone()),
+                        _ => None,
+                    }
+                }
+                _ => {
+                    let columns = section_columns_ref(section);
+                    let col_i = self.selected_column.min(columns.len().saturating_sub(1));
+                    let ci = component_index(columns[col_i].components.len(), self.selected_component)?;
+                    let component = columns[col_i].components.get(ci)?;
+                    match (mode, component) {
+                        (InputMode::EditAlternatingType, crate::model::SectionComponent::Alternating(v)) => {
+                            Some(alternating_type_to_str(v.alternating_type).to_string())
+                        }
+                        (InputMode::EditAlternatingClass, crate::model::SectionComponent::Alternating(v)) => {
+                            Some(v.alternating_class.clone())
+                        }
+                        (InputMode::EditAlternatingDataAos, crate::model::SectionComponent::Alternating(v)) => {
+                            Some(hero_aos_to_str(v.alternating_data_aos).to_string())
+                        }
+                        (InputMode::EditAlternatingItemImage, crate::model::SectionComponent::Alternating(v)) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].image.clone())
+                        }
+                        (InputMode::EditAlternatingItemImageAlt, crate::model::SectionComponent::Alternating(v)) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].image_alt.clone())
+                        }
+                        (InputMode::EditAlternatingItemTitle, crate::model::SectionComponent::Alternating(v)) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].title.clone())
+                        }
+                        (InputMode::EditAlternatingItemCopy, crate::model::SectionComponent::Alternating(v)) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].copy.clone())
+                        }
+                        (InputMode::EditBannerClass, crate::model::SectionComponent::Banner(v)) => {
+                            Some(banner_class_to_str(v.banner_class).to_string())
+                        }
+                        (InputMode::EditBannerDataAos, crate::model::SectionComponent::Banner(v)) => {
+                            Some(hero_aos_to_str(v.banner_data_aos).to_string())
+                        }
+                        (InputMode::EditBannerImageUrl, crate::model::SectionComponent::Banner(v)) => {
+                            Some(v.banner_image_url.clone())
+                        }
+                        (InputMode::EditBannerImageAlt, crate::model::SectionComponent::Banner(v)) => {
+                            Some(v.banner_image_alt.clone())
+                        }
+                        (InputMode::EditAccordionType, crate::model::SectionComponent::Accordion(v)) => {
+                            Some(accordion_type_to_str(v.accordion_type).to_string())
+                        }
+                        (InputMode::EditAccordionClass, crate::model::SectionComponent::Accordion(v)) => {
+                            Some(accordion_class_to_str(v.accordion_class).to_string())
+                        }
+                        (InputMode::EditAccordionAos, crate::model::SectionComponent::Accordion(v)) => {
+                            Some(hero_aos_to_str(v.accordion_aos).to_string())
+                        }
+                        (InputMode::EditAccordionGroupName, crate::model::SectionComponent::Accordion(v)) => {
+                            Some(v.group_name.clone())
+                        }
+                        (InputMode::EditAccordionFirstTitle, crate::model::SectionComponent::Accordion(v)) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].title.clone())
+                        }
+                        (InputMode::EditAccordionFirstContent, crate::model::SectionComponent::Accordion(v)) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].content.clone())
+                        }
+                        _ => None,
+                    }
+                }
+            },
         }
     }
 
@@ -3330,6 +3149,7 @@ impl App {
             image: "/assets/images/hero-new.jpg".to_string(),
             hero_class: Some(crate::model::HeroImageClass::FullFull),
             hero_aos: Some(crate::model::HeroAos::FadeIn),
+            custom_css: None,
             title: "New Hero".to_string(),
             subtitle: "Add subtitle".to_string(),
             copy: None,
@@ -3541,6 +3361,42 @@ impl App {
         }
     }
 
+    fn cycle_hero_cta_target(&mut self, secondary: bool, forward: bool) {
+        let selected = self.selected_node;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected hero.".to_string();
+            return;
+        }
+        let idx = selected.min(page.nodes.len() - 1);
+        match &mut page.nodes[idx] {
+            PageNode::Hero(hero) => {
+                let current = if secondary {
+                    hero.cta_target_2.unwrap_or(crate::model::CtaTarget::SelfTarget)
+                } else {
+                    hero.cta_target.unwrap_or(crate::model::CtaTarget::SelfTarget)
+                };
+                let next = next_hero_cta_target(current, forward);
+                if secondary {
+                    hero.cta_target_2 = Some(next);
+                } else {
+                    hero.cta_target = Some(next);
+                }
+                self.status = if secondary {
+                    format!("Hero link_2 target: {}", cta_target_to_str(next))
+                } else {
+                    format!("Hero link_1 target: {}", cta_target_to_str(next))
+                };
+            }
+            _ => {
+                self.status =
+                    "Left/Right hero target cycling works on a selected hero row.".to_string();
+            }
+        }
+    }
+
     fn cycle_section_class(&mut self, forward: bool) {
         self.mutate_selected_section(
             |s| {
@@ -3553,30 +3409,21 @@ impl App {
         );
     }
 
-    fn cycle_alert_type(&mut self, forward: bool) {
-        self.mutate_selected_alert(
-            |a| {
-                a.alert_type = next_alert_type(a.alert_type, forward);
+    fn cycle_banner_class(&mut self, forward: bool) {
+        self.mutate_selected_banner(
+            |b| {
+                b.banner_class = next_banner_class(b.banner_class, forward);
             },
-            "Cycled dd-alert type.",
+            "Cycled dd-banner class.",
         );
     }
 
-    fn cycle_alert_class(&mut self, forward: bool) {
-        self.mutate_selected_alert(
-            |a| {
-                a.alert_class = next_alert_class(a.alert_class, forward);
+    fn cycle_banner_data_aos(&mut self, forward: bool) {
+        self.mutate_selected_banner(
+            |b| {
+                b.banner_data_aos = next_hero_aos(b.banner_data_aos, forward);
             },
-            "Cycled dd-alert class.",
-        );
-    }
-
-    fn cycle_alert_data_aos(&mut self, forward: bool) {
-        self.mutate_selected_alert(
-            |a| {
-                a.alert_data_aos = next_hero_aos(a.alert_data_aos, forward);
-            },
-            "Cycled dd-alert data-aos.",
+            "Cycled dd-banner data-aos.",
         );
     }
 
@@ -3596,42 +3443,6 @@ impl App {
             },
             "Cycled dd-alternating data-aos.",
         );
-    }
-
-    fn mutate_selected_alert<F>(&mut self, mutator: F, success_message: &str)
-    where
-        F: FnOnce(&mut crate::model::DdAlert),
-    {
-        let selected = self.selected_node;
-        let selected_column = self.selected_column;
-        let selected_component = self.selected_component;
-        let Some(page) = self.current_page_mut() else {
-            return;
-        };
-        if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
-            return;
-        }
-        let ni = selected.min(page.nodes.len() - 1);
-        let result = match &mut page.nodes[ni] {
-            PageNode::Section(section) => {
-                normalize_section_columns(section);
-                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
-                let components = &mut section.columns[col_i].components;
-                if let Some(ci) = component_index(components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Alert(alert) = &mut components[ci] {
-                        mutator(alert);
-                        success_message.to_string()
-                    } else {
-                        "Selected component is not dd-alert.".to_string()
-                    }
-                } else {
-                    "Section has no components.".to_string()
-                }
-            }
-            _ => "Selected node is not a section.".to_string(),
-        };
-        self.status = result;
     }
 
     fn mutate_selected_alternating<F>(&mut self, mutator: F, success_message: &str)
@@ -3660,6 +3471,42 @@ impl App {
                         success_message.to_string()
                     } else {
                         "Selected component is not dd-alternating.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            _ => "Selected node is not a section.".to_string(),
+        };
+        self.status = result;
+    }
+
+    fn mutate_selected_banner<F>(&mut self, mutator: F, success_message: &str)
+    where
+        F: FnOnce(&mut crate::model::DdBanner),
+    {
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Banner(banner) = &mut components[ci] {
+                        mutator(banner);
+                        success_message.to_string()
+                    } else {
+                        "Selected component is not dd-banner.".to_string()
                     }
                 } else {
                     "Section has no components.".to_string()
@@ -4224,30 +4071,11 @@ impl App {
                         if let Some(ci) = component_index(components.len(), self.selected_component)
                         {
                             match &components[ci] {
-                                crate::model::SectionComponent::Card(card) => {
-                                    Some((InputMode::EditCardTitle, card.title.clone()))
-                                }
-                                crate::model::SectionComponent::Cta(cta) => {
-                                    Some((InputMode::EditCtaTitle, cta.title.clone()))
-                                }
-                                crate::model::SectionComponent::Alert(alert) => Some((
-                                    InputMode::EditAlertType,
-                                    alert_type_to_str(alert.alert_type).to_string(),
-                                )),
                                 crate::model::SectionComponent::Banner(banner) => {
-                                    Some((InputMode::EditBannerMessage, banner.message.clone()))
-                                }
-                                crate::model::SectionComponent::Tabs(tabs) => {
-                                    if let Some(ni) =
-                                        nested_index(tabs.tabs.len(), self.selected_nested_item)
-                                    {
-                                        Some((
-                                            InputMode::EditTabsFirstTitle,
-                                            tabs.tabs[ni].title.clone(),
-                                        ))
-                                    } else {
-                                        None
-                                    }
+                                    Some((
+                                        InputMode::EditBannerClass,
+                                        banner_class_to_str(banner.banner_class).to_string(),
+                                    ))
                                 }
                                 crate::model::SectionComponent::Accordion(acc) => Some((
                                     InputMode::EditAccordionType,
@@ -4257,37 +4085,6 @@ impl App {
                                     InputMode::EditAlternatingType,
                                     alternating_type_to_str(alt.alternating_type).to_string(),
                                 )),
-                                crate::model::SectionComponent::Modal(modal) => {
-                                    Some((InputMode::EditModalTitle, modal.title.clone()))
-                                }
-                                crate::model::SectionComponent::Slider(slider) => {
-                                    if let Some(ni) =
-                                        nested_index(slider.slides.len(), self.selected_nested_item)
-                                    {
-                                        Some((
-                                            InputMode::EditSliderFirstTitle,
-                                            slider.slides[ni].title.clone(),
-                                        ))
-                                    } else {
-                                        None
-                                    }
-                                }
-                                crate::model::SectionComponent::Spacer(spacer) => Some((
-                                    InputMode::EditSpacerHeight,
-                                    spacer_height_to_str(spacer.height).to_string(),
-                                )),
-                                crate::model::SectionComponent::Timeline(tl) => {
-                                    if let Some(ni) =
-                                        nested_index(tl.events.len(), self.selected_nested_item)
-                                    {
-                                        Some((
-                                            InputMode::EditTimelineFirstTitle,
-                                            tl.events[ni].title.clone(),
-                                        ))
-                                    } else {
-                                        None
-                                    }
-                                }
                             }
                         } else {
                             None
@@ -4298,27 +4095,15 @@ impl App {
         };
 
         let Some((mode, value)) = selected else {
-            self.status =
-                "Primary edit supports card/cta/alert/banner/tabs/accordion/modal/slider/spacer/timeline.".to_string();
+            self.status = "Primary edit supports banner/accordion/alternating.".to_string();
             return;
         };
         self.input_mode = Some(mode);
         self.input_buffer = value;
+        self.input_cursor = self.input_buffer.chars().count();
         self.status = match mode {
-            InputMode::EditCardTitle => {
-                "Editing dd-card title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditCtaTitle => {
-                "Editing dd-cta title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAlertType => {
-                "Editing dd-alert type. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditBannerMessage => {
-                "Editing dd-banner message. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditTabsFirstTitle => {
-                "Editing dd-tabs first title. Enter to save, esc to cancel.".to_string()
+            InputMode::EditBannerClass => {
+                "Editing dd-banner class. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAccordionType => {
                 "Editing dd-accordion type. Enter to save, esc to cancel.".to_string()
@@ -4337,19 +4122,6 @@ impl App {
             }
             InputMode::EditAlternatingType => {
                 "Editing dd-alternating type. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditModalTitle => {
-                "Editing dd-modal title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditSliderFirstTitle => {
-                "Editing dd-slider first slide title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditSpacerHeight => {
-                "Editing dd-spacer height (sm|md|lg|xl|xxl). Enter to save, esc to cancel."
-                    .to_string()
-            }
-            InputMode::EditTimelineFirstTitle => {
-                "Editing dd-timeline first title. Enter to save, esc to cancel.".to_string()
             }
             _ => "Editing component value.".to_string(),
         };
@@ -4715,6 +4487,13 @@ fn hero_ascii_map(hero: &crate::model::DdHero, panel_width: usize) -> String {
             ),
             inner_width,
         ),
+        fit_ascii_cell(
+            &format!(
+                "custom_css: {}",
+                hero.custom_css.as_deref().unwrap_or("(none)")
+            ),
+            inner_width,
+        ),
         fit_ascii_cell(&format!("title: {}", hero.title), inner_width),
         fit_ascii_cell(&format!("subtitle: {}", hero.subtitle), inner_width),
         fit_ascii_cell(
@@ -4777,65 +4556,51 @@ fn parse_section_class(raw: &str) -> Option<crate::model::SectionClass> {
     }
 }
 
-fn alert_type_to_str(v: crate::model::AlertType) -> &'static str {
+fn banner_class_to_str(v: crate::model::BannerClass) -> &'static str {
     match v {
-        crate::model::AlertType::Default => "-default",
-        crate::model::AlertType::InfoMinor => "-info -minor",
-        crate::model::AlertType::WarningModerateSerious => "-warning -moderate -serious",
-        crate::model::AlertType::ErrorCritical => "-error -critical",
-        crate::model::AlertType::Success => "-success",
+        crate::model::BannerClass::BgTopLeft => "-bg-top-left",
+        crate::model::BannerClass::BgTopCenter => "-bg-top-center",
+        crate::model::BannerClass::BgTopRight => "-bg-top-right",
+        crate::model::BannerClass::BgCenterLeft => "-bg-center-left",
+        crate::model::BannerClass::BgCenterCenter => "-bg-center-center",
+        crate::model::BannerClass::BgCenterRight => "-bg-center-right",
+        crate::model::BannerClass::BgBottomLeft => "-bg-bottom-left",
+        crate::model::BannerClass::BgBottomCenter => "-bg-bottom-center",
+        crate::model::BannerClass::BgBottomRight => "-bg-bottom-right",
     }
 }
 
-fn parse_alert_type(raw: &str) -> Option<crate::model::AlertType> {
+fn parse_banner_class(raw: &str) -> Option<crate::model::BannerClass> {
     match raw.trim() {
-        "-default" => Some(crate::model::AlertType::Default),
-        "-info -minor" => Some(crate::model::AlertType::InfoMinor),
-        "-warning -moderate -serious" => Some(crate::model::AlertType::WarningModerateSerious),
-        "-error -critical" => Some(crate::model::AlertType::ErrorCritical),
-        "-success" => Some(crate::model::AlertType::Success),
+        "-bg-top-left" => Some(crate::model::BannerClass::BgTopLeft),
+        "-bg-top-center" => Some(crate::model::BannerClass::BgTopCenter),
+        "-bg-top-right" => Some(crate::model::BannerClass::BgTopRight),
+        "-bg-center-left" => Some(crate::model::BannerClass::BgCenterLeft),
+        "-bg-center-center" => Some(crate::model::BannerClass::BgCenterCenter),
+        "-bg-center-right" => Some(crate::model::BannerClass::BgCenterRight),
+        "-bg-bottom-left" => Some(crate::model::BannerClass::BgBottomLeft),
+        "-bg-bottom-center" => Some(crate::model::BannerClass::BgBottomCenter),
+        "-bg-bottom-right" => Some(crate::model::BannerClass::BgBottomRight),
         _ => None,
     }
 }
 
-fn next_alert_type(current: crate::model::AlertType, forward: bool) -> crate::model::AlertType {
-    use crate::model::AlertType;
+fn next_banner_class(
+    current: crate::model::BannerClass,
+    forward: bool,
+) -> crate::model::BannerClass {
+    use crate::model::BannerClass;
     let all = [
-        AlertType::Default,
-        AlertType::InfoMinor,
-        AlertType::WarningModerateSerious,
-        AlertType::ErrorCritical,
-        AlertType::Success,
+        BannerClass::BgTopLeft,
+        BannerClass::BgTopCenter,
+        BannerClass::BgTopRight,
+        BannerClass::BgCenterLeft,
+        BannerClass::BgCenterCenter,
+        BannerClass::BgCenterRight,
+        BannerClass::BgBottomLeft,
+        BannerClass::BgBottomCenter,
+        BannerClass::BgBottomRight,
     ];
-    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
-    let next_idx = if forward {
-        (idx + 1) % all.len()
-    } else if idx == 0 {
-        all.len() - 1
-    } else {
-        idx - 1
-    };
-    all[next_idx]
-}
-
-fn alert_class_to_str(v: crate::model::AlertClass) -> &'static str {
-    match v {
-        crate::model::AlertClass::Default => "-default",
-        crate::model::AlertClass::Compact => "-compact",
-    }
-}
-
-fn parse_alert_class(raw: &str) -> Option<crate::model::AlertClass> {
-    match raw.trim() {
-        "-default" => Some(crate::model::AlertClass::Default),
-        "-compact" => Some(crate::model::AlertClass::Compact),
-        _ => None,
-    }
-}
-
-fn next_alert_class(current: crate::model::AlertClass, forward: bool) -> crate::model::AlertClass {
-    use crate::model::AlertClass;
-    let all = [AlertClass::Default, AlertClass::Compact];
     let idx = all.iter().position(|v| *v == current).unwrap_or(0);
     let next_idx = if forward {
         (idx + 1) % all.len()
@@ -4995,6 +4760,35 @@ fn fit_ascii_cell(value: &str, width: usize) -> String {
     format!("{shortened:<width$}")
 }
 
+fn byte_index_for_char(s: &str, char_idx: usize) -> usize {
+    if char_idx == 0 {
+        return 0;
+    }
+    s.char_indices()
+        .nth(char_idx)
+        .map(|(i, _)| i)
+        .unwrap_or_else(|| s.len())
+}
+
+fn cursor_row_col(s: &str, cursor: usize) -> (usize, usize) {
+    let mut row = 0usize;
+    let mut col = 0usize;
+    let mut idx = 0usize;
+    for ch in s.chars() {
+        if idx >= cursor {
+            break;
+        }
+        if ch == '\n' {
+            row += 1;
+            col = 0;
+        } else {
+            col += 1;
+        }
+        idx += 1;
+    }
+    (row, col)
+}
+
 fn truncate_ascii(value: &str, max_chars: usize) -> String {
     let chars = value.chars().collect::<Vec<_>>();
     if chars.len() <= max_chars {
@@ -5010,25 +4804,14 @@ fn truncate_ascii(value: &str, max_chars: usize) -> String {
 
 fn component_label(component: &crate::model::SectionComponent) -> &'static str {
     match component {
-        crate::model::SectionComponent::Card(_) => "dd-card",
-        crate::model::SectionComponent::Alert(_) => "dd-alert",
         crate::model::SectionComponent::Banner(_) => "dd-banner",
-        crate::model::SectionComponent::Tabs(_) => "dd-tabs",
         crate::model::SectionComponent::Accordion(_) => "dd-accordion",
         crate::model::SectionComponent::Alternating(_) => "dd-alternating",
-        crate::model::SectionComponent::Cta(_) => "dd-cta",
-        crate::model::SectionComponent::Modal(_) => "dd-modal",
-        crate::model::SectionComponent::Slider(_) => "dd-slider",
-        crate::model::SectionComponent::Spacer(_) => "dd-spacer",
-        crate::model::SectionComponent::Timeline(_) => "dd-timeline",
     }
 }
 
 fn component_blueprint_label(component: &crate::model::SectionComponent) -> String {
     match component {
-        crate::model::SectionComponent::Alert(v) => {
-            format!("dd-alert | alert_title: {}", v.alert_title)
-        }
         crate::model::SectionComponent::Accordion(v) => format!(
             "dd-accordion | accordion_title: {}",
             v.items
@@ -5052,47 +4835,13 @@ fn component_form(
     selected_nested_item: usize,
 ) -> String {
     match component {
-        crate::model::SectionComponent::Card(v) => format!(
-            "fields:\n  title: {}\n  image: {}\n  copy: {}\n  cta_link: {}",
-            v.title,
-            v.image,
-            v.copy.as_deref().unwrap_or("(none)"),
-            v.cta_link.as_deref().unwrap_or("(none)")
-        ),
-        crate::model::SectionComponent::Alert(v) => format!(
-            "fields:\n  alert_type: {}\n  alert.class: {}\n  alert.data_aos: {}\n  alert_title: {}\n  alert_copy: {}",
-            alert_type_to_str(v.alert_type),
-            alert_class_to_str(v.alert_class),
-            hero_aos_to_str(v.alert_data_aos),
-            v.alert_title,
-            v.alert_copy
-        ),
         crate::model::SectionComponent::Banner(v) => format!(
-            "fields:\n  message: {}\n  background: {}\n  link_url: {}",
-            v.message,
-            v.background,
-            v.link_url.as_deref().unwrap_or("(none)")
+            "fields:\n  banner.class: {}\n  banner.data_aos: {}\n  banner_image_url: {}\n  banner_image_alt: {}",
+            banner_class_to_str(v.banner_class),
+            hero_aos_to_str(v.banner_data_aos),
+            v.banner_image_url,
+            v.banner_image_alt
         ),
-        crate::model::SectionComponent::Tabs(v) => {
-            let active = nested_index(v.tabs.len(), selected_nested_item)
-                .map(|i| i + 1)
-                .unwrap_or(0);
-            let title = nested_index(v.tabs.len(), selected_nested_item)
-                .and_then(|i| v.tabs.get(i))
-                .map(|t| t.title.as_str())
-                .unwrap_or("(none)");
-            let content = nested_index(v.tabs.len(), selected_nested_item)
-                .and_then(|i| v.tabs.get(i))
-                .map(|t| t.content.as_str())
-                .unwrap_or("(none)");
-            format!(
-                "fields:\n  tabs_count: {}\n  active_tab: {}\n  active_title: {}\n  active_content: {}",
-                v.tabs.len(),
-                active,
-                title,
-                content
-            )
-        }
         crate::model::SectionComponent::Accordion(v) => {
             let active = nested_index(v.items.len(), selected_nested_item)
                 .map(|i| i + 1)
@@ -5148,77 +4897,6 @@ fn component_form(
                 copy
             )
         }
-        crate::model::SectionComponent::Cta(v) => {
-            format!("fields:\n  title: {}", v.title)
-        }
-        crate::model::SectionComponent::Modal(v) => format!(
-            "fields:\n  trigger_text: {}\n  title: {}\n  content: {}",
-            v.trigger_text, v.title, v.content
-        ),
-        crate::model::SectionComponent::Slider(v) => {
-            let active = nested_index(v.slides.len(), selected_nested_item)
-                .map(|i| i + 1)
-                .unwrap_or(0);
-            let title = nested_index(v.slides.len(), selected_nested_item)
-                .and_then(|i| v.slides.get(i))
-                .map(|s| s.title.as_str())
-                .unwrap_or("(none)");
-            let copy = nested_index(v.slides.len(), selected_nested_item)
-                .and_then(|i| v.slides.get(i))
-                .map(|s| s.copy.as_str())
-                .unwrap_or("(none)");
-            format!(
-                "fields:\n  slides_count: {}\n  active_slide: {}\n  active_title: {}\n  active_copy: {}",
-                v.slides.len(),
-                active,
-                title,
-                copy
-            )
-        }
-        crate::model::SectionComponent::Spacer(v) => {
-            format!("fields:\n  height: {}", spacer_height_to_str(v.height))
-        }
-        crate::model::SectionComponent::Timeline(v) => {
-            let active = nested_index(v.events.len(), selected_nested_item)
-                .map(|i| i + 1)
-                .unwrap_or(0);
-            let title = nested_index(v.events.len(), selected_nested_item)
-                .and_then(|i| v.events.get(i))
-                .map(|e| e.title.as_str())
-                .unwrap_or("(none)");
-            let desc = nested_index(v.events.len(), selected_nested_item)
-                .and_then(|i| v.events.get(i))
-                .map(|e| e.description.as_str())
-                .unwrap_or("(none)");
-            format!(
-                "fields:\n  events_count: {}\n  active_event: {}\n  active_title: {}\n  active_description: {}",
-                v.events.len(),
-                active,
-                title,
-                desc
-            )
-        }
-    }
-}
-
-fn spacer_height_to_str(v: crate::model::SpacerHeight) -> &'static str {
-    match v {
-        crate::model::SpacerHeight::Sm => "sm",
-        crate::model::SpacerHeight::Md => "md",
-        crate::model::SpacerHeight::Lg => "lg",
-        crate::model::SpacerHeight::Xl => "xl",
-        crate::model::SpacerHeight::Xxl => "xxl",
-    }
-}
-
-fn parse_spacer_height(raw: &str) -> Option<crate::model::SpacerHeight> {
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "sm" => Some(crate::model::SpacerHeight::Sm),
-        "md" => Some(crate::model::SpacerHeight::Md),
-        "lg" => Some(crate::model::SpacerHeight::Lg),
-        "xl" => Some(crate::model::SpacerHeight::Xl),
-        "xxl" => Some(crate::model::SpacerHeight::Xxl),
-        _ => None,
     }
 }
 
@@ -5251,6 +4929,14 @@ fn hero_aos_to_str(v: crate::model::HeroAos) -> &'static str {
     }
 }
 
+fn cta_target_to_str(v: crate::model::CtaTarget) -> &'static str {
+    match v {
+        crate::model::CtaTarget::SelfTarget => "_self",
+        crate::model::CtaTarget::Blank => "_blank",
+        crate::model::CtaTarget::Parent => "_parent",
+    }
+}
+
 fn parse_hero_image_class(raw: &str) -> Option<crate::model::HeroImageClass> {
     let trimmed = raw.trim();
     let normalized = trimmed.strip_prefix(".dd-hero__image.").unwrap_or(trimmed);
@@ -5280,6 +4966,14 @@ fn parse_hero_aos(raw: &str) -> Option<crate::model::HeroAos> {
         "zoom-in" => Some(crate::model::HeroAos::ZoomIn),
         "zoom-in-up" => Some(crate::model::HeroAos::ZoomInUp),
         "zoom-in-down" => Some(crate::model::HeroAos::ZoomInDown),
+        _ => None,
+    }
+}
+
+fn parse_cta_target(raw: &str) -> Option<crate::model::CtaTarget> {
+    match raw.trim() {
+        "_self" => Some(crate::model::CtaTarget::SelfTarget),
+        "_blank" => Some(crate::model::CtaTarget::Blank),
         _ => None,
     }
 }
@@ -5325,6 +5019,23 @@ fn next_hero_aos(current: crate::model::HeroAos, forward: bool) -> crate::model:
         HeroAos::ZoomInUp,
         HeroAos::ZoomInDown,
     ];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
+}
+
+fn next_hero_cta_target(
+    current: crate::model::CtaTarget,
+    forward: bool,
+) -> crate::model::CtaTarget {
+    use crate::model::CtaTarget;
+    let all = [CtaTarget::SelfTarget, CtaTarget::Blank];
     let idx = all.iter().position(|v| *v == current).unwrap_or(0);
     let next_idx = if forward {
         (idx + 1) % all.len()
@@ -5542,23 +5253,29 @@ fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]
         InputMode::EditHeroImage
         | InputMode::EditHeroClass
         | InputMode::EditHeroAos
+        | InputMode::EditHeroCustomCss
         | InputMode::EditHeroTitle
         | InputMode::EditHeroSubtitle
         | InputMode::EditHeroCopy
         | InputMode::EditHeroCtaText
         | InputMode::EditHeroCtaLink
+        | InputMode::EditHeroCtaTarget
         | InputMode::EditHeroCtaText2
-        | InputMode::EditHeroCtaLink2 => Some(&[
+        | InputMode::EditHeroCtaLink2
+        | InputMode::EditHeroCtaTarget2 => Some(&[
             InputMode::EditHeroImage,
             InputMode::EditHeroClass,
             InputMode::EditHeroAos,
+            InputMode::EditHeroCustomCss,
             InputMode::EditHeroTitle,
             InputMode::EditHeroSubtitle,
             InputMode::EditHeroCopy,
             InputMode::EditHeroCtaText,
             InputMode::EditHeroCtaLink,
+            InputMode::EditHeroCtaTarget,
             InputMode::EditHeroCtaText2,
             InputMode::EditHeroCtaLink2,
+            InputMode::EditHeroCtaTarget2,
         ]),
         InputMode::EditSectionId | InputMode::EditSectionTitle | InputMode::EditSectionClass => {
             Some(&[
@@ -5567,29 +5284,14 @@ fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]
                 InputMode::EditSectionClass,
             ])
         }
-        InputMode::EditCardTitle | InputMode::EditCardCopy => {
-            Some(&[InputMode::EditCardTitle, InputMode::EditCardCopy])
-        }
-        InputMode::EditCtaTitle | InputMode::EditCtaLink => {
-            Some(&[InputMode::EditCtaTitle, InputMode::EditCtaLink])
-        }
-        InputMode::EditAlertType
-        | InputMode::EditAlertClass
-        | InputMode::EditAlertDataAos
-        | InputMode::EditAlertTitle
-        | InputMode::EditAlertCopy => Some(&[
-            InputMode::EditAlertType,
-            InputMode::EditAlertClass,
-            InputMode::EditAlertDataAos,
-            InputMode::EditAlertTitle,
-            InputMode::EditAlertCopy,
-        ]),
-        InputMode::EditBannerMessage | InputMode::EditBannerLinkUrl => {
-            Some(&[InputMode::EditBannerMessage, InputMode::EditBannerLinkUrl])
-        }
-        InputMode::EditTabsFirstTitle | InputMode::EditTabsFirstContent => Some(&[
-            InputMode::EditTabsFirstTitle,
-            InputMode::EditTabsFirstContent,
+        InputMode::EditBannerClass
+        | InputMode::EditBannerDataAos
+        | InputMode::EditBannerImageUrl
+        | InputMode::EditBannerImageAlt => Some(&[
+            InputMode::EditBannerClass,
+            InputMode::EditBannerDataAos,
+            InputMode::EditBannerImageUrl,
+            InputMode::EditBannerImageAlt,
         ]),
         InputMode::EditAccordionType
         | InputMode::EditAccordionClass
@@ -5619,18 +5321,6 @@ fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]
             InputMode::EditAlternatingItemTitle,
             InputMode::EditAlternatingItemCopy,
         ]),
-        InputMode::EditModalTitle | InputMode::EditModalContent => {
-            Some(&[InputMode::EditModalTitle, InputMode::EditModalContent])
-        }
-        InputMode::EditSliderFirstTitle | InputMode::EditSliderFirstCopy => Some(&[
-            InputMode::EditSliderFirstTitle,
-            InputMode::EditSliderFirstCopy,
-        ]),
-        InputMode::EditTimelineFirstTitle | InputMode::EditTimelineFirstDescription => Some(&[
-            InputMode::EditTimelineFirstTitle,
-            InputMode::EditTimelineFirstDescription,
-        ]),
-        InputMode::EditSpacerHeight => Some(&[InputMode::EditSpacerHeight]),
         _ => None,
     }
 }
@@ -5647,7 +5337,7 @@ fn help_text() -> String {
         "  Up/Down or mouse wheel: Select row in Nodes tree",
         "  Enter: Edit selected row",
         "  Space: Expand/collapse selected section or accordion/alternating items",
-        "  /: Open insert fuzzy finder (hero/section/components)",
+        "  /: Open insert fuzzy finder (hero/section/banner/accordion/alternating)",
         "  A / X: Add/remove dd-accordion or dd-alternating item",
         "  d: Delete selected node",
         "  J / K: Move selected node down / up",
@@ -5661,8 +5351,9 @@ fn help_text() -> String {
         "",
         "Edit modal:",
         "  Any edit command opens a modal with editable fields",
-        "  Tab / Shift+Tab: Next/previous editable field for selected hero/section",
-        "  Left / Right: Cycle section/hero/alert/accordion/alternating option fields when active",
+        "  Tab / Shift+Tab: Next/previous editable field for selected row",
+        "  Enter in hero.copy: insert newline (up to 3 rows); Ctrl+S: save",
+        "  Left / Right: Cycle section/hero/accordion/alternating option fields when active",
         "  Enter: Confirm edit",
         "  Esc: Cancel edit",
         "  Backspace: Delete character",
@@ -5675,17 +5366,9 @@ impl ComponentKind {
         &[
             Self::Hero,
             Self::Section,
-            Self::Card,
-            Self::Alert,
             Self::Banner,
-            Self::Tabs,
             Self::Accordion,
             Self::Alternating,
-            Self::Cta,
-            Self::Modal,
-            Self::Slider,
-            Self::Spacer,
-            Self::Timeline,
         ]
     }
 
@@ -5693,17 +5376,9 @@ impl ComponentKind {
         match self {
             ComponentKind::Hero => "dd-hero",
             ComponentKind::Section => "dd-section",
-            ComponentKind::Card => "dd-card",
-            ComponentKind::Alert => "dd-alert",
             ComponentKind::Banner => "dd-banner",
-            ComponentKind::Tabs => "dd-tabs",
             ComponentKind::Accordion => "dd-accordion",
             ComponentKind::Alternating => "dd-alternating",
-            ComponentKind::Cta => "dd-cta",
-            ComponentKind::Modal => "dd-modal",
-            ComponentKind::Slider => "dd-slider",
-            ComponentKind::Spacer => "dd-spacer",
-            ComponentKind::Timeline => "dd-timeline",
         }
     }
 
@@ -5712,47 +5387,14 @@ impl ComponentKind {
             ComponentKind::Hero | ComponentKind::Section => {
                 unreachable!("top-level kinds do not map to section components")
             }
-            ComponentKind::Card => crate::model::SectionComponent::Card(crate::model::DdCard {
-                title: "New Card".to_string(),
-                image: "/assets/images/card.jpg".to_string(),
-                subtitle: None,
-                copy: Some("Card copy".to_string()),
-                cta_text: None,
-                cta_link: None,
-                image_alt: Some("Card image".to_string()),
-                columns: Some(crate::model::CardColumns::Three),
-                animate: Some(crate::model::CardAnimate::FadeUp),
-            }),
-            ComponentKind::Alert => crate::model::SectionComponent::Alert(crate::model::DdAlert {
-                alert_type: crate::model::AlertType::Default,
-                alert_class: crate::model::AlertClass::Default,
-                alert_data_aos: crate::model::HeroAos::FadeIn,
-                alert_title: "Alert Title".to_string(),
-                alert_copy: "Alert content".to_string(),
-            }),
             ComponentKind::Banner => {
                 crate::model::SectionComponent::Banner(crate::model::DdBanner {
-                    message: "Banner message".to_string(),
-                    background: "#ffca76".to_string(),
-                    link_text: None,
-                    link_url: None,
-                    dismissible: Some(false),
+                    banner_class: crate::model::BannerClass::BgCenterCenter,
+                    banner_data_aos: crate::model::HeroAos::FadeIn,
+                    banner_image_url: "https://dummyimage.com/1920x1080/000/fff".to_string(),
+                    banner_image_alt: "Banner alt text".to_string(),
                 })
             }
-            ComponentKind::Tabs => crate::model::SectionComponent::Tabs(crate::model::DdTabs {
-                tabs: vec![
-                    crate::model::TabItem {
-                        title: "Tab One".to_string(),
-                        content: "First tab content".to_string(),
-                    },
-                    crate::model::TabItem {
-                        title: "Tab Two".to_string(),
-                        content: "Second tab content".to_string(),
-                    },
-                ],
-                default_tab: Some(0),
-                orientation: Some(crate::model::TabsOrientation::Horizontal),
-            }),
             ComponentKind::Accordion => {
                 crate::model::SectionComponent::Accordion(crate::model::DdAccordion {
                     accordion_type: crate::model::AccordionType::Default,
@@ -5776,42 +5418,6 @@ impl ComponentKind {
                         image_alt: "Alternating image".to_string(),
                         title: "Alternating Item".to_string(),
                         copy: "Alternating content".to_string(),
-                    }],
-                })
-            }
-            ComponentKind::Cta => crate::model::SectionComponent::Cta(crate::model::DdCta {
-                title: "Ready to continue?".to_string(),
-                copy: "Call to action copy".to_string(),
-                cta_text: "Continue".to_string(),
-                cta_link: "/continue".to_string(),
-            }),
-            ComponentKind::Modal => crate::model::SectionComponent::Modal(crate::model::DdModal {
-                trigger_text: "Open modal".to_string(),
-                title: "Modal title".to_string(),
-                content: "Modal content".to_string(),
-            }),
-            ComponentKind::Slider => {
-                crate::model::SectionComponent::Slider(crate::model::DdSlider {
-                    slides: vec![crate::model::SlideItem {
-                        image: "/assets/images/slide-1.jpg".to_string(),
-                        title: "Slide One".to_string(),
-                        copy: "Slide copy".to_string(),
-                    }],
-                    autoplay: Some(false),
-                    speed: Some(400),
-                })
-            }
-            ComponentKind::Spacer => {
-                crate::model::SectionComponent::Spacer(crate::model::DdSpacer {
-                    height: crate::model::SpacerHeight::Md,
-                })
-            }
-            ComponentKind::Timeline => {
-                crate::model::SectionComponent::Timeline(crate::model::DdTimeline {
-                    events: vec![crate::model::TimelineEvent {
-                        date: "2026-02-19".to_string(),
-                        title: "Milestone".to_string(),
-                        description: "Timeline event description".to_string(),
                     }],
                 })
             }
