@@ -5,7 +5,7 @@
 <section class="dd-section -full-contained">
   <div class="dd-section__content">
   <!-- if [section_title] -->
-    <div class="dd-section__title l-box">Section "contained" with max width set</div>
+    <div class="dd-section__title l-box">[section_title]</div>
     <div class="dd-section__items dd-g">
       <!-- if components -->
       <div class="dd-section__item dd-u-1-1 dd-u-lg-8-24 l-box">

@@ -112,6 +112,12 @@ fn render_hero(hero: &DdHero) -> anyhow::Result<String> {
 
 fn render_section(section: &DdSection) -> anyhow::Result<String> {
     let mut columns_html = String::new();
+    let item_box_class = section
+        .item_box_class
+        .as_ref()
+        .and_then(|v| serde_json::to_value(v).ok())
+        .map(|v| stringify_json(&v))
+        .unwrap_or_else(|| "l-box".to_string());
     for column in section_columns(section) {
         let mut inner = String::new();
         for component in &column.components {
@@ -134,15 +140,16 @@ fn render_section(section: &DdSection) -> anyhow::Result<String> {
             inner.push('\n');
         }
         columns_html.push_str(&format!(
-            r#"<div class="dd-section__item {}">{}</div>"#,
-            column.width_class, inner
+            r#"<div class="dd-section__item {} {}">{}</div>"#,
+            column.width_class, item_box_class, inner
         ));
         columns_html.push('\n');
     }
 
-    let template = r#"<section class="dd-section {{background}}" aria-label="Content section">
-  <div class="dd-section__container dd-g">
-    <div class="{{align}} {{width}} {{spacing}} dd-u-1-1 dd-g">
+    let template = r#"<section class="dd-section {{section_class}}" aria-label="Content section">
+  <div class="dd-section__content">
+    {{#if section_title}}<div class="dd-section__title l-box">{{section_title}}</div>{{/if}}
+    <div class="dd-section__items dd-g">
       {{{content}}}
     </div>
   </div>
@@ -151,10 +158,13 @@ fn render_section(section: &DdSection) -> anyhow::Result<String> {
     render_inline(
         template,
         json!({
-            "background": stringify_json(&serde_json::to_value(&section.background)?),
-            "spacing": stringify_json(&serde_json::to_value(&section.spacing)?),
-            "width": stringify_json(&serde_json::to_value(&section.width)?),
-            "align": stringify_json(&serde_json::to_value(&section.align)?),
+            "section_class": section
+                .section_class
+                .as_ref()
+                .and_then(|v| serde_json::to_value(v).ok())
+                .map(|v| stringify_json(&v))
+                .unwrap_or_else(|| "-full-contained".to_string()),
+            "section_title": section.section_title,
             "content": columns_html
         }),
     )

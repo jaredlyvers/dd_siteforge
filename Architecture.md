@@ -65,11 +65,10 @@ struct DdHero {
 
 struct DdSection {
     id: String,
-    background: SectionBackground, // primary|secondary|tertiary|gray|white|black
-    spacing: SectionSpacing,       // tight|normal|loose|extra-loose
-    width: SectionWidth,           // narrow|normal|wide|full
-    align: SectionAlign,           // left|center|right
-    components: Vec<SectionComponent>,
+    section_title: Option<String>,
+    section_class: SectionClass, // -contained|-contained-md|...|-full-contained-xxl
+    item_box_class: SectionItemBoxClass, // l-box|ll-box
+    columns: Vec<SectionColumn>,
 }
 
 enum SectionComponent {
@@ -102,7 +101,7 @@ All components below are available and should be first-class in the editor.
 
 3. `dd-section` (wrapper)
 - Required: `content`
-- Optional layout params: `background`, `spacing`, `width`, `align`
+- Optional layout params: `section_title`, `section_class`, `item_box_class`
 - Placement: top-level page node wrapping section-compatible components
 
 4. `dd-alert`
@@ -141,9 +140,8 @@ All components below are available and should be first-class in the editor.
 
 Expose these options directly in TUI controls (dropdown/select lists) and validate enumerations:
 
-- `dd-section.background`: `primary`, `secondary`, `tertiary`, `gray`, `white`, `black`
-- `dd-section.spacing`: `tight`, `normal`, `loose`, `extra-loose`
-- `dd-section.width`: `-full-full`, `-full-contained`
+- `dd-section.section_class`: `-contained`, `-contained-md`, `-contained-lg`, `-contained-xl`, `-contained-xxl`, `-full-full`, `-full-contained`, `-full-contained-md`, `-full-contained-lg`, `-full-contained-xl`, `-full-contained-xxl`
+- `dd-section.item_box_class`: `l-box`, `ll-box`
 - `dd-card.columns`: `2`, `3`, `4`
 - `dd-card.animate`: `fade-up`, `fade-in`, `slide-up`
 - `dd-tabs.orientation`: `horizontal`, `vertical`

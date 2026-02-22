@@ -53,7 +53,10 @@ pub fn validate_site(site: &Site) -> Vec<String> {
                     }
                     if let Some(link) = &hero.cta_link_2 {
                         if !is_valid_url(link) {
-                            errors.push(format!("Page '{}' hero secondary CTA link is invalid.", page.id));
+                            errors.push(format!(
+                                "Page '{}' hero secondary CTA link is invalid.",
+                                page.id
+                            ));
                         }
                     }
                 }
@@ -86,12 +89,6 @@ pub fn validate_site(site: &Site) -> Vec<String> {
                         if column.width_class.trim().is_empty() {
                             errors.push(format!(
                                 "Page '{}' section '{}' column '{}' missing width_class.",
-                                page.id, section.id, column.id
-                            ));
-                        }
-                        if column.components.is_empty() {
-                            errors.push(format!(
-                                "Page '{}' section '{}' column '{}' has no components.",
                                 page.id, section.id, column.id
                             ));
                         }
@@ -379,10 +376,14 @@ mod tests {
         let mut site = Site::starter();
         let page = &mut site.pages[0];
         if let PageNode::Section(section) = &mut page.nodes[1] {
-            if let crate::model::SectionComponent::Cta(cta) = &mut section.columns[0].components[0]
-            {
-                cta.cta_link = "bad-link".to_string();
-            }
+            section.columns[0]
+                .components
+                .push(crate::model::SectionComponent::Cta(crate::model::DdCta {
+                    title: "Test CTA".to_string(),
+                    copy: "Test copy".to_string(),
+                    cta_text: "Go".to_string(),
+                    cta_link: "bad-link".to_string(),
+                }));
         }
         let errors = validate_site(&site);
         assert!(

@@ -91,6 +91,8 @@ enum InputMode {
     EditHeroCtaText2,
     EditHeroCtaLink2,
     EditSectionId,
+    EditSectionTitle,
+    EditSectionClass,
     EditColumnId,
     EditColumnWidthClass,
     EditCardTitle,
@@ -116,6 +118,8 @@ enum InputMode {
 
 #[derive(Clone, Copy)]
 enum ComponentKind {
+    Hero,
+    Section,
     Card,
     Alert,
     Banner,
@@ -324,7 +328,7 @@ impl App {
         frame.render_widget(details, main[1]);
 
         let footer_text = format!(
-            "F1 help | q quit | s save | / component picker | Enter toggle/edit/select | {}",
+            "F1 help | q quit | s save | / insert | Enter edit | Space expand/collapse | {}",
             self.status
         );
         let footer = Paragraph::new(footer_text)
@@ -566,13 +570,12 @@ impl App {
                 KeyCode::Char('q') => self.should_quit = true,
                 KeyCode::Up => self.select_prev(),
                 KeyCode::Down => self.select_next(),
+                KeyCode::Char(' ') => self.toggle_selected_section_expanded(),
                 KeyCode::Enter => self.handle_enter_on_selected_row(),
                 KeyCode::Tab => self.select_next_page(),
                 KeyCode::BackTab => self.select_prev_page(),
                 KeyCode::Char('s') => self.begin_save_prompt(),
                 KeyCode::Char('/') => self.open_component_picker(),
-                KeyCode::Char('h') => self.add_hero(),
-                KeyCode::Char('n') => self.add_section(),
                 KeyCode::Char('d') => self.delete_selected_node(),
                 KeyCode::Char('J') => self.move_selected_down(),
                 KeyCode::Char('K') => self.move_selected_up(),
@@ -584,26 +587,6 @@ impl App {
                 KeyCode::Char(')') => self.move_selected_column_down(),
                 KeyCode::Char('r') => self.begin_edit_selected_column_id(),
                 KeyCode::Char('f') => self.begin_edit_selected_column_width_class(),
-                KeyCode::Char('a') => self.add_selected_component_to_section(),
-                KeyCode::Char('x') => self.remove_last_component_from_selected_section(),
-                KeyCode::Char(']') => self.next_component_kind(),
-                KeyCode::Char('[') => self.prev_component_kind(),
-                KeyCode::Char('b') => self.cycle_section_background(),
-                KeyCode::Char('w') => self.cycle_section_width(),
-                KeyCode::Char('g') => self.cycle_section_spacing(),
-                KeyCode::Char('t') => self.cycle_section_align(),
-                KeyCode::Char(',') => self.select_prev_component(),
-                KeyCode::Char('.') => self.select_next_component(),
-                KeyCode::Char('<') => self.move_selected_component_up(),
-                KeyCode::Char('>') => self.move_selected_component_down(),
-                KeyCode::Char('j') => self.select_prev_nested_item(),
-                KeyCode::Char('k') => self.select_next_nested_item(),
-                KeyCode::Char('{') => self.move_selected_nested_item_up(),
-                KeyCode::Char('}') => self.move_selected_nested_item_down(),
-                KeyCode::Char('i') => self.add_nested_item_to_selected_component(),
-                KeyCode::Char('o') => self.remove_nested_item_from_selected_component(),
-                KeyCode::Char('m') => self.begin_edit_selected_component_primary(),
-                KeyCode::Char('l') => self.begin_edit_selected_component_secondary(),
                 _ => {}
             },
             Event::Mouse(m) => match m.kind {
@@ -641,44 +624,50 @@ impl App {
                     self.tab_prev_component_field();
                     self.sync_tree_row_with_selection();
                 }
-                KeyCode::Left => {
-                    match self.input_mode {
-                        Some(InputMode::EditHeroClass) => {
-                            self.cycle_hero_class(false);
-                            if let Some(v) = self.value_for_component_mode(InputMode::EditHeroClass)
-                            {
-                                self.input_buffer = v;
-                            }
+                KeyCode::Left => match self.input_mode {
+                    Some(InputMode::EditHeroClass) => {
+                        self.cycle_hero_class(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditHeroClass) {
+                            self.input_buffer = v;
                         }
-                        Some(InputMode::EditHeroAos) => {
-                            self.cycle_hero_aos(false);
-                            if let Some(v) = self.value_for_component_mode(InputMode::EditHeroAos)
-                            {
-                                self.input_buffer = v;
-                            }
-                        }
-                        _ => {}
                     }
-                }
-                KeyCode::Right => {
-                    match self.input_mode {
-                        Some(InputMode::EditHeroClass) => {
-                            self.cycle_hero_class(true);
-                            if let Some(v) = self.value_for_component_mode(InputMode::EditHeroClass)
-                            {
-                                self.input_buffer = v;
-                            }
+                    Some(InputMode::EditHeroAos) => {
+                        self.cycle_hero_aos(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditHeroAos) {
+                            self.input_buffer = v;
                         }
-                        Some(InputMode::EditHeroAos) => {
-                            self.cycle_hero_aos(true);
-                            if let Some(v) = self.value_for_component_mode(InputMode::EditHeroAos)
-                            {
-                                self.input_buffer = v;
-                            }
-                        }
-                        _ => {}
                     }
-                }
+                    Some(InputMode::EditSectionClass) => {
+                        self.cycle_section_class(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditSectionClass)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    _ => {}
+                },
+                KeyCode::Right => match self.input_mode {
+                    Some(InputMode::EditHeroClass) => {
+                        self.cycle_hero_class(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditHeroClass) {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditHeroAos) => {
+                        self.cycle_hero_aos(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditHeroAos) {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditSectionClass) => {
+                        self.cycle_section_class(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditSectionClass)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    _ => {}
+                },
                 KeyCode::Backspace => {
                     self.input_buffer.pop();
                 }
@@ -782,7 +771,7 @@ impl App {
                         return Ok(());
                     };
                     self.component_kind = kind;
-                    self.add_selected_component_to_section();
+                    self.insert_selected_component_kind();
                     self.component_picker = None;
                 }
                 KeyCode::Char(c) => {
@@ -900,6 +889,12 @@ impl App {
             }
             InputMode::EditSectionId => {
                 "Editing section id. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSectionTitle => {
+                "Editing section title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSectionClass => {
+                "Editing section class. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditColumnId => {
                 "Editing column id. Enter to save, esc to cancel.".to_string()
@@ -1040,6 +1035,7 @@ impl App {
                 | InputMode::EditHeroCtaLink
                 | InputMode::EditHeroCtaText2
                 | InputMode::EditHeroCtaLink2
+                | InputMode::EditSectionTitle
         );
         if value.is_empty() && !allow_empty {
             self.status = "Value cannot be empty.".to_string();
@@ -1131,6 +1127,21 @@ impl App {
                 v.id = value;
                 applied = true;
                 "Updated section id.".to_string()
+            }
+            (PageNode::Section(v), InputMode::EditSectionTitle) => {
+                v.section_title = if value.is_empty() { None } else { Some(value) };
+                applied = true;
+                "Updated section title.".to_string()
+            }
+            (PageNode::Section(v), InputMode::EditSectionClass) => {
+                if let Some(section_class) = parse_section_class(value.as_str()) {
+                    v.section_class = Some(section_class);
+                    applied = true;
+                    "Updated section class.".to_string()
+                } else {
+                    clear_input = false;
+                    "Invalid section class option.".to_string()
+                }
             }
             (PageNode::Section(v), InputMode::EditColumnId) => {
                 let col_i = selected_column.min(v.columns.len().saturating_sub(1));
@@ -1610,25 +1621,33 @@ impl App {
             self.selected_tree_row = 0;
             return;
         }
+        let row_matches_selection = |row: &NodeTreeRow| match row.kind {
+            NodeTreeKind::Hero { node_idx } => node_idx == self.selected_node,
+            NodeTreeKind::Section { node_idx } => node_idx == self.selected_node,
+            NodeTreeKind::Column {
+                node_idx,
+                column_idx,
+            } => node_idx == self.selected_node && column_idx == self.selected_column,
+            NodeTreeKind::Component {
+                node_idx,
+                column_idx,
+                component_idx,
+            } => {
+                node_idx == self.selected_node
+                    && column_idx == self.selected_column
+                    && component_idx == self.selected_component
+            }
+        };
+
+        if let Some(current) = rows.get(self.selected_tree_row) {
+            if row_matches_selection(current) {
+                return;
+            }
+        }
+
         let wanted = rows
             .iter()
-            .position(|row| match row.kind {
-                NodeTreeKind::Hero { node_idx } => node_idx == self.selected_node,
-                NodeTreeKind::Section { node_idx } => node_idx == self.selected_node,
-                NodeTreeKind::Column {
-                    node_idx,
-                    column_idx,
-                } => node_idx == self.selected_node && column_idx == self.selected_column,
-                NodeTreeKind::Component {
-                    node_idx,
-                    column_idx,
-                    component_idx,
-                } => {
-                    node_idx == self.selected_node
-                        && column_idx == self.selected_column
-                        && component_idx == self.selected_component
-                }
-            })
+            .position(row_matches_selection)
             .unwrap_or_else(|| self.selected_tree_row.min(rows.len().saturating_sub(1)));
         self.selected_tree_row = wanted;
     }
@@ -1690,32 +1709,27 @@ impl App {
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
         match row.kind {
-            NodeTreeKind::Section { .. } => self.toggle_selected_section_expanded(),
+            NodeTreeKind::Section { .. } => self.begin_edit_selected(),
             NodeTreeKind::Hero { .. } => self.begin_edit_selected(),
-            NodeTreeKind::Column { .. } => self.begin_edit_selected_column_id(),
+            NodeTreeKind::Column { .. } => self.begin_edit_selected_column_width_class(),
             NodeTreeKind::Component { .. } => self.begin_edit_selected_component_primary(),
         }
     }
 
     fn open_component_picker(&mut self) {
-        let page = self.current_page();
-        if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
-            return;
-        }
-        let ni = self.selected_node.min(page.nodes.len().saturating_sub(1));
-        match page.nodes.get(ni) {
-            Some(PageNode::Section(_)) => {
-                self.input_mode = None;
-                self.component_picker = Some(ComponentPickerState {
-                    query: String::new(),
-                    selected: 0,
-                });
-                self.status = "Component picker opened.".to_string();
-            }
-            _ => {
-                self.status = "Select a section row, column, or component to add.".to_string();
-            }
+        self.input_mode = None;
+        self.component_picker = Some(ComponentPickerState {
+            query: String::new(),
+            selected: 0,
+        });
+        self.status = "Insert picker opened.".to_string();
+    }
+
+    fn insert_selected_component_kind(&mut self) {
+        match self.component_kind {
+            ComponentKind::Hero => self.add_hero(),
+            ComponentKind::Section => self.add_section(),
+            _ => self.add_selected_component_to_section(),
         }
     }
 
@@ -1783,6 +1797,8 @@ impl App {
             Some(InputMode::EditHeroCtaText2) => "hero.link_2.text",
             Some(InputMode::EditHeroCtaLink2) => "hero.link_2.url",
             Some(InputMode::EditSectionId) => "section.id",
+            Some(InputMode::EditSectionTitle) => "section.title",
+            Some(InputMode::EditSectionClass) => "section.class",
             Some(InputMode::EditColumnId) => "section.column.id",
             Some(InputMode::EditColumnWidthClass) => "section.column.width_class",
             Some(InputMode::EditCardTitle) => "dd-card.title",
@@ -1818,7 +1834,10 @@ impl App {
             PageNode::Hero(v) => format!(
                 "- hero.image: {}\n- hero.class: {}\n- hero.data_aos: {}\n- hero.title: {}\n- hero.subtitle: {}\n- hero.copy: {}\n- hero.link_1.text: {}\n- hero.link_1.url: {}\n- hero.link_2.text: {}\n- hero.link_2.url: {}",
                 v.image,
-                hero_image_class_to_str(v.hero_class.unwrap_or(crate::model::HeroImageClass::FullFull)),
+                hero_image_class_to_str(
+                    v.hero_class
+                        .unwrap_or(crate::model::HeroImageClass::FullFull)
+                ),
                 hero_aos_to_str(v.hero_aos.unwrap_or(crate::model::HeroAos::FadeIn)),
                 v.title,
                 v.subtitle,
@@ -1829,34 +1848,62 @@ impl App {
                 v.cta_link_2.as_deref().unwrap_or("(none)")
             ),
             PageNode::Section(section) => {
-                let mut lines = vec![
-                    format!("- section.id: {}", section.id),
-                    format!("- section.background: {:?}", section.background),
-                    format!("- section.spacing: {:?}", section.spacing),
-                    format!("- section.width: {:?}", section.width),
-                    format!("- section.align: {:?}", section.align),
-                    format!(
-                        "- section.css_classes: {}",
-                        section_modifier_class_string(section)
-                    ),
-                    "- section.class_options:".to_string(),
-                    section_modifier_options_block(),
-                ];
-                let columns = section_columns_ref(section);
-                if let Some(col) =
-                    columns.get(self.selected_column.min(columns.len().saturating_sub(1)))
-                {
-                    lines.push(format!("- column.id: {}", col.id));
-                    lines.push(format!("- column.width_class: {}", col.width_class));
-                    if let Some(component) = col.components.get(
-                        self.selected_component
-                            .min(col.components.len().saturating_sub(1)),
-                    ) {
-                        lines.push(format!("- component.type: {}", component_label(component)));
-                        lines.push(component_form(component, self.selected_nested_item));
+                let rows = self.build_node_tree_rows();
+                let row_kind = rows
+                    .get(self.selected_tree_row.min(rows.len().saturating_sub(1)))
+                    .map(|row| row.kind);
+                match row_kind {
+                    Some(NodeTreeKind::Column { .. }) => {
+                        let columns = section_columns_ref(section);
+                        if let Some(col) =
+                            columns.get(self.selected_column.min(columns.len().saturating_sub(1)))
+                        {
+                            vec![
+                                format!("- column.id: {}", col.id),
+                                format!("- column.width_class: {}", col.width_class),
+                            ]
+                            .join("\n")
+                        } else {
+                            "(none)".to_string()
+                        }
                     }
+                    Some(NodeTreeKind::Component { .. }) => {
+                        let columns = section_columns_ref(section);
+                        if let Some(col) =
+                            columns.get(self.selected_column.min(columns.len().saturating_sub(1)))
+                        {
+                            let mut lines = vec![
+                                format!("- column.id: {}", col.id),
+                                format!("- column.width_class: {}", col.width_class),
+                            ];
+                            if let Some(component) = col.components.get(
+                                self.selected_component
+                                    .min(col.components.len().saturating_sub(1)),
+                            ) {
+                                lines.push(component_form(component, self.selected_nested_item));
+                            }
+                            lines.join("\n")
+                        } else {
+                            "(none)".to_string()
+                        }
+                    }
+                    _ => vec![
+                        format!("- section.id: {}", section.id),
+                        format!(
+                            "- section.title: {}",
+                            section.section_title.as_deref().unwrap_or("(none)")
+                        ),
+                        format!(
+                            "- section.class: {}",
+                            section_class_to_str(
+                                section
+                                    .section_class
+                                    .unwrap_or(crate::model::SectionClass::FullContained)
+                            )
+                        ),
+                    ]
+                    .join("\n"),
                 }
-                lines.join("\n")
             }
         }
     }
@@ -1897,6 +1944,15 @@ impl App {
             }
             InputMode::EditHeroCtaLink2 => {
                 "Editing hero secondary link URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSectionId => {
+                "Editing section id. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSectionTitle => {
+                "Editing section title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSectionClass => {
+                "Editing section class. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditCardTitle => {
                 "Editing dd-card title. Enter to save, esc to cancel.".to_string()
@@ -1969,11 +2025,13 @@ impl App {
                 match mode {
                     InputMode::EditHeroImage => return Some(hero.image.clone()),
                     InputMode::EditHeroClass => {
-                        return Some(hero_image_class_to_str(
-                            hero.hero_class
-                                .unwrap_or(crate::model::HeroImageClass::FullFull),
-                        )
-                        .to_string());
+                        return Some(
+                            hero_image_class_to_str(
+                                hero.hero_class
+                                    .unwrap_or(crate::model::HeroImageClass::FullFull),
+                            )
+                            .to_string(),
+                        );
                     }
                     InputMode::EditHeroAos => {
                         return Some(
@@ -1997,6 +2055,25 @@ impl App {
                     }
                     InputMode::EditHeroCtaLink2 => {
                         return Some(hero.cta_link_2.clone().unwrap_or_default());
+                    }
+                    _ => {}
+                }
+            }
+            if let PageNode::Section(section) = &page.nodes[ni] {
+                match mode {
+                    InputMode::EditSectionId => return Some(section.id.clone()),
+                    InputMode::EditSectionTitle => {
+                        return Some(section.section_title.clone().unwrap_or_default());
+                    }
+                    InputMode::EditSectionClass => {
+                        return Some(
+                            section_class_to_str(
+                                section
+                                    .section_class
+                                    .unwrap_or(crate::model::SectionClass::FullContained),
+                            )
+                            .to_string(),
+                        );
                     }
                     _ => {}
                 }
@@ -2166,19 +2243,7 @@ impl App {
                     out.push(hero_ascii_map(v, detail_width));
                 }
                 PageNode::Section(v) => {
-                    out.push(format!(
-                        "{marker}[{:02}] dd-section {} | bg={:?} spacing={:?} width={:?} align={:?} | classes=\"{}\"",
-                        idx + 1,
-                        v.id,
-                        v.background,
-                        v.spacing,
-                        v.width,
-                        v.align,
-                        section_modifier_class_string(v)
-                    ));
-                    if idx == self.selected_node {
-                        out.push(section_modifier_options_block());
-                    }
+                    out.push(format!("{marker}[{:02}] dd-section {}", idx + 1, v.id));
                     out.push(section_ascii_map(
                         v,
                         if idx == self.selected_node {
@@ -2243,10 +2308,9 @@ impl App {
         let next_id = next_section_id_for_page(page);
         let section = crate::model::DdSection {
             id: next_id,
-            background: crate::model::SectionBackground::White,
-            spacing: crate::model::SectionSpacing::Normal,
-            width: crate::model::SectionWidth::Normal,
-            align: crate::model::SectionAlign::Left,
+            section_title: None,
+            section_class: Some(crate::model::SectionClass::FullContained),
+            item_box_class: Some(crate::model::SectionItemBoxClass::LBox),
             columns: vec![SectionColumn {
                 id: "column-1".to_string(),
                 width_class: "dd-u-1-1".to_string(),
@@ -2332,6 +2396,10 @@ impl App {
 
     fn add_selected_component_to_section(&mut self) {
         let kind = self.component_kind;
+        if matches!(kind, ComponentKind::Hero | ComponentKind::Section) {
+            self.status = "dd-hero and dd-section are top-level insert types.".to_string();
+            return;
+        }
         let selected = self.selected_node;
         let selected_column = self.selected_column;
         let Some(page) = self.current_page_mut() else {
@@ -2367,134 +2435,6 @@ impl App {
         self.status = result.1;
     }
 
-    fn remove_last_component_from_selected_section(&mut self) {
-        let prev_selected_component = self.selected_component;
-        let selected = self.selected_node;
-        let selected_column = self.selected_column;
-        let Some(page) = self.current_page_mut() else {
-            return;
-        };
-        if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
-            return;
-        }
-        let idx = selected.min(page.nodes.len() - 1);
-        let result = match &mut page.nodes[idx] {
-            PageNode::Section(section) => {
-                normalize_section_columns(section);
-                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
-                let components = &mut section.columns[col_i].components;
-                if components.pop().is_some() {
-                    let new_selected_component = if components.is_empty() {
-                        0
-                    } else {
-                        prev_selected_component.min(components.len() - 1)
-                    };
-                    if components.is_empty() {
-                        (
-                            Some(new_selected_component),
-                            "Removed last component from selected section.".to_string(),
-                        )
-                    } else {
-                        (
-                            Some(new_selected_component),
-                            format!(
-                                "Removed last component. Selected component {} of {}.",
-                                new_selected_component + 1,
-                                components.len()
-                            ),
-                        )
-                    }
-                } else {
-                    (None, "Section has no components to remove.".to_string())
-                }
-            }
-            _ => (None, "Selected node is not a section.".to_string()),
-        };
-        if let Some(new_selected_component) = result.0 {
-            self.selected_component = new_selected_component;
-            self.selected_nested_item = 0;
-        }
-        self.status = result.1;
-    }
-
-    fn next_component_kind(&mut self) {
-        self.component_kind = self.component_kind.next();
-        self.status = format!("Component insert mode: {}", self.component_kind.label());
-    }
-
-    fn prev_component_kind(&mut self) {
-        self.component_kind = self.component_kind.prev();
-        self.status = format!("Component insert mode: {}", self.component_kind.label());
-    }
-
-    fn cycle_section_background(&mut self) {
-        self.mutate_selected_section(
-            |s| {
-                s.background = match s.background {
-                    crate::model::SectionBackground::Primary => {
-                        crate::model::SectionBackground::Secondary
-                    }
-                    crate::model::SectionBackground::Secondary => {
-                        crate::model::SectionBackground::Tertiary
-                    }
-                    crate::model::SectionBackground::Tertiary => {
-                        crate::model::SectionBackground::Gray
-                    }
-                    crate::model::SectionBackground::Gray => crate::model::SectionBackground::White,
-                    crate::model::SectionBackground::White => {
-                        crate::model::SectionBackground::Black
-                    }
-                    crate::model::SectionBackground::Black => {
-                        crate::model::SectionBackground::Primary
-                    }
-                };
-            },
-            "Cycled section background.",
-        );
-    }
-
-    fn cycle_section_spacing(&mut self) {
-        self.mutate_selected_section(
-            |s| {
-                s.spacing = match s.spacing {
-                    crate::model::SectionSpacing::Tight => crate::model::SectionSpacing::Normal,
-                    crate::model::SectionSpacing::Normal => crate::model::SectionSpacing::Loose,
-                    crate::model::SectionSpacing::Loose => crate::model::SectionSpacing::ExtraLoose,
-                    crate::model::SectionSpacing::ExtraLoose => crate::model::SectionSpacing::Tight,
-                };
-            },
-            "Cycled section spacing.",
-        );
-    }
-
-    fn cycle_section_width(&mut self) {
-        self.mutate_selected_section(
-            |s| {
-                s.width = match s.width {
-                    crate::model::SectionWidth::Narrow => crate::model::SectionWidth::Normal,
-                    crate::model::SectionWidth::Normal => crate::model::SectionWidth::Wide,
-                    crate::model::SectionWidth::Wide => crate::model::SectionWidth::Full,
-                    crate::model::SectionWidth::Full => crate::model::SectionWidth::Narrow,
-                };
-            },
-            "Cycled section width.",
-        );
-    }
-
-    fn cycle_section_align(&mut self) {
-        self.mutate_selected_section(
-            |s| {
-                s.align = match s.align {
-                    crate::model::SectionAlign::Left => crate::model::SectionAlign::Center,
-                    crate::model::SectionAlign::Center => crate::model::SectionAlign::Right,
-                    crate::model::SectionAlign::Right => crate::model::SectionAlign::Left,
-                };
-            },
-            "Cycled section alignment.",
-        );
-    }
-
     fn cycle_hero_class(&mut self, forward: bool) {
         let selected = self.selected_node;
         let Some(page) = self.current_page_mut() else {
@@ -2512,14 +2452,11 @@ impl App {
                     .unwrap_or(crate::model::HeroImageClass::FullFull);
                 let next = next_hero_image_class(current, forward);
                 hero.hero_class = Some(next);
-                self.status = format!(
-                    "Hero default class: {}",
-                    hero_image_class_to_str(next)
-                );
+                self.status = format!("Hero default class: {}", hero_image_class_to_str(next));
             }
             _ => {
-                self.status = "Left/Right hero class cycling works on a selected hero row."
-                    .to_string();
+                self.status =
+                    "Left/Right hero class cycling works on a selected hero row.".to_string();
             }
         }
     }
@@ -2542,10 +2479,22 @@ impl App {
                 self.status = format!("Hero data-aos: {}", hero_aos_to_str(next));
             }
             _ => {
-                self.status = "Shift+Left/Right hero data-aos cycling works on a selected hero row."
-                    .to_string();
+                self.status =
+                    "Left/Right hero data-aos cycling works on a selected hero row.".to_string();
             }
         }
+    }
+
+    fn cycle_section_class(&mut self, forward: bool) {
+        self.mutate_selected_section(
+            |s| {
+                let current = s
+                    .section_class
+                    .unwrap_or(crate::model::SectionClass::FullContained);
+                s.section_class = Some(next_section_class(current, forward));
+            },
+            "Cycled section class.",
+        );
     }
 
     fn mutate_selected_section<F>(&mut self, mutator: F, success_message: &str)
@@ -2576,124 +2525,6 @@ impl App {
         };
         if let Some(next_selected_component) = result.0 {
             self.selected_component = next_selected_component;
-        }
-        self.status = result.1;
-    }
-
-    fn select_prev_component(&mut self) {
-        let total = match self.selected_section_component_total() {
-            Some(v) => v,
-            None => {
-                self.status = "Selected node is not a section.".to_string();
-                return;
-            }
-        };
-        if total == 0 {
-            self.status = "Selected section has no components.".to_string();
-            return;
-        }
-        self.selected_component = self.selected_component.saturating_sub(1);
-        self.selected_nested_item = 0;
-        self.status = format!(
-            "Selected component {} of {}.",
-            self.selected_component + 1,
-            total
-        );
-    }
-
-    fn select_next_component(&mut self) {
-        let total = match self.selected_section_component_total() {
-            Some(v) => v,
-            None => {
-                self.status = "Selected node is not a section.".to_string();
-                return;
-            }
-        };
-        if total == 0 {
-            self.status = "Selected section has no components.".to_string();
-            return;
-        }
-        self.selected_component = (self.selected_component + 1).min(total - 1);
-        self.selected_nested_item = 0;
-        self.status = format!(
-            "Selected component {} of {}.",
-            self.selected_component + 1,
-            total
-        );
-    }
-
-    fn move_selected_component_up(&mut self) {
-        let selected = self.selected_node;
-        let selected_column = self.selected_column;
-        let selected_component = self.selected_component;
-        let Some(page) = self.current_page_mut() else {
-            return;
-        };
-        if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
-            return;
-        }
-        let ni = selected.min(page.nodes.len() - 1);
-        let result = match &mut page.nodes[ni] {
-            PageNode::Section(section) => {
-                normalize_section_columns(section);
-                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
-                let components = &mut section.columns[col_i].components;
-                if components.len() < 2 {
-                    (None, "Need at least 2 components to reorder.".to_string())
-                } else {
-                    let ci = selected_component.min(components.len() - 1);
-                    if ci == 0 {
-                        (None, "Component is already first.".to_string())
-                    } else {
-                        components.swap(ci, ci - 1);
-                        (Some(ci - 1), "Moved component up.".to_string())
-                    }
-                }
-            }
-            _ => (None, "Selected node is not a section.".to_string()),
-        };
-        if let Some(next_selected_component) = result.0 {
-            self.selected_component = next_selected_component;
-            self.selected_nested_item = 0;
-        }
-        self.status = result.1;
-    }
-
-    fn move_selected_component_down(&mut self) {
-        let selected = self.selected_node;
-        let selected_column = self.selected_column;
-        let selected_component = self.selected_component;
-        let Some(page) = self.current_page_mut() else {
-            return;
-        };
-        if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
-            return;
-        }
-        let ni = selected.min(page.nodes.len() - 1);
-        let result = match &mut page.nodes[ni] {
-            PageNode::Section(section) => {
-                normalize_section_columns(section);
-                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
-                let components = &mut section.columns[col_i].components;
-                if components.len() < 2 {
-                    (None, "Need at least 2 components to reorder.".to_string())
-                } else {
-                    let ci = selected_component.min(components.len() - 1);
-                    if ci + 1 >= components.len() {
-                        (None, "Component is already last.".to_string())
-                    } else {
-                        components.swap(ci, ci + 1);
-                        (Some(ci + 1), "Moved component down.".to_string())
-                    }
-                }
-            }
-            _ => (None, "Selected node is not a section.".to_string()),
-        };
-        if let Some(next_selected_component) = result.0 {
-            self.selected_component = next_selected_component;
-            self.selected_nested_item = 0;
         }
         self.status = result.1;
     }
@@ -2863,407 +2694,6 @@ impl App {
         self.status = result.1;
     }
 
-    fn select_prev_nested_item(&mut self) {
-        let total = match self.selected_nested_item_total() {
-            Some(v) => v,
-            None => {
-                self.status = "Selected component has no nested items.".to_string();
-                return;
-            }
-        };
-        if total == 0 {
-            self.status = "Selected component has no nested items.".to_string();
-            return;
-        }
-        self.selected_nested_item = self.selected_nested_item.saturating_sub(1);
-        self.status = format!(
-            "Selected nested item {} of {}.",
-            self.selected_nested_item + 1,
-            total
-        );
-    }
-
-    fn select_next_nested_item(&mut self) {
-        let total = match self.selected_nested_item_total() {
-            Some(v) => v,
-            None => {
-                self.status = "Selected component has no nested items.".to_string();
-                return;
-            }
-        };
-        if total == 0 {
-            self.status = "Selected component has no nested items.".to_string();
-            return;
-        }
-        self.selected_nested_item = (self.selected_nested_item + 1).min(total - 1);
-        self.status = format!(
-            "Selected nested item {} of {}.",
-            self.selected_nested_item + 1,
-            total
-        );
-    }
-
-    fn move_selected_nested_item_up(&mut self) {
-        let selected = self.selected_node;
-        let selected_column = self.selected_column;
-        let selected_component = self.selected_component;
-        let selected_nested_item = self.selected_nested_item;
-        let Some(page) = self.current_page_mut() else {
-            return;
-        };
-        if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
-            return;
-        }
-        let ni = selected.min(page.nodes.len() - 1);
-        let result = match &mut page.nodes[ni] {
-            PageNode::Section(section) => {
-                normalize_section_columns(section);
-                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
-                let components = &mut section.columns[col_i].components;
-                if let Some(ci) = component_index(components.len(), selected_component) {
-                    match &mut components[ci] {
-                        crate::model::SectionComponent::Tabs(tabs) => {
-                            if tabs.tabs.len() < 2 {
-                                (None, "Need at least 2 tabs to reorder.".to_string())
-                            } else {
-                                let i = selected_nested_item.min(tabs.tabs.len() - 1);
-                                if i == 0 {
-                                    (None, "Nested item is already first.".to_string())
-                                } else {
-                                    tabs.tabs.swap(i, i - 1);
-                                    (Some(i - 1), "Moved tab item up.".to_string())
-                                }
-                            }
-                        }
-                        crate::model::SectionComponent::Accordion(acc) => {
-                            if acc.items.len() < 2 {
-                                (
-                                    None,
-                                    "Need at least 2 accordion items to reorder.".to_string(),
-                                )
-                            } else {
-                                let i = selected_nested_item.min(acc.items.len() - 1);
-                                if i == 0 {
-                                    (None, "Nested item is already first.".to_string())
-                                } else {
-                                    acc.items.swap(i, i - 1);
-                                    (Some(i - 1), "Moved accordion item up.".to_string())
-                                }
-                            }
-                        }
-                        crate::model::SectionComponent::Slider(slider) => {
-                            if slider.slides.len() < 2 {
-                                (None, "Need at least 2 slides to reorder.".to_string())
-                            } else {
-                                let i = selected_nested_item.min(slider.slides.len() - 1);
-                                if i == 0 {
-                                    (None, "Nested item is already first.".to_string())
-                                } else {
-                                    slider.slides.swap(i, i - 1);
-                                    (Some(i - 1), "Moved slide up.".to_string())
-                                }
-                            }
-                        }
-                        crate::model::SectionComponent::Timeline(tl) => {
-                            if tl.events.len() < 2 {
-                                (None, "Need at least 2 events to reorder.".to_string())
-                            } else {
-                                let i = selected_nested_item.min(tl.events.len() - 1);
-                                if i == 0 {
-                                    (None, "Nested item is already first.".to_string())
-                                } else {
-                                    tl.events.swap(i, i - 1);
-                                    (Some(i - 1), "Moved timeline event up.".to_string())
-                                }
-                            }
-                        }
-                        _ => (
-                            None,
-                            "Nested reorder supported for tabs/accordion/slider/timeline."
-                                .to_string(),
-                        ),
-                    }
-                } else {
-                    (None, "Section has no components.".to_string())
-                }
-            }
-            _ => (None, "Selected node is not a section.".to_string()),
-        };
-        if let Some(next_selected_nested_item) = result.0 {
-            self.selected_nested_item = next_selected_nested_item;
-        }
-        self.status = result.1;
-    }
-
-    fn move_selected_nested_item_down(&mut self) {
-        let selected = self.selected_node;
-        let selected_column = self.selected_column;
-        let selected_component = self.selected_component;
-        let selected_nested_item = self.selected_nested_item;
-        let Some(page) = self.current_page_mut() else {
-            return;
-        };
-        if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
-            return;
-        }
-        let ni = selected.min(page.nodes.len() - 1);
-        let result = match &mut page.nodes[ni] {
-            PageNode::Section(section) => {
-                normalize_section_columns(section);
-                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
-                let components = &mut section.columns[col_i].components;
-                if let Some(ci) = component_index(components.len(), selected_component) {
-                    match &mut components[ci] {
-                        crate::model::SectionComponent::Tabs(tabs) => {
-                            if tabs.tabs.len() < 2 {
-                                (None, "Need at least 2 tabs to reorder.".to_string())
-                            } else {
-                                let i = selected_nested_item.min(tabs.tabs.len() - 1);
-                                if i + 1 >= tabs.tabs.len() {
-                                    (None, "Nested item is already last.".to_string())
-                                } else {
-                                    tabs.tabs.swap(i, i + 1);
-                                    (Some(i + 1), "Moved tab item down.".to_string())
-                                }
-                            }
-                        }
-                        crate::model::SectionComponent::Accordion(acc) => {
-                            if acc.items.len() < 2 {
-                                (
-                                    None,
-                                    "Need at least 2 accordion items to reorder.".to_string(),
-                                )
-                            } else {
-                                let i = selected_nested_item.min(acc.items.len() - 1);
-                                if i + 1 >= acc.items.len() {
-                                    (None, "Nested item is already last.".to_string())
-                                } else {
-                                    acc.items.swap(i, i + 1);
-                                    (Some(i + 1), "Moved accordion item down.".to_string())
-                                }
-                            }
-                        }
-                        crate::model::SectionComponent::Slider(slider) => {
-                            if slider.slides.len() < 2 {
-                                (None, "Need at least 2 slides to reorder.".to_string())
-                            } else {
-                                let i = selected_nested_item.min(slider.slides.len() - 1);
-                                if i + 1 >= slider.slides.len() {
-                                    (None, "Nested item is already last.".to_string())
-                                } else {
-                                    slider.slides.swap(i, i + 1);
-                                    (Some(i + 1), "Moved slide down.".to_string())
-                                }
-                            }
-                        }
-                        crate::model::SectionComponent::Timeline(tl) => {
-                            if tl.events.len() < 2 {
-                                (None, "Need at least 2 events to reorder.".to_string())
-                            } else {
-                                let i = selected_nested_item.min(tl.events.len() - 1);
-                                if i + 1 >= tl.events.len() {
-                                    (None, "Nested item is already last.".to_string())
-                                } else {
-                                    tl.events.swap(i, i + 1);
-                                    (Some(i + 1), "Moved timeline event down.".to_string())
-                                }
-                            }
-                        }
-                        _ => (
-                            None,
-                            "Nested reorder supported for tabs/accordion/slider/timeline."
-                                .to_string(),
-                        ),
-                    }
-                } else {
-                    (None, "Section has no components.".to_string())
-                }
-            }
-            _ => (None, "Selected node is not a section.".to_string()),
-        };
-        if let Some(next_selected_nested_item) = result.0 {
-            self.selected_nested_item = next_selected_nested_item;
-        }
-        self.status = result.1;
-    }
-
-    fn add_nested_item_to_selected_component(&mut self) {
-        let selected = self.selected_node;
-        let selected_column = self.selected_column;
-        let selected_component = self.selected_component;
-        let Some(page) = self.current_page_mut() else {
-            return;
-        };
-        if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
-            return;
-        }
-        let ni = selected.min(page.nodes.len() - 1);
-        let result = match &mut page.nodes[ni] {
-            PageNode::Section(section) => {
-                normalize_section_columns(section);
-                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
-                let components = &mut section.columns[col_i].components;
-                if let Some(ci) = component_index(components.len(), selected_component) {
-                    match &mut components[ci] {
-                        crate::model::SectionComponent::Tabs(tabs) => {
-                            let next = tabs.tabs.len() + 1;
-                            tabs.tabs.push(crate::model::TabItem {
-                                title: format!("Tab {}", next),
-                                content: "Tab content".to_string(),
-                            });
-                            (
-                                Some(tabs.tabs.len().saturating_sub(1)),
-                                format!("Added tab item {}.", next),
-                            )
-                        }
-                        crate::model::SectionComponent::Accordion(acc) => {
-                            let next = acc.items.len() + 1;
-                            acc.items.push(crate::model::AccordionItem {
-                                title: format!("Item {}", next),
-                                content: "Accordion content".to_string(),
-                            });
-                            (
-                                Some(acc.items.len().saturating_sub(1)),
-                                format!("Added accordion item {}.", next),
-                            )
-                        }
-                        crate::model::SectionComponent::Slider(slider) => {
-                            let next = slider.slides.len() + 1;
-                            slider.slides.push(crate::model::SlideItem {
-                                image: format!("/assets/images/slide-{}.jpg", next),
-                                title: format!("Slide {}", next),
-                                copy: "Slide copy".to_string(),
-                            });
-                            (
-                                Some(slider.slides.len().saturating_sub(1)),
-                                format!("Added slide {}.", next),
-                            )
-                        }
-                        crate::model::SectionComponent::Timeline(tl) => {
-                            let next = tl.events.len() + 1;
-                            tl.events.push(crate::model::TimelineEvent {
-                                date: "2026-02-20".to_string(),
-                                title: format!("Event {}", next),
-                                description: "Timeline event description".to_string(),
-                            });
-                            (
-                                Some(tl.events.len().saturating_sub(1)),
-                                format!("Added timeline event {}.", next),
-                            )
-                        }
-                        _ => (
-                            None,
-                            "Nested item add supported for tabs/accordion/slider/timeline."
-                                .to_string(),
-                        ),
-                    }
-                } else {
-                    (None, "Section has no components.".to_string())
-                }
-            }
-            _ => (None, "Selected node is not a section.".to_string()),
-        };
-        if let Some(next_selected_nested_item) = result.0 {
-            self.selected_nested_item = next_selected_nested_item;
-        }
-        self.status = result.1;
-    }
-
-    fn remove_nested_item_from_selected_component(&mut self) {
-        let prev_selected_nested_item = self.selected_nested_item;
-        let selected = self.selected_node;
-        let selected_column = self.selected_column;
-        let selected_component = self.selected_component;
-        let Some(page) = self.current_page_mut() else {
-            return;
-        };
-        if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
-            return;
-        }
-        let ni = selected.min(page.nodes.len() - 1);
-        let result = match &mut page.nodes[ni] {
-            PageNode::Section(section) => {
-                normalize_section_columns(section);
-                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
-                let components = &mut section.columns[col_i].components;
-                if let Some(ci) = component_index(components.len(), selected_component) {
-                    match &mut components[ci] {
-                        crate::model::SectionComponent::Tabs(tabs) => {
-                            if tabs.tabs.pop().is_some() {
-                                let next_selected = prev_selected_nested_item
-                                    .min(tabs.tabs.len().saturating_sub(1));
-                                (
-                                    Some(next_selected),
-                                    format!("Removed tab item. {} remaining.", tabs.tabs.len()),
-                                )
-                            } else {
-                                (None, "No tab items to remove.".to_string())
-                            }
-                        }
-                        crate::model::SectionComponent::Accordion(acc) => {
-                            if acc.items.pop().is_some() {
-                                let next_selected = prev_selected_nested_item
-                                    .min(acc.items.len().saturating_sub(1));
-                                (
-                                    Some(next_selected),
-                                    format!(
-                                        "Removed accordion item. {} remaining.",
-                                        acc.items.len()
-                                    ),
-                                )
-                            } else {
-                                (None, "No accordion items to remove.".to_string())
-                            }
-                        }
-                        crate::model::SectionComponent::Slider(slider) => {
-                            if slider.slides.pop().is_some() {
-                                let next_selected = prev_selected_nested_item
-                                    .min(slider.slides.len().saturating_sub(1));
-                                (
-                                    Some(next_selected),
-                                    format!("Removed slide. {} remaining.", slider.slides.len()),
-                                )
-                            } else {
-                                (None, "No slides to remove.".to_string())
-                            }
-                        }
-                        crate::model::SectionComponent::Timeline(tl) => {
-                            if tl.events.pop().is_some() {
-                                let next_selected = prev_selected_nested_item
-                                    .min(tl.events.len().saturating_sub(1));
-                                (
-                                    Some(next_selected),
-                                    format!(
-                                        "Removed timeline event. {} remaining.",
-                                        tl.events.len()
-                                    ),
-                                )
-                            } else {
-                                (None, "No timeline events to remove.".to_string())
-                            }
-                        }
-                        _ => (
-                            None,
-                            "Nested item remove supported for tabs/accordion/slider/timeline."
-                                .to_string(),
-                        ),
-                    }
-                } else {
-                    (None, "Section has no components.".to_string())
-                }
-            }
-            _ => (None, "Selected node is not a section.".to_string()),
-        };
-        if let Some(next_selected_nested_item) = result.0 {
-            self.selected_nested_item = next_selected_nested_item;
-        }
-        self.status = result.1;
-    }
-
     fn begin_edit_selected_component_primary(&mut self) {
         let selected = {
             let page = self.current_page();
@@ -3399,175 +2829,6 @@ impl App {
         };
     }
 
-    fn begin_edit_selected_component_secondary(&mut self) {
-        let selected = {
-            let page = self.current_page();
-            if page.nodes.is_empty() {
-                None
-            } else {
-                let ni = self.selected_node.min(page.nodes.len() - 1);
-                match &page.nodes[ni] {
-                    PageNode::Hero(_) => None,
-                    PageNode::Section(section) => {
-                        let columns = section_columns_ref(section);
-                        let col_i = self.selected_column.min(columns.len().saturating_sub(1));
-                        let components = &columns[col_i].components;
-                        if let Some(ci) = component_index(components.len(), self.selected_component)
-                        {
-                            match &components[ci] {
-                                crate::model::SectionComponent::Card(card) => Some((
-                                    InputMode::EditCardCopy,
-                                    card.copy.clone().unwrap_or_default(),
-                                )),
-                                crate::model::SectionComponent::Cta(cta) => {
-                                    Some((InputMode::EditCtaLink, cta.cta_link.clone()))
-                                }
-                                crate::model::SectionComponent::Alert(alert) => Some((
-                                    InputMode::EditAlertTitle,
-                                    alert.title.clone().unwrap_or_default(),
-                                )),
-                                crate::model::SectionComponent::Banner(banner) => Some((
-                                    InputMode::EditBannerLinkUrl,
-                                    banner.link_url.clone().unwrap_or_default(),
-                                )),
-                                crate::model::SectionComponent::Tabs(tabs) => {
-                                    if let Some(ni) =
-                                        nested_index(tabs.tabs.len(), self.selected_nested_item)
-                                    {
-                                        Some((
-                                            InputMode::EditTabsFirstContent,
-                                            tabs.tabs[ni].content.clone(),
-                                        ))
-                                    } else {
-                                        None
-                                    }
-                                }
-                                crate::model::SectionComponent::Accordion(acc) => {
-                                    if let Some(ni) =
-                                        nested_index(acc.items.len(), self.selected_nested_item)
-                                    {
-                                        Some((
-                                            InputMode::EditAccordionFirstContent,
-                                            acc.items[ni].content.clone(),
-                                        ))
-                                    } else {
-                                        None
-                                    }
-                                }
-                                crate::model::SectionComponent::Modal(modal) => {
-                                    Some((InputMode::EditModalContent, modal.content.clone()))
-                                }
-                                crate::model::SectionComponent::Slider(slider) => {
-                                    if let Some(ni) =
-                                        nested_index(slider.slides.len(), self.selected_nested_item)
-                                    {
-                                        Some((
-                                            InputMode::EditSliderFirstCopy,
-                                            slider.slides[ni].copy.clone(),
-                                        ))
-                                    } else {
-                                        None
-                                    }
-                                }
-                                crate::model::SectionComponent::Spacer(_) => None,
-                                crate::model::SectionComponent::Timeline(tl) => {
-                                    if let Some(ni) =
-                                        nested_index(tl.events.len(), self.selected_nested_item)
-                                    {
-                                        Some((
-                                            InputMode::EditTimelineFirstDescription,
-                                            tl.events[ni].description.clone(),
-                                        ))
-                                    } else {
-                                        None
-                                    }
-                                }
-                            }
-                        } else {
-                            None
-                        }
-                    }
-                }
-            }
-        };
-
-        let Some((mode, value)) = selected else {
-            self.status =
-                "Secondary edit supports card/cta/alert/banner/tabs/accordion/modal/slider/timeline.".to_string();
-            return;
-        };
-        self.input_mode = Some(mode);
-        self.input_buffer = value;
-        self.status = match mode {
-            InputMode::EditCardCopy => {
-                "Editing dd-card copy. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditCtaLink => {
-                "Editing dd-cta link. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAlertTitle => {
-                "Editing dd-alert title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditBannerLinkUrl => {
-                "Editing dd-banner link_url. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditTabsFirstContent => {
-                "Editing dd-tabs first content. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAccordionFirstContent => {
-                "Editing dd-accordion first content. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditModalContent => {
-                "Editing dd-modal content. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditSliderFirstCopy => {
-                "Editing dd-slider first slide copy. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditTimelineFirstDescription => {
-                "Editing dd-timeline first description. Enter to save, esc to cancel.".to_string()
-            }
-            _ => "Editing component value.".to_string(),
-        };
-    }
-
-    fn selected_section_component_total(&self) -> Option<usize> {
-        let page = self.current_page();
-        if page.nodes.is_empty() {
-            return None;
-        }
-        let ni = self.selected_node.min(page.nodes.len() - 1);
-        match &page.nodes[ni] {
-            PageNode::Hero(_) => None,
-            PageNode::Section(section) => {
-                let columns = section_columns_ref(section);
-                let ci = self.selected_column.min(columns.len().saturating_sub(1));
-                Some(columns[ci].components.len())
-            }
-        }
-    }
-
-    fn selected_nested_item_total(&self) -> Option<usize> {
-        let page = self.current_page();
-        if page.nodes.is_empty() {
-            return None;
-        }
-        let ni = self.selected_node.min(page.nodes.len() - 1);
-        let PageNode::Section(section) = &page.nodes[ni] else {
-            return None;
-        };
-        let columns = section_columns_ref(section);
-        let col_i = self.selected_column.min(columns.len().saturating_sub(1));
-        let components = &columns[col_i].components;
-        let ci = component_index(components.len(), self.selected_component)?;
-        match &components[ci] {
-            crate::model::SectionComponent::Tabs(t) => Some(t.tabs.len()),
-            crate::model::SectionComponent::Accordion(a) => Some(a.items.len()),
-            crate::model::SectionComponent::Slider(s) => Some(s.slides.len()),
-            crate::model::SectionComponent::Timeline(t) => Some(t.events.len()),
-            _ => None,
-        }
-    }
-
     fn selected_section_column_total(&self) -> Option<usize> {
         let page = self.current_page();
         if page.nodes.is_empty() {
@@ -3649,54 +2910,261 @@ fn section_ascii_map(
 ) -> String {
     const MAX_COMPONENT_ROWS: usize = 4;
 
+    let inner_width = panel_width.saturating_sub(4).max(12);
     let columns = section_columns_ref(section);
     if columns.is_empty() {
         return "(no columns)".to_string();
     }
     let active = selected_column.min(columns.len().saturating_sub(1));
-    let cell_width = section_cell_width(panel_width, columns.len());
 
-    let mut cells = columns
+    let mut lines = vec![
+        fit_ascii_cell("SECTION", inner_width),
+        fit_ascii_cell(&format!("id: {}", section.id), inner_width),
+        fit_ascii_cell(
+            &format!(
+                "title: {}",
+                section.section_title.as_deref().unwrap_or("(none)")
+            ),
+            inner_width,
+        ),
+        fit_ascii_cell(
+            &format!(
+                "class: {}",
+                section_class_to_str(
+                    section
+                        .section_class
+                        .unwrap_or(crate::model::SectionClass::FullContained)
+                )
+            ),
+            inner_width,
+        ),
+        fit_ascii_cell("items:", inner_width),
+    ];
+
+    let item_boxes = columns
         .iter()
         .enumerate()
         .map(|(idx, col)| {
-            let mut rows = Vec::new();
-            let marker = if idx == active { "*" } else { " " };
-            rows.push(format!("{marker} {}", col.id));
+            let marker = if idx == active { "*" } else { "-" };
+            let item_inner_width = section_item_ascii_inner_width(&col.width_class, inner_width);
+            let item_border = format!("+{}+", "-".repeat(item_inner_width + 2));
+            let mut box_lines = vec![
+                item_border.clone(),
+                format!(
+                    "| {} |",
+                    fit_ascii_cell(&format!("{marker} item: {}", col.id), item_inner_width)
+                ),
+                format!(
+                    "| {} |",
+                    fit_ascii_cell(&format!("width: {}", col.width_class), item_inner_width)
+                ),
+            ];
             if col.components.is_empty() {
-                rows.push("(empty)".to_string());
+                box_lines.push(format!(
+                    "| {} |",
+                    fit_ascii_cell("(empty)", item_inner_width)
+                ));
             } else {
                 for component in col.components.iter().take(MAX_COMPONENT_ROWS) {
-                    rows.push(component_label(component).to_string());
+                    box_lines.push(format!(
+                        "| {} |",
+                        fit_ascii_cell(
+                            &format!("- {}", component_label(component)),
+                            item_inner_width
+                        )
+                    ));
                 }
                 let more = col.components.len().saturating_sub(MAX_COMPONENT_ROWS);
                 if more > 0 {
-                    rows.push(format!("+{more} more"));
+                    box_lines.push(format!(
+                        "| {} |",
+                        fit_ascii_cell(&format!("+{more} more"), item_inner_width)
+                    ));
                 }
             }
-            rows
+            box_lines.push(item_border);
+            box_lines
         })
         .collect::<Vec<_>>();
 
-    let row_count = cells.iter().map(std::vec::Vec::len).max().unwrap_or(0);
-    let border = section_ascii_border(columns.len(), cell_width);
-    let mut lines = vec![border.clone()];
-    for row_i in 0..row_count {
-        let mut row = String::from("|");
-        for cell in &mut cells {
-            let value = cell
-                .get(row_i)
-                .map(std::string::String::as_str)
-                .unwrap_or("");
-            row.push(' ');
-            row.push_str(&fit_ascii_cell(value, cell_width));
-            row.push_str(" |");
+    let item_box_widths = item_boxes
+        .iter()
+        .map(|item| item.first().map(|s| s.chars().count()).unwrap_or(0))
+        .collect::<Vec<_>>();
+
+    let gap = 2usize;
+    let mut row_groups: Vec<Vec<usize>> = Vec::new();
+    let mut current_row: Vec<usize> = Vec::new();
+    let mut current_row_width = 0usize;
+    for (idx, width) in item_box_widths.iter().copied().enumerate() {
+        let next = if current_row.is_empty() {
+            width
+        } else {
+            current_row_width + gap + width
+        };
+        if !current_row.is_empty() && next > inner_width {
+            row_groups.push(current_row);
+            current_row = vec![idx];
+            current_row_width = width;
+        } else {
+            current_row.push(idx);
+            current_row_width = next;
         }
-        lines.push(row);
     }
-    lines.push(border);
-    lines.push("Legend: * active column".to_string());
-    lines.join("\n")
+    if !current_row.is_empty() {
+        row_groups.push(current_row);
+    }
+
+    for (row_idx, row) in row_groups.iter().enumerate() {
+        if row_idx > 0 {
+            lines.push(fit_ascii_cell("", inner_width));
+        }
+        let max_height = row
+            .iter()
+            .map(|idx| item_boxes[*idx].len())
+            .max()
+            .unwrap_or(0);
+        for line_idx in 0..max_height {
+            let mut composed = String::new();
+            for (pos, idx) in row.iter().enumerate() {
+                if pos > 0 {
+                    composed.push_str("  ");
+                }
+                let box_lines = &item_boxes[*idx];
+                let box_width = item_box_widths[*idx];
+                let part = box_lines
+                    .get(line_idx)
+                    .cloned()
+                    .unwrap_or_else(|| " ".repeat(box_width));
+                composed.push_str(&part);
+            }
+            lines.push(fit_ascii_cell(&composed, inner_width));
+        }
+    }
+
+    let border = format!("+{}+", "-".repeat(inner_width + 2));
+    let mut out = Vec::new();
+    out.push(border.clone());
+    for line in lines {
+        out.push(format!("| {} |", line));
+    }
+    out.push(border);
+    out.join("\n")
+}
+
+fn section_item_ascii_inner_width(width_class: &str, section_inner_width: usize) -> usize {
+    let min_inner = 12usize;
+    let max_inner = section_inner_width.saturating_sub(10).max(min_inner);
+    let ratio = resolve_dd_u_ratio_for_panel(width_class, section_inner_width)
+        .map(|(num, den)| (num as f64 / den as f64).clamp(0.1, 1.0))
+        .unwrap_or(1.0);
+
+    // Compute using total box width first so row packing includes border/padding footprint.
+    // Box width = inner + 4 (left/right borders + spaces).
+    // Subtract a small safety margin to avoid rounding forcing 50/50 items onto separate rows.
+    let box_target = ((section_inner_width as f64) * ratio).floor() as isize - 2;
+    let inner_target = box_target - 4;
+    (inner_target as usize).clamp(min_inner, max_inner)
+}
+
+fn resolve_dd_u_ratio_for_panel(width_class: &str, panel_chars: usize) -> Option<(usize, usize)> {
+    let current_bp = breakpoint_for_panel_chars(panel_chars);
+    let mut base: Option<(usize, usize)> = None;
+    let mut sm: Option<(usize, usize)> = None;
+    let mut md: Option<(usize, usize)> = None;
+    let mut lg: Option<(usize, usize)> = None;
+    let mut xl: Option<(usize, usize)> = None;
+    let mut xxl: Option<(usize, usize)> = None;
+
+    for token in width_class.split_whitespace() {
+        match parse_dd_u_token_ratio(token) {
+            Some((ResponsiveBp::Base, ratio)) => base = Some(ratio),
+            Some((ResponsiveBp::Sm, ratio)) => sm = Some(ratio),
+            Some((ResponsiveBp::Md, ratio)) => md = Some(ratio),
+            Some((ResponsiveBp::Lg, ratio)) => lg = Some(ratio),
+            Some((ResponsiveBp::Xl, ratio)) => xl = Some(ratio),
+            Some((ResponsiveBp::Xxl, ratio)) => xxl = Some(ratio),
+            None => {}
+        }
+    }
+
+    let ordered = [base, sm, md, lg, xl, xxl];
+    let idx = current_bp.index();
+    for i in (0..=idx).rev() {
+        if let Some(ratio) = ordered[i] {
+            return Some(ratio);
+        }
+    }
+    for ratio in ordered.iter().skip(idx + 1).flatten() {
+        return Some(*ratio);
+    }
+    None
+}
+
+fn parse_dd_u_token_ratio(token: &str) -> Option<(ResponsiveBp, (usize, usize))> {
+    let value = token.strip_prefix("dd-u-")?;
+    let parts = value.split('-').collect::<Vec<_>>();
+    let (bp, num_raw, den_raw) = match parts.as_slice() {
+        [num, den] => (ResponsiveBp::Base, *num, *den),
+        [bp, num, den] => (
+            match *bp {
+                "sm" => ResponsiveBp::Sm,
+                "md" => ResponsiveBp::Md,
+                "lg" => ResponsiveBp::Lg,
+                "xl" => ResponsiveBp::Xl,
+                "xxl" => ResponsiveBp::Xxl,
+                _ => return None,
+            },
+            *num,
+            *den,
+        ),
+        _ => return None,
+    };
+    let num = num_raw.parse::<usize>().ok()?;
+    let den = den_raw.parse::<usize>().ok()?;
+    if den == 0 || num == 0 {
+        return None;
+    }
+    Some((bp, (num.min(den), den)))
+}
+
+#[derive(Clone, Copy)]
+enum ResponsiveBp {
+    Base,
+    Sm,
+    Md,
+    Lg,
+    Xl,
+    Xxl,
+}
+
+impl ResponsiveBp {
+    fn index(self) -> usize {
+        match self {
+            ResponsiveBp::Base => 0,
+            ResponsiveBp::Sm => 1,
+            ResponsiveBp::Md => 2,
+            ResponsiveBp::Lg => 3,
+            ResponsiveBp::Xl => 4,
+            ResponsiveBp::Xxl => 5,
+        }
+    }
+}
+
+fn breakpoint_for_panel_chars(panel_chars: usize) -> ResponsiveBp {
+    if panel_chars >= 180 {
+        ResponsiveBp::Xxl
+    } else if panel_chars >= 150 {
+        ResponsiveBp::Xl
+    } else if panel_chars >= 120 {
+        ResponsiveBp::Lg
+    } else if panel_chars >= 90 {
+        ResponsiveBp::Md
+    } else if panel_chars >= 60 {
+        ResponsiveBp::Sm
+    } else {
+        ResponsiveBp::Base
+    }
 }
 
 fn hero_ascii_map(hero: &crate::model::DdHero, panel_width: usize) -> String {
@@ -3750,82 +3218,66 @@ fn hero_ascii_map(hero: &crate::model::DdHero, panel_width: usize) -> String {
     out.join("\n")
 }
 
-fn section_cell_width(panel_width: usize, column_count: usize) -> usize {
-    if column_count == 0 {
-        return 10;
-    }
-    let per_col = panel_width
-        .saturating_sub(1)
-        .checked_div(column_count)
-        .unwrap_or(0);
-    per_col.saturating_sub(3).max(8)
-}
-
-fn section_modifier_class_string(section: &crate::model::DdSection) -> String {
-    format!(
-        "{} {} {} {}",
-        section_background_class(section.background),
-        section_spacing_class(section.spacing),
-        section_width_class(section.width),
-        section_align_class(section.align)
-    )
-}
-
-fn section_modifier_options_block() -> String {
-    [
-        "  background: primary | secondary | tertiary | gray | white | black",
-        "  spacing: tight | normal | loose | extra_loose",
-        "  width: narrow | normal | wide | full",
-        "  align: left | center | right",
-        "  use b/w/g/t keys to cycle these section modifier classes",
-    ]
-    .join("\n")
-}
-
-fn section_background_class(v: crate::model::SectionBackground) -> &'static str {
+fn section_class_to_str(v: crate::model::SectionClass) -> &'static str {
     match v {
-        crate::model::SectionBackground::Primary => "primary",
-        crate::model::SectionBackground::Secondary => "secondary",
-        crate::model::SectionBackground::Tertiary => "tertiary",
-        crate::model::SectionBackground::Gray => "gray",
-        crate::model::SectionBackground::White => "white",
-        crate::model::SectionBackground::Black => "black",
+        crate::model::SectionClass::Contained => "-contained",
+        crate::model::SectionClass::ContainedMd => "-contained-md",
+        crate::model::SectionClass::ContainedLg => "-contained-lg",
+        crate::model::SectionClass::ContainedXl => "-contained-xl",
+        crate::model::SectionClass::ContainedXxl => "-contained-xxl",
+        crate::model::SectionClass::FullFull => "-full-full",
+        crate::model::SectionClass::FullContained => "-full-contained",
+        crate::model::SectionClass::FullContainedMd => "-full-contained-md",
+        crate::model::SectionClass::FullContainedLg => "-full-contained-lg",
+        crate::model::SectionClass::FullContainedXl => "-full-contained-xl",
+        crate::model::SectionClass::FullContainedXxl => "-full-contained-xxl",
     }
 }
 
-fn section_spacing_class(v: crate::model::SectionSpacing) -> &'static str {
-    match v {
-        crate::model::SectionSpacing::Tight => "tight",
-        crate::model::SectionSpacing::Normal => "normal",
-        crate::model::SectionSpacing::Loose => "loose",
-        crate::model::SectionSpacing::ExtraLoose => "extra_loose",
+fn parse_section_class(raw: &str) -> Option<crate::model::SectionClass> {
+    match raw.trim() {
+        "-contained" => Some(crate::model::SectionClass::Contained),
+        "-contained-md" => Some(crate::model::SectionClass::ContainedMd),
+        "-contained-lg" => Some(crate::model::SectionClass::ContainedLg),
+        "-contained-xl" => Some(crate::model::SectionClass::ContainedXl),
+        "-contained-xxl" => Some(crate::model::SectionClass::ContainedXxl),
+        "-full-full" => Some(crate::model::SectionClass::FullFull),
+        "-full-contained" => Some(crate::model::SectionClass::FullContained),
+        "-full-contained-md" => Some(crate::model::SectionClass::FullContainedMd),
+        "-full-contained-lg" => Some(crate::model::SectionClass::FullContainedLg),
+        "-full-contained-xl" => Some(crate::model::SectionClass::FullContainedXl),
+        "-full-contained-xxl" => Some(crate::model::SectionClass::FullContainedXxl),
+        _ => None,
     }
 }
 
-fn section_width_class(v: crate::model::SectionWidth) -> &'static str {
-    match v {
-        crate::model::SectionWidth::Narrow => "narrow",
-        crate::model::SectionWidth::Normal => "normal",
-        crate::model::SectionWidth::Wide => "wide",
-        crate::model::SectionWidth::Full => "full",
-    }
-}
-
-fn section_align_class(v: crate::model::SectionAlign) -> &'static str {
-    match v {
-        crate::model::SectionAlign::Left => "left",
-        crate::model::SectionAlign::Center => "center",
-        crate::model::SectionAlign::Right => "right",
-    }
-}
-
-fn section_ascii_border(column_count: usize, cell_width: usize) -> String {
-    let mut border = String::from("+");
-    for _ in 0..column_count {
-        border.push_str(&"-".repeat(cell_width + 2));
-        border.push('+');
-    }
-    border
+fn next_section_class(
+    current: crate::model::SectionClass,
+    forward: bool,
+) -> crate::model::SectionClass {
+    use crate::model::SectionClass;
+    let all = [
+        SectionClass::Contained,
+        SectionClass::ContainedMd,
+        SectionClass::ContainedLg,
+        SectionClass::ContainedXl,
+        SectionClass::ContainedXxl,
+        SectionClass::FullFull,
+        SectionClass::FullContained,
+        SectionClass::FullContainedMd,
+        SectionClass::FullContainedLg,
+        SectionClass::FullContainedXl,
+        SectionClass::FullContainedXxl,
+    ];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
 }
 
 fn fit_ascii_cell(value: &str, width: usize) -> String {
@@ -3925,10 +3377,9 @@ fn component_form(
                 content
             )
         }
-        crate::model::SectionComponent::Cta(v) => format!(
-            "fields:\n  title: {}\n  copy: {}\n  cta_text: {}\n  cta_link: {}",
-            v.title, v.copy, v.cta_text, v.cta_link
-        ),
+        crate::model::SectionComponent::Cta(v) => {
+            format!("fields:\n  title: {}", v.title)
+        }
         crate::model::SectionComponent::Modal(v) => format!(
             "fields:\n  trigger_text: {}\n  title: {}\n  content: {}",
             v.trigger_text, v.title, v.content
@@ -4031,9 +3482,7 @@ fn hero_aos_to_str(v: crate::model::HeroAos) -> &'static str {
 
 fn parse_hero_image_class(raw: &str) -> Option<crate::model::HeroImageClass> {
     let trimmed = raw.trim();
-    let normalized = trimmed
-        .strip_prefix(".dd-hero__image.")
-        .unwrap_or(trimmed);
+    let normalized = trimmed.strip_prefix(".dd-hero__image.").unwrap_or(trimmed);
     match normalized {
         "-contained" => Some(crate::model::HeroImageClass::Contained),
         "-contained-md" => Some(crate::model::HeroImageClass::ContainedMd),
@@ -4340,6 +3789,13 @@ fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]
             InputMode::EditHeroCtaText2,
             InputMode::EditHeroCtaLink2,
         ]),
+        InputMode::EditSectionId | InputMode::EditSectionTitle | InputMode::EditSectionClass => {
+            Some(&[
+                InputMode::EditSectionId,
+                InputMode::EditSectionTitle,
+                InputMode::EditSectionClass,
+            ])
+        }
         InputMode::EditCardTitle | InputMode::EditCardCopy => {
             Some(&[InputMode::EditCardTitle, InputMode::EditCardCopy])
         }
@@ -4386,37 +3842,23 @@ fn help_text() -> String {
         "",
         "Node navigation and edits:",
         "  Up/Down or mouse wheel: Select row in Nodes tree",
-        "  Enter: Expand/collapse section row or edit selected row",
-        "  h / n: Add hero / section",
+        "  Enter: Edit selected row",
+        "  Space: Expand/collapse selected section",
+        "  /: Open insert fuzzy finder (hero/section/components)",
         "  d: Delete selected node",
         "  J / K: Move selected node down / up",
         "",
         "Section layout:",
-        "  b / w / g / t: Cycle background / width / spacing / alignment",
         "  C / V: Add/remove selected column",
         "  c / v: Select previous/next column",
         "  ( / ): Move selected column up/down",
         "  r / f: Edit selected column id / width class",
         "  Details pane shows ASCII blueprint for all page items",
         "",
-        "Component operations:",
-        "  [ and ]: Select component type to insert",
-        "  /: Open component picker modal with fuzzy search",
-        "  a: Add selected component type",
-        "  x: Remove last component from section",
-        "  , / .: Select previous/next component",
-        "  < / >: Move selected component up/down",
-        "  m / l: Edit selected component primary / secondary field",
-        "",
-        "Nested item operations (tabs/accordion/slider/timeline):",
-        "  j / k: Select previous/next nested item",
-        "  i / o: Add/remove nested item",
-        "  { / }: Move nested item up/down",
-        "",
         "Edit modal:",
         "  Any edit command opens a modal with editable fields",
-        "  Tab / Shift+Tab: Next/previous editable field for selected hero/component",
-        "  Left / Right: Cycle hero.class or hero.data_aos when those fields are active",
+        "  Tab / Shift+Tab: Next/previous editable field for selected hero/section",
+        "  Left / Right: Cycle section/hero option fields when active",
         "  Enter: Confirm edit",
         "  Esc: Cancel edit",
         "  Backspace: Delete character",
@@ -4427,6 +3869,8 @@ fn help_text() -> String {
 impl ComponentKind {
     fn all() -> &'static [Self] {
         &[
+            Self::Hero,
+            Self::Section,
             Self::Card,
             Self::Alert,
             Self::Banner,
@@ -4442,6 +3886,8 @@ impl ComponentKind {
 
     fn label(self) -> &'static str {
         match self {
+            ComponentKind::Hero => "dd-hero",
+            ComponentKind::Section => "dd-section",
             ComponentKind::Card => "dd-card",
             ComponentKind::Alert => "dd-alert",
             ComponentKind::Banner => "dd-banner",
@@ -4455,38 +3901,11 @@ impl ComponentKind {
         }
     }
 
-    fn next(self) -> Self {
-        match self {
-            ComponentKind::Card => ComponentKind::Alert,
-            ComponentKind::Alert => ComponentKind::Banner,
-            ComponentKind::Banner => ComponentKind::Tabs,
-            ComponentKind::Tabs => ComponentKind::Accordion,
-            ComponentKind::Accordion => ComponentKind::Cta,
-            ComponentKind::Cta => ComponentKind::Modal,
-            ComponentKind::Modal => ComponentKind::Slider,
-            ComponentKind::Slider => ComponentKind::Spacer,
-            ComponentKind::Spacer => ComponentKind::Timeline,
-            ComponentKind::Timeline => ComponentKind::Card,
-        }
-    }
-
-    fn prev(self) -> Self {
-        match self {
-            ComponentKind::Card => ComponentKind::Timeline,
-            ComponentKind::Alert => ComponentKind::Card,
-            ComponentKind::Banner => ComponentKind::Alert,
-            ComponentKind::Tabs => ComponentKind::Banner,
-            ComponentKind::Accordion => ComponentKind::Tabs,
-            ComponentKind::Cta => ComponentKind::Accordion,
-            ComponentKind::Modal => ComponentKind::Cta,
-            ComponentKind::Slider => ComponentKind::Modal,
-            ComponentKind::Spacer => ComponentKind::Slider,
-            ComponentKind::Timeline => ComponentKind::Spacer,
-        }
-    }
-
     fn default_component(self) -> crate::model::SectionComponent {
         match self {
+            ComponentKind::Hero | ComponentKind::Section => {
+                unreachable!("top-level kinds do not map to section components")
+            }
             ComponentKind::Card => crate::model::SectionComponent::Card(crate::model::DdCard {
                 title: "New Card".to_string(),
                 image: "/assets/images/card.jpg".to_string(),

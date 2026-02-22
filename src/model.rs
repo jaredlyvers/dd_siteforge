@@ -57,10 +57,10 @@ pub struct DdHero {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DdSection {
     pub id: String,
-    pub background: SectionBackground,
-    pub spacing: SectionSpacing,
-    pub width: SectionWidth,
-    pub align: SectionAlign,
+    #[serde(default)]
+    pub section_title: Option<String>,
+    pub section_class: Option<SectionClass>,
+    pub item_box_class: Option<SectionItemBoxClass>,
     #[serde(default)]
     pub columns: Vec<SectionColumn>,
     #[serde(default)]
@@ -247,41 +247,38 @@ pub enum HeroAos {
     ZoomInDown,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SectionBackground {
-    Primary,
-    Secondary,
-    Tertiary,
-    Gray,
-    White,
-    Black,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SectionClass {
+    #[serde(rename = "-contained")]
+    Contained,
+    #[serde(rename = "-contained-md")]
+    ContainedMd,
+    #[serde(rename = "-contained-lg")]
+    ContainedLg,
+    #[serde(rename = "-contained-xl")]
+    ContainedXl,
+    #[serde(rename = "-contained-xxl")]
+    ContainedXxl,
+    #[serde(rename = "-full-full")]
+    FullFull,
+    #[serde(rename = "-full-contained")]
+    FullContained,
+    #[serde(rename = "-full-contained-md")]
+    FullContainedMd,
+    #[serde(rename = "-full-contained-lg")]
+    FullContainedLg,
+    #[serde(rename = "-full-contained-xl")]
+    FullContainedXl,
+    #[serde(rename = "-full-contained-xxl")]
+    FullContainedXxl,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SectionSpacing {
-    Tight,
-    Normal,
-    Loose,
-    ExtraLoose,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SectionWidth {
-    Narrow,
-    Normal,
-    Wide,
-    Full,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SectionAlign {
-    Left,
-    Center,
-    Right,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SectionItemBoxClass {
+    #[serde(rename = "l-box")]
+    LBox,
+    #[serde(rename = "ll-box")]
+    LlBox,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -367,19 +364,13 @@ impl Site {
                     }),
                     PageNode::Section(DdSection {
                         id: "section-1".to_string(),
-                        background: SectionBackground::White,
-                        spacing: SectionSpacing::Normal,
-                        width: SectionWidth::Normal,
-                        align: SectionAlign::Left,
+                        section_title: Some("Ready to publish?".to_string()),
+                        section_class: Some(SectionClass::FullContained),
+                        item_box_class: Some(SectionItemBoxClass::LBox),
                         columns: vec![SectionColumn {
                             id: "column-1".to_string(),
                             width_class: "dd-u-1-1".to_string(),
-                            components: vec![SectionComponent::Cta(DdCta {
-                                title: "Ready to publish?".to_string(),
-                                copy: "Generate framework-compliant HTML.".to_string(),
-                                cta_text: "Export".to_string(),
-                                cta_link: "/export".to_string(),
-                            })],
+                            components: Vec::new(),
                         }],
                         components: Vec::new(),
                     }),
