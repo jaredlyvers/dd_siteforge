@@ -104,11 +104,16 @@ pub struct DdCard {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DdAlert {
-    #[serde(rename = "type")]
+    #[serde(default = "default_alert_type", alias = "type")]
     pub alert_type: AlertType,
-    pub message: String,
-    pub title: Option<String>,
-    pub dismissible: Option<bool>,
+    #[serde(default = "default_alert_class")]
+    pub alert_class: AlertClass,
+    #[serde(default = "default_alert_data_aos", alias = "alert_aos")]
+    pub alert_data_aos: HeroAos,
+    #[serde(default, alias = "title")]
+    pub alert_title: String,
+    #[serde(default, alias = "message")]
+    pub alert_copy: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -166,6 +171,18 @@ fn default_accordion_class() -> AccordionClass {
 }
 
 fn default_accordion_aos() -> HeroAos {
+    HeroAos::FadeIn
+}
+
+fn default_alert_type() -> AlertType {
+    AlertType::Default
+}
+
+fn default_alert_class() -> AlertClass {
+    AlertClass::Default
+}
+
+fn default_alert_data_aos() -> HeroAos {
     HeroAos::FadeIn
 }
 
@@ -323,13 +340,26 @@ pub enum CardAnimate {
     SlideUp,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AlertType {
+    #[serde(rename = "-default")]
+    Default,
+    #[serde(rename = "-info -minor")]
+    InfoMinor,
+    #[serde(rename = "-warning -moderate -serious")]
+    WarningModerateSerious,
+    #[serde(rename = "-error -critical")]
+    ErrorCritical,
+    #[serde(rename = "-success")]
     Success,
-    Error,
-    Warning,
-    Info,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AlertClass {
+    #[serde(rename = "-default")]
+    Default,
+    #[serde(rename = "-compact")]
+    Compact,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

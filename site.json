@@ -47,6 +47,14 @@
               "width_class": "dd-u-1-1",
               "components": [
                 {
+                  "component_type": "alert",
+                  "alert_type": "-default",
+                  "alert_class": "-default",
+                  "alert_data_aos": "fade-in",
+                  "alert_title": "Alert Title",
+                  "alert_copy": "Alert content"
+                },
+                {
                   "component_type": "accordion",
                   "accordion_type": "-default",
                   "accordion_class": "-primary",
@@ -54,20 +62,8 @@
                   "group_name": "group1",
                   "items": [
                     {
-                      "title": "Accordion Item 1",
-                      "content": "Accordion content 1"
-                    },
-                    {
-                      "title": "Accordion Item 2",
-                      "content": "Accordion content 2"
-                    },
-                    {
-                      "title": "Accordion Item 3",
-                      "content": "Accordion content 3"
-                    },
-                    {
-                      "title": "Accordion Item 4",
-                      "content": "Accordion content 4"
+                      "title": "Accordion Item",
+                      "content": "Accordion content"
                     }
                   ],
                   "multiple": false
@@ -77,6 +73,14 @@
           ],
           "components": [
             {
+              "component_type": "alert",
+              "alert_type": "-default",
+              "alert_class": "-default",
+              "alert_data_aos": "fade-in",
+              "alert_title": "Alert Title",
+              "alert_copy": "Alert content"
+            },
+            {
               "component_type": "accordion",
               "accordion_type": "-default",
               "accordion_class": "-primary",
@@ -84,20 +88,8 @@
               "group_name": "group1",
               "items": [
                 {
-                  "title": "Accordion Item 1",
-                  "content": "Accordion content 1"
-                },
-                {
-                  "title": "Accordion Item 2",
-                  "content": "Accordion content 2"
-                },
-                {
-                  "title": "Accordion Item 3",
-                  "content": "Accordion content 3"
-                },
-                {
-                  "title": "Accordion Item 4",
-                  "content": "Accordion content 4"
+                  "title": "Accordion Item",
+                  "content": "Accordion content"
                 }
               ],
               "multiple": false

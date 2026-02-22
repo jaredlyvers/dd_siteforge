@@ -60,10 +60,11 @@ mod tests {
             section
                 .components
                 .push(SectionComponent::Alert(crate::model::DdAlert {
-                    alert_type: crate::model::AlertType::Info,
-                    message: "Info".to_string(),
-                    title: Some("Initial".to_string()),
-                    dismissible: Some(false),
+                    alert_type: crate::model::AlertType::InfoMinor,
+                    alert_class: crate::model::AlertClass::Default,
+                    alert_data_aos: crate::model::HeroAos::FadeIn,
+                    alert_title: "Initial".to_string(),
+                    alert_copy: "Info".to_string(),
                 }));
 
             if let SectionComponent::Tabs(tabs) = &mut section.components[0] {
@@ -94,7 +95,7 @@ mod tests {
         assert_eq!(loaded_section.components.len(), 3);
 
         match &loaded_section.components[0] {
-            SectionComponent::Alert(alert) => assert_eq!(alert.message, "Info"),
+            SectionComponent::Alert(alert) => assert_eq!(alert.alert_copy, "Info"),
             other => panic!("expected alert at index 0, got {:?}", other),
         }
 

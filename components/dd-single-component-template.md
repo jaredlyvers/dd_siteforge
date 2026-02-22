@@ -9,6 +9,9 @@ insert:
     alert_data_aos: "fade-in"
     alert_title: "Alert Title"
     alert_copy: "Alert content"
+    alert_link_url: ""
+    alert_link_target: "_self"
+    alert_link_label: "Learn More"
 fields:
   - id: alert_type
     required: true
@@ -36,6 +39,22 @@ fields:
     required: true
     type: string
     maps_to: ".dd-alert__copy p"
+  - id: alert_link_url
+    required: false
+    type: string
+    maps_to: ".dd-alert__copy a[href]"
+    affects:
+      - "if empty, do not render link markup"
+  - id: alert_link_target
+    required: false
+    type: enum
+    options: ["_self", "_blank"]
+    default: "_self"
+    maps_to: ".dd-alert__copy a[target]"
+  - id: alert_link_label
+    required: false
+    type: string
+    maps_to: ".dd-alert__copy a"
 edit_ui:
   tab_order:
     - alert_type
@@ -43,6 +62,9 @@ edit_ui:
     - alert_data_aos
     - alert_title
     - alert_copy
+    - alert_link_url
+    - alert_link_target
+    - alert_link_label
   enter_behavior:
     parent_row: "start dd-alert field editing"
   modal_fields:
@@ -52,6 +74,9 @@ edit_ui:
       - alert_data_aos
       - alert_title
       - alert_copy
+      - alert_link_url
+      - alert_link_target
+      - alert_link_label
     scope_rule: "dd-alert is a single component with no child rows; all editable fields are available on parent edit"
     hide_when_editing_alert:
       - column.id
@@ -77,6 +102,9 @@ data-aos-delay="100">
         </div>
         <div class="dd-alert__copy">
           <p>[alert_copy]</p>
+          <!-- if [alert_link_url] -->
+          <p><a href="[alert_link_url]" target="[alert_link_target]">[alert_link_label]</a></p>
+          <!-- endif -->
         </div>
       </div>
     </div>

@@ -153,9 +153,9 @@ fn validate_section_component(
             }
         }
         SectionComponent::Alert(alert) => {
-            if alert.message.trim().is_empty() {
+            if alert.alert_title.trim().is_empty() || alert.alert_copy.trim().is_empty() {
                 errors.push(format!(
-                    "Page '{}' section '{}' has a dd-alert with empty message.",
+                    "Page '{}' section '{}' has invalid dd-alert required fields.",
                     page_id, section_id
                 ));
             }

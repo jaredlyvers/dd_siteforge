@@ -215,11 +215,48 @@ fn render_card(card: &DdCard) -> anyhow::Result<String> {
 }
 
 fn render_alert(alert: &DdAlert) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-alert dd-alert--{{type}}">
-  {{#if title}}<strong>{{title}}</strong>{{/if}}
-  <p>{{message}}</p>
+    let template = r#"<div class="dd-alert {{alert_type}} {{alert_class}}" role="alert" data-aos="{{alert_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+  <div class="dd-alert__content dd-g">
+    <div class="dd-u-1-1">
+      <div class="l-box">
+        <div class="dd-alert__title">
+          {{alert_title}}
+        </div>
+        <div class="dd-alert__copy">
+          <p>{{alert_copy}}</p>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>"#;
-    render_inline(template, serde_json::to_value(alert)?)
+    let mut v = serde_json::to_value(alert)?;
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert(
+            "alert_type".to_string(),
+            Value::String(
+                serde_json::to_value(alert.alert_type)
+                    .map(|raw| stringify_json(&raw))
+                    .unwrap_or_else(|_| "-default".to_string()),
+            ),
+        );
+        obj.insert(
+            "alert_class".to_string(),
+            Value::String(
+                serde_json::to_value(alert.alert_class)
+                    .map(|raw| stringify_json(&raw))
+                    .unwrap_or_else(|_| "-default".to_string()),
+            ),
+        );
+        obj.insert(
+            "alert_data_aos".to_string(),
+            Value::String(
+                serde_json::to_value(alert.alert_data_aos)
+                    .map(|raw| stringify_json(&raw))
+                    .unwrap_or_else(|_| "fade-in".to_string()),
+            ),
+        );
+    }
+    render_inline(template, v)
 }
 
 fn render_banner(banner: &DdBanner) -> anyhow::Result<String> {

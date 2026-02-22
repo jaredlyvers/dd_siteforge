@@ -100,8 +100,11 @@ enum InputMode {
     EditCardCopy,
     EditCtaTitle,
     EditCtaLink,
-    EditAlertMessage,
+    EditAlertType,
+    EditAlertClass,
+    EditAlertDataAos,
     EditAlertTitle,
+    EditAlertCopy,
     EditBannerMessage,
     EditBannerLinkUrl,
     EditTabsFirstTitle,
@@ -658,6 +661,25 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
+                    Some(InputMode::EditAlertType) => {
+                        self.cycle_alert_type(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditAlertType) {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditAlertClass) => {
+                        self.cycle_alert_class(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditAlertClass) {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditAlertDataAos) => {
+                        self.cycle_alert_data_aos(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditAlertDataAos)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
                     Some(InputMode::EditAccordionType) => {
                         self.cycle_accordion_type(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditAccordionType)
@@ -698,6 +720,25 @@ impl App {
                     Some(InputMode::EditSectionClass) => {
                         self.cycle_section_class(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditSectionClass)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditAlertType) => {
+                        self.cycle_alert_type(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditAlertType) {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditAlertClass) => {
+                        self.cycle_alert_class(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditAlertClass) {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditAlertDataAos) => {
+                        self.cycle_alert_data_aos(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditAlertDataAos)
                         {
                             self.input_buffer = v;
                         }
@@ -1003,11 +1044,20 @@ impl App {
             InputMode::EditCtaLink => {
                 "Editing dd-cta link. Enter to save, esc to cancel.".to_string()
             }
-            InputMode::EditAlertMessage => {
-                "Editing dd-alert message. Enter to save, esc to cancel.".to_string()
+            InputMode::EditAlertType => {
+                "Editing dd-alert type. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertClass => {
+                "Editing dd-alert class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertDataAos => {
+                "Editing dd-alert data-aos. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAlertTitle => {
                 "Editing dd-alert title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertCopy => {
+                "Editing dd-alert copy. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditBannerMessage => {
                 "Editing dd-banner message. Enter to save, esc to cancel.".to_string()
@@ -1308,12 +1358,53 @@ impl App {
                     "Section has no components.".to_string()
                 }
             }
-            (PageNode::Section(v), InputMode::EditAlertMessage) => {
+            (PageNode::Section(v), InputMode::EditAlertType) => {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Alert(alert) = &mut v.components[ci] {
-                        alert.message = value;
-                        applied = true;
-                        "Updated dd-alert message.".to_string()
+                        if let Some(vt) = parse_alert_type(value.as_str()) {
+                            alert.alert_type = vt;
+                            applied = true;
+                            "Updated dd-alert type.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-alert type option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-alert.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditAlertClass) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alert(alert) = &mut v.components[ci] {
+                        if let Some(vc) = parse_alert_class(value.as_str()) {
+                            alert.alert_class = vc;
+                            applied = true;
+                            "Updated dd-alert class.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-alert class option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-alert.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditAlertDataAos) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alert(alert) = &mut v.components[ci] {
+                        if let Some(va) = parse_hero_aos(value.as_str()) {
+                            alert.alert_data_aos = va;
+                            applied = true;
+                            "Updated dd-alert data-aos.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-alert data-aos option.".to_string()
+                        }
                     } else {
                         "Selected component is not dd-alert.".to_string()
                     }
@@ -1324,9 +1415,22 @@ impl App {
             (PageNode::Section(v), InputMode::EditAlertTitle) => {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Alert(alert) = &mut v.components[ci] {
-                        alert.title = Some(value);
+                        alert.alert_title = value;
                         applied = true;
                         "Updated dd-alert title.".to_string()
+                    } else {
+                        "Selected component is not dd-alert.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditAlertCopy) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alert(alert) = &mut v.components[ci] {
+                        alert.alert_copy = value;
+                        applied = true;
+                        "Updated dd-alert copy.".to_string()
                     } else {
                         "Selected component is not dd-alert.".to_string()
                     }
@@ -2139,8 +2243,11 @@ impl App {
             Some(InputMode::EditCardCopy) => "dd-card.copy",
             Some(InputMode::EditCtaTitle) => "dd-cta.title",
             Some(InputMode::EditCtaLink) => "dd-cta.cta_link",
-            Some(InputMode::EditAlertMessage) => "dd-alert.message",
+            Some(InputMode::EditAlertType) => "dd-alert.type",
+            Some(InputMode::EditAlertClass) => "dd-alert.class",
+            Some(InputMode::EditAlertDataAos) => "dd-alert.data_aos",
             Some(InputMode::EditAlertTitle) => "dd-alert.title",
+            Some(InputMode::EditAlertCopy) => "dd-alert.copy",
             Some(InputMode::EditBannerMessage) => "dd-banner.message",
             Some(InputMode::EditBannerLinkUrl) => "dd-banner.link_url",
             Some(InputMode::EditTabsFirstTitle) => "dd-tabs.active.title",
@@ -2215,7 +2322,27 @@ impl App {
                                 self.selected_component
                                     .min(col.components.len().saturating_sub(1)),
                             ) {
-                                if let crate::model::SectionComponent::Accordion(acc) = component {
+                                if let crate::model::SectionComponent::Alert(alert) = component {
+                                    vec![
+                                        format!(
+                                            "- alert_type: {}",
+                                            alert_type_to_str(alert.alert_type)
+                                        ),
+                                        format!(
+                                            "- alert.class: {}",
+                                            alert_class_to_str(alert.alert_class)
+                                        ),
+                                        format!(
+                                            "- alert.data_aos: {}",
+                                            hero_aos_to_str(alert.alert_data_aos)
+                                        ),
+                                        format!("- alert_title: {}", alert.alert_title),
+                                        format!("- alert_copy: {}", alert.alert_copy),
+                                    ]
+                                    .join("\n")
+                                } else if let crate::model::SectionComponent::Accordion(acc) =
+                                    component
+                                {
                                     match self.input_mode {
                                         Some(InputMode::EditAccordionType)
                                         | Some(InputMode::EditAccordionClass)
@@ -2355,11 +2482,20 @@ impl App {
             InputMode::EditCtaLink => {
                 "Editing dd-cta link. Enter to save, esc to cancel.".to_string()
             }
-            InputMode::EditAlertMessage => {
-                "Editing dd-alert message. Enter to save, esc to cancel.".to_string()
+            InputMode::EditAlertType => {
+                "Editing dd-alert type. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertClass => {
+                "Editing dd-alert class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertDataAos => {
+                "Editing dd-alert data-aos. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAlertTitle => {
                 "Editing dd-alert title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertCopy => {
+                "Editing dd-alert copy. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditBannerMessage => {
                 "Editing dd-banner message. Enter to save, esc to cancel.".to_string()
@@ -2495,11 +2631,20 @@ impl App {
             (InputMode::EditCtaLink, crate::model::SectionComponent::Cta(v)) => {
                 Some(v.cta_link.clone())
             }
-            (InputMode::EditAlertMessage, crate::model::SectionComponent::Alert(v)) => {
-                Some(v.message.clone())
-            }
             (InputMode::EditAlertTitle, crate::model::SectionComponent::Alert(v)) => {
-                Some(v.title.clone().unwrap_or_default())
+                Some(v.alert_title.clone())
+            }
+            (InputMode::EditAlertType, crate::model::SectionComponent::Alert(v)) => {
+                Some(alert_type_to_str(v.alert_type).to_string())
+            }
+            (InputMode::EditAlertClass, crate::model::SectionComponent::Alert(v)) => {
+                Some(alert_class_to_str(v.alert_class).to_string())
+            }
+            (InputMode::EditAlertDataAos, crate::model::SectionComponent::Alert(v)) => {
+                Some(hero_aos_to_str(v.alert_data_aos).to_string())
+            }
+            (InputMode::EditAlertCopy, crate::model::SectionComponent::Alert(v)) => {
+                Some(v.alert_copy.clone())
             }
             (InputMode::EditBannerMessage, crate::model::SectionComponent::Banner(v)) => {
                 Some(v.message.clone())
@@ -2910,6 +3055,69 @@ impl App {
         );
     }
 
+    fn cycle_alert_type(&mut self, forward: bool) {
+        self.mutate_selected_alert(
+            |a| {
+                a.alert_type = next_alert_type(a.alert_type, forward);
+            },
+            "Cycled dd-alert type.",
+        );
+    }
+
+    fn cycle_alert_class(&mut self, forward: bool) {
+        self.mutate_selected_alert(
+            |a| {
+                a.alert_class = next_alert_class(a.alert_class, forward);
+            },
+            "Cycled dd-alert class.",
+        );
+    }
+
+    fn cycle_alert_data_aos(&mut self, forward: bool) {
+        self.mutate_selected_alert(
+            |a| {
+                a.alert_data_aos = next_hero_aos(a.alert_data_aos, forward);
+            },
+            "Cycled dd-alert data-aos.",
+        );
+    }
+
+    fn mutate_selected_alert<F>(&mut self, mutator: F, success_message: &str)
+    where
+        F: FnOnce(&mut crate::model::DdAlert),
+    {
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alert(alert) = &mut components[ci] {
+                        mutator(alert);
+                        success_message.to_string()
+                    } else {
+                        "Selected component is not dd-alert.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            _ => "Selected node is not a section.".to_string(),
+        };
+        self.status = result;
+    }
+
     fn cycle_accordion_type(&mut self, forward: bool) {
         self.mutate_selected_accordion(
             |a| {
@@ -3310,9 +3518,10 @@ impl App {
                                 crate::model::SectionComponent::Cta(cta) => {
                                     Some((InputMode::EditCtaTitle, cta.title.clone()))
                                 }
-                                crate::model::SectionComponent::Alert(alert) => {
-                                    Some((InputMode::EditAlertMessage, alert.message.clone()))
-                                }
+                                crate::model::SectionComponent::Alert(alert) => Some((
+                                    InputMode::EditAlertType,
+                                    alert_type_to_str(alert.alert_type).to_string(),
+                                )),
                                 crate::model::SectionComponent::Banner(banner) => {
                                     Some((InputMode::EditBannerMessage, banner.message.clone()))
                                 }
@@ -3386,8 +3595,8 @@ impl App {
             InputMode::EditCtaTitle => {
                 "Editing dd-cta title. Enter to save, esc to cancel.".to_string()
             }
-            InputMode::EditAlertMessage => {
-                "Editing dd-alert message. Enter to save, esc to cancel.".to_string()
+            InputMode::EditAlertType => {
+                "Editing dd-alert type. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditBannerMessage => {
                 "Editing dd-banner message. Enter to save, esc to cancel.".to_string()
@@ -3849,6 +4058,76 @@ fn parse_section_class(raw: &str) -> Option<crate::model::SectionClass> {
     }
 }
 
+fn alert_type_to_str(v: crate::model::AlertType) -> &'static str {
+    match v {
+        crate::model::AlertType::Default => "-default",
+        crate::model::AlertType::InfoMinor => "-info -minor",
+        crate::model::AlertType::WarningModerateSerious => "-warning -moderate -serious",
+        crate::model::AlertType::ErrorCritical => "-error -critical",
+        crate::model::AlertType::Success => "-success",
+    }
+}
+
+fn parse_alert_type(raw: &str) -> Option<crate::model::AlertType> {
+    match raw.trim() {
+        "-default" => Some(crate::model::AlertType::Default),
+        "-info -minor" => Some(crate::model::AlertType::InfoMinor),
+        "-warning -moderate -serious" => Some(crate::model::AlertType::WarningModerateSerious),
+        "-error -critical" => Some(crate::model::AlertType::ErrorCritical),
+        "-success" => Some(crate::model::AlertType::Success),
+        _ => None,
+    }
+}
+
+fn next_alert_type(current: crate::model::AlertType, forward: bool) -> crate::model::AlertType {
+    use crate::model::AlertType;
+    let all = [
+        AlertType::Default,
+        AlertType::InfoMinor,
+        AlertType::WarningModerateSerious,
+        AlertType::ErrorCritical,
+        AlertType::Success,
+    ];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
+}
+
+fn alert_class_to_str(v: crate::model::AlertClass) -> &'static str {
+    match v {
+        crate::model::AlertClass::Default => "-default",
+        crate::model::AlertClass::Compact => "-compact",
+    }
+}
+
+fn parse_alert_class(raw: &str) -> Option<crate::model::AlertClass> {
+    match raw.trim() {
+        "-default" => Some(crate::model::AlertClass::Default),
+        "-compact" => Some(crate::model::AlertClass::Compact),
+        _ => None,
+    }
+}
+
+fn next_alert_class(current: crate::model::AlertClass, forward: bool) -> crate::model::AlertClass {
+    use crate::model::AlertClass;
+    let all = [AlertClass::Default, AlertClass::Compact];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
+}
+
 fn accordion_type_to_str(v: crate::model::AccordionType) -> &'static str {
     match v {
         crate::model::AccordionType::Default => "-default",
@@ -3989,6 +4268,9 @@ fn component_label(component: &crate::model::SectionComponent) -> &'static str {
 
 fn component_blueprint_label(component: &crate::model::SectionComponent) -> String {
     match component {
+        crate::model::SectionComponent::Alert(v) => {
+            format!("dd-alert | alert_title: {}", v.alert_title)
+        }
         crate::model::SectionComponent::Accordion(v) => format!(
             "dd-accordion | accordion_title: {}",
             v.items
@@ -4013,10 +4295,12 @@ fn component_form(
             v.cta_link.as_deref().unwrap_or("(none)")
         ),
         crate::model::SectionComponent::Alert(v) => format!(
-            "fields:\n  type: {:?}\n  message: {}\n  title: {}",
-            v.alert_type,
-            v.message,
-            v.title.as_deref().unwrap_or("(none)")
+            "fields:\n  alert_type: {}\n  alert.class: {}\n  alert.data_aos: {}\n  alert_title: {}\n  alert_copy: {}",
+            alert_type_to_str(v.alert_type),
+            alert_class_to_str(v.alert_class),
+            hero_aos_to_str(v.alert_data_aos),
+            v.alert_title,
+            v.alert_copy
         ),
         crate::model::SectionComponent::Banner(v) => format!(
             "fields:\n  message: {}\n  background: {}\n  link_url: {}",
@@ -4492,9 +4776,17 @@ fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]
         InputMode::EditCtaTitle | InputMode::EditCtaLink => {
             Some(&[InputMode::EditCtaTitle, InputMode::EditCtaLink])
         }
-        InputMode::EditAlertMessage | InputMode::EditAlertTitle => {
-            Some(&[InputMode::EditAlertMessage, InputMode::EditAlertTitle])
-        }
+        InputMode::EditAlertType
+        | InputMode::EditAlertClass
+        | InputMode::EditAlertDataAos
+        | InputMode::EditAlertTitle
+        | InputMode::EditAlertCopy => Some(&[
+            InputMode::EditAlertType,
+            InputMode::EditAlertClass,
+            InputMode::EditAlertDataAos,
+            InputMode::EditAlertTitle,
+            InputMode::EditAlertCopy,
+        ]),
         InputMode::EditBannerMessage | InputMode::EditBannerLinkUrl => {
             Some(&[InputMode::EditBannerMessage, InputMode::EditBannerLinkUrl])
         }
@@ -4558,7 +4850,7 @@ fn help_text() -> String {
         "Edit modal:",
         "  Any edit command opens a modal with editable fields",
         "  Tab / Shift+Tab: Next/previous editable field for selected hero/section",
-        "  Left / Right: Cycle section/hero/accordion option fields when active",
+        "  Left / Right: Cycle section/hero/alert/accordion option fields when active",
         "  Enter: Confirm edit",
         "  Esc: Cancel edit",
         "  Backspace: Delete character",
@@ -4618,10 +4910,11 @@ impl ComponentKind {
                 animate: Some(crate::model::CardAnimate::FadeUp),
             }),
             ComponentKind::Alert => crate::model::SectionComponent::Alert(crate::model::DdAlert {
-                alert_type: crate::model::AlertType::Info,
-                message: "Informational message".to_string(),
-                title: Some("Notice".to_string()),
-                dismissible: Some(false),
+                alert_type: crate::model::AlertType::Default,
+                alert_class: crate::model::AlertClass::Default,
+                alert_data_aos: crate::model::HeroAos::FadeIn,
+                alert_title: "Alert Title".to_string(),
+                alert_copy: "Alert content".to_string(),
             }),
             ComponentKind::Banner => {
                 crate::model::SectionComponent::Banner(crate::model::DdBanner {
