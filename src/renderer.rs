@@ -6,8 +6,8 @@ use handlebars::Handlebars;
 use serde_json::{Value, json};
 
 use crate::model::{
-    DdAccordion, DdAlternating, DdBanner, DdHero, DdSection, Page, PageNode, SectionColumn,
-    SectionComponent, Site,
+    DdAccordion, DdAlternating, DdBanner, DdBlockquote, DdHero, DdSection, Page, PageNode,
+    SectionColumn, SectionComponent, Site,
 };
 
 const PAGE_TEMPLATE: &str = r#"<!DOCTYPE html>
@@ -125,6 +125,7 @@ fn render_section(section: &DdSection) -> anyhow::Result<String> {
                 SectionComponent::Alternating(v) => render_alternating(v)?,
                 SectionComponent::Banner(v) => render_banner(v)?,
                 SectionComponent::Accordion(v) => render_accordion(v)?,
+                SectionComponent::Blockquote(v) => render_blockquote(v)?,
             };
             inner.push_str(&html);
             inner.push('\n');
@@ -313,6 +314,57 @@ fn render_accordion(accordion: &DdAccordion) -> anyhow::Result<String> {
     render_inline(template, v)
 }
 
+fn render_blockquote(blockquote: &DdBlockquote) -> anyhow::Result<String> {
+    let template = r#"<blockquote class="dd-blockquote">
+  <div class="dd-blockquote__content dd-g" data-aos="{{blockquote_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+    <div class="dd-blockquote__icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-quote-icon lucide-quote"><path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/></svg></div>
+    <div class="dd-blockquote__person dd-g l-box">
+      <div class="dd-blockquote__image">
+        <picture>
+          <img src="{{blockquote_image_url}}" class="dd-img" alt="{{blockquote_image_alt}}" />
+        </picture>
+      </div>
+      <div class="dd-blockquote__name-title">
+        <span class="dd-blockquote__name">{{blockquote_persons_name}}</span>
+        <span class="dd-blockquote__title">, {{blockquote_persons_title}}</span>
+      </div>
+      <div class="dd-blockquote__comment">
+        {{blockquote_copy}}
+      </div>
+    </div>
+  </div>
+</blockquote>
+<script type="application/ld+json">{{{blockquote_schema_json}}}</script>"#;
+    let blockquote_schema_json = serde_json::to_string(&json!({
+      "@context": "https://schema.org/",
+      "@type": "Quotation",
+      "creator": {
+        "@type": "Person",
+        "name": format!(
+            "{}, {}",
+            blockquote.blockquote_persons_name, blockquote.blockquote_persons_title
+        )
+      },
+      "text": blockquote.blockquote_copy
+    }))?;
+    let mut v = serde_json::to_value(blockquote)?;
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert(
+            "blockquote_data_aos".to_string(),
+            Value::String(
+                serde_json::to_value(blockquote.blockquote_data_aos)
+                    .map(|raw| stringify_json(&raw))
+                    .unwrap_or_else(|_| "fade-in".to_string()),
+            ),
+        );
+        obj.insert(
+            "blockquote_schema_json".to_string(),
+            Value::String(blockquote_schema_json),
+        );
+    }
+    render_inline(template, v)
+}
+
 fn render_inline(template: &str, data: Value) -> anyhow::Result<String> {
     let mut hbs = Handlebars::new();
     hbs.register_template_string("inline", template)
@@ -437,8 +489,7 @@ fn markdown_to_html(input: &str) -> String {
             out.push('\n');
             continue;
         }
-        let inline = inline_markdown_to_html(trimmed)
-            .replace('\n', "<br/>\n");
+        let inline = inline_markdown_to_html(trimmed).replace('\n', "<br/>\n");
         out.push_str("<p>");
         out.push_str(&inline);
         out.push_str("</p>\n");

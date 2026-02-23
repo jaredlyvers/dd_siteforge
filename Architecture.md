@@ -18,6 +18,7 @@ Only these components are supported:
 3. `dd-banner`
 4. `dd-accordion`
 5. `dd-alternating`
+6. `dd-blockquote`
 
 ### Typed Model
 
@@ -31,6 +32,7 @@ enum SectionComponent {
     Banner(DdBanner),
     Accordion(DdAccordion),
     Alternating(DdAlternating),
+    Blockquote(DdBlockquote),
 }
 ```
 
@@ -40,6 +42,7 @@ enum SectionComponent {
 - `dd-hero` renders standalone.
 - `dd-section` renders a column grid and each section component inside the selected columns.
 - `dd-accordion` FAQ schema (`ld+json`) is rendered only when `accordion_type` is `-faq`.
+- `dd-blockquote` renders quotation markup + `ld+json` quotation schema.
 - `dd-hero` and component AOS/class options are rendered from typed enum/string fields.
 - `dd-hero.copy` accepts Markdown and HTML; it is converted to HTML at export.
 
@@ -52,6 +55,7 @@ Validation runs on create/update/export:
 - Banner: required `banner_image_url` and `banner_image_alt`; valid image URL format.
 - Accordion: non-empty `group_name`; at least one item; each item needs title/content.
 - Alternating: at least one item; each item needs image, alt, title, and copy.
+- Blockquote: required image URL/alt, person name/title, and quote copy.
 
 ### TUI Editing Contract
 
@@ -59,7 +63,7 @@ Validation runs on create/update/export:
 - `Enter` starts editing selected node/row.
 - `Tab` / `Shift+Tab` moves between editable fields.
 - `Left` / `Right` cycles enum-style field options on active fields.
-- In `hero.copy`, `Enter` inserts newline (up to 3 rows) and `Ctrl+Enter` saves.
+- In multiline textarea fields (`hero.copy`, `alternating_copy`, `accordion_copy`, `blockquote_copy`), `Enter` inserts newline and `Ctrl+S` saves.
 - Editing is scoped to selected row type:
   - parent row edits parent fields
   - child row edits child fields

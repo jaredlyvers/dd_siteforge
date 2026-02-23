@@ -20,6 +20,7 @@
           "image": "/assets/images/hero.jpg",
           "hero_class": "-full-full",
           "hero_aos": "fade-in",
+          "custom_css": null,
           "title": "Build with dd-framework",
           "subtitle": "Framework-native static page builder",
           "copy": "Compose pages with typed component schemas.",
@@ -47,52 +48,76 @@
               "width_class": "dd-u-1-1",
               "components": [
                 {
-                  "component_type": "alert",
-                  "alert_type": "-default",
-                  "alert_class": "-default",
-                  "alert_data_aos": "fade-in",
-                  "alert_title": "Alert Title",
-                  "alert_copy": "Alert content"
+                  "component_type": "blockquote",
+                  "blockquote_data_aos": "zoom-in",
+                  "blockquote_image_url": "https://dummyimage.com/512x512/000/fff",
+                  "blockquote_image_alt": "Jared Lyvers",
+                  "blockquote_persons_name": "Jared Lyvers",
+                  "blockquote_persons_title": "Director of Digital Experience",
+                  "blockquote_copy": "blockquote content  \nMore content goes here  \n[google](https://www.google.com)  \n## testing\n<h3>testing 3</h3>\n\n\n\nMore testing  "
                 },
                 {
-                  "component_type": "accordion",
-                  "accordion_type": "-default",
-                  "accordion_class": "-primary",
-                  "accordion_aos": "fade-in",
-                  "group_name": "group1",
+                  "component_type": "alternating",
+                  "alternating_type": "-default",
+                  "alternating_class": "-default",
+                  "alternating_data_aos": "fade-in",
                   "items": [
                     {
-                      "title": "Accordion Item",
-                      "content": "Accordion content"
+                      "image": "https://dummyimage.com/600x400/000/fff",
+                      "image_alt": "Alternating image",
+                      "title": "Alternating Item",
+                      "copy": "Alternating content"
+                    },
+                    {
+                      "image": "https://dummyimage.com/600x400/000/fff",
+                      "image_alt": "Alternating image 2",
+                      "title": "Alternating Item 2",
+                      "copy": "Alternating content"
+                    },
+                    {
+                      "image": "https://dummyimage.com/600x400/000/fff",
+                      "image_alt": "Alternating image 3",
+                      "title": "Alternating Item 3",
+                      "copy": "Alternating content"
+                    },
+                    {
+                      "image": "https://dummyimage.com/600x400/000/fff",
+                      "image_alt": "Alternating image 4",
+                      "title": "Alternating Item 4",
+                      "copy": "Alternating content"
+                    },
+                    {
+                      "image": "https://dummyimage.com/600x400/000/fff",
+                      "image_alt": "Alternating image 5",
+                      "title": "Alternating Item 5",
+                      "copy": "Alternating content"
+                    },
+                    {
+                      "image": "https://dummyimage.com/600x400/000/fff",
+                      "image_alt": "Alternating image 6",
+                      "title": "Alternating Item 6",
+                      "copy": "Alternating content"
+                    },
+                    {
+                      "image": "https://dummyimage.com/600x400/000/fff",
+                      "image_alt": "Alternating image 7",
+                      "title": "Alternating Item 7",
+                      "copy": "Alternating content"
                     }
-                  ],
-                  "multiple": false
+                  ]
                 }
               ]
             }
           ],
           "components": [
             {
-              "component_type": "alert",
-              "alert_type": "-default",
-              "alert_class": "-default",
-              "alert_data_aos": "fade-in",
-              "alert_title": "Alert Title",
-              "alert_copy": "Alert content"
-            },
-            {
-              "component_type": "accordion",
-              "accordion_type": "-default",
-              "accordion_class": "-primary",
-              "accordion_aos": "fade-in",
-              "group_name": "group1",
-              "items": [
-                {
-                  "title": "Accordion Item",
-                  "content": "Accordion content"
-                }
-              ],
-              "multiple": false
+              "component_type": "blockquote",
+              "blockquote_data_aos": "zoom-in",
+              "blockquote_image_url": "https://dummyimage.com/512x512/000/fff",
+              "blockquote_image_alt": "Jared Lyvers",
+              "blockquote_persons_name": "Jared Lyvers",
+              "blockquote_persons_title": "Director of Digital Experience",
+              "blockquote_copy": "blockquote content  \nMore content goes here  \n[google](https://www.google.com)  \n## testing\n<h3>testing 3</h3>\n\n\n\nMore testing  "
             }
           ]
         }

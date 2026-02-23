@@ -182,6 +182,30 @@ fn validate_section_component(
                 }
             }
         }
+        SectionComponent::Blockquote(blockquote) => {
+            if blockquote.blockquote_image_url.trim().is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' has a dd-blockquote with empty blockquote_image_url.",
+                    page_id, section_id
+                ));
+            }
+            if blockquote.blockquote_image_alt.trim().is_empty()
+                || blockquote.blockquote_persons_name.trim().is_empty()
+                || blockquote.blockquote_persons_title.trim().is_empty()
+                || blockquote.blockquote_copy.trim().is_empty()
+            {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-blockquote has missing required fields.",
+                    page_id, section_id
+                ));
+            }
+            if !is_valid_url(&blockquote.blockquote_image_url) {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-blockquote blockquote_image_url is invalid.",
+                    page_id, section_id
+                ));
+            }
+        }
     }
 }
 
@@ -243,5 +267,4 @@ mod tests {
         let errors = validate_site(&site);
         assert!(errors.iter().any(|e| e.contains("Duplicate page slug")));
     }
-
 }

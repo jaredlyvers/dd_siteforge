@@ -81,6 +81,7 @@ pub enum SectionComponent {
     Alternating(DdAlternating),
     Banner(DdBanner),
     Accordion(DdAccordion),
+    Blockquote(DdBlockquote),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +128,17 @@ pub struct DdAccordion {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DdBlockquote {
+    #[serde(default = "default_blockquote_data_aos")]
+    pub blockquote_data_aos: HeroAos,
+    pub blockquote_image_url: String,
+    pub blockquote_image_alt: String,
+    pub blockquote_persons_name: String,
+    pub blockquote_persons_title: String,
+    pub blockquote_copy: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccordionItem {
     pub title: String,
     pub content: String,
@@ -165,6 +177,10 @@ fn default_banner_class() -> BannerClass {
 }
 
 fn default_banner_data_aos() -> HeroAos {
+    HeroAos::FadeIn
+}
+
+fn default_blockquote_data_aos() -> HeroAos {
     HeroAos::FadeIn
 }
 

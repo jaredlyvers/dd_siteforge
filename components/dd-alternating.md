@@ -49,6 +49,17 @@ fields:
       - id: alternating_copy
         required: true
         type: string
+        ui:
+          control: textarea
+          rows: 5
+          multiline: true
+          keyboard:
+            enter: "insert newline"
+            ctrl_s: "save"
+            up_down: "move cursor line"
+            left_right: "move cursor character"
+          mouse:
+            wheel: "scroll lines"
 edit_ui:
   tab_order:
     - alternating_type

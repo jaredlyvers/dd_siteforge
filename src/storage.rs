@@ -74,6 +74,17 @@ mod tests {
                     }],
                 }));
 
+            section
+                .components
+                .push(SectionComponent::Blockquote(crate::model::DdBlockquote {
+                    blockquote_data_aos: crate::model::HeroAos::FadeIn,
+                    blockquote_image_url: "/assets/images/blockquote.jpg".to_string(),
+                    blockquote_image_alt: "Person A".to_string(),
+                    blockquote_persons_name: "Person A".to_string(),
+                    blockquote_persons_title: "Title A".to_string(),
+                    blockquote_copy: "Quote A".to_string(),
+                }));
+
             section.components.swap(0, 2);
         } else {
             panic!("starter site expected section at node index 1");
@@ -89,7 +100,7 @@ mod tests {
             panic!("loaded page expected section at node index 1");
         };
 
-        assert_eq!(loaded_section.components.len(), 3);
+        assert_eq!(loaded_section.components.len(), 4);
 
         match &loaded_section.components[0] {
             SectionComponent::Alternating(alternating) => {
@@ -112,6 +123,14 @@ mod tests {
                 assert_eq!(banner.banner_image_alt, "Banner A");
             }
             other => panic!("expected banner at index 2, got {:?}", other),
+        }
+
+        match &loaded_section.components[3] {
+            SectionComponent::Blockquote(blockquote) => {
+                assert_eq!(blockquote.blockquote_persons_name, "Person A");
+                assert_eq!(blockquote.blockquote_copy, "Quote A");
+            }
+            other => panic!("expected blockquote at index 3, got {:?}", other),
         }
     }
 

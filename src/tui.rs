@@ -69,7 +69,8 @@ struct App {
     input_mode: Option<InputMode>,
     input_buffer: String,
     input_cursor: usize,
-    hero_copy_value_area: Option<Rect>,
+    multiline_value_area: Option<Rect>,
+    multiline_scroll_row: usize,
     component_picker: Option<ComponentPickerState>,
     component_kind: ComponentKind,
     show_help: bool,
@@ -107,6 +108,12 @@ enum InputMode {
     EditBannerDataAos,
     EditBannerImageUrl,
     EditBannerImageAlt,
+    EditBlockquoteDataAos,
+    EditBlockquoteImageUrl,
+    EditBlockquoteImageAlt,
+    EditBlockquotePersonsName,
+    EditBlockquotePersonsTitle,
+    EditBlockquoteCopy,
     EditAccordionType,
     EditAccordionClass,
     EditAccordionAos,
@@ -127,6 +134,7 @@ enum ComponentKind {
     Hero,
     Section,
     Banner,
+    Blockquote,
     Accordion,
     Alternating,
 }
@@ -221,7 +229,8 @@ impl App {
             input_mode: None,
             input_buffer: String::new(),
             input_cursor: 0,
-            hero_copy_value_area: None,
+            multiline_value_area: None,
+            multiline_scroll_row: 0,
             component_picker: None,
             component_kind: ComponentKind::Banner,
             show_help: false,
@@ -248,7 +257,7 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut ratatui::Frame) {
-        self.hero_copy_value_area = None;
+        self.multiline_value_area = None;
         let page = self.current_page();
         let root = Layout::default()
             .direction(Direction::Vertical)
@@ -404,30 +413,65 @@ impl App {
             let area = centered_rect(72, 60, frame.area());
             frame.render_widget(Clear, area);
             let edit_help = self.current_modal_fields();
-            let value_block = if matches!(self.input_mode, Some(InputMode::EditHeroCopy)) {
+            let value_block = if self.is_multiline_input_mode() {
+                self.ensure_multiline_cursor_visible();
                 let inner_width = area.width.saturating_sub(2) as usize;
                 let box_inner = inner_width.saturating_sub(2).max(10);
-                let mut lines = self
-                    .input_buffer
-                    .lines()
-                    .take(3)
-                    .map(|s| s.to_string())
-                    .collect::<Vec<_>>();
-                while lines.len() < 3 {
+                let visible_rows = self.multiline_rows();
+                let all_lines = input_lines_preserve(&self.input_buffer);
+                let total_rows = all_lines.len().max(1);
+                let has_scroll = total_rows > visible_rows;
+                let content_width = if has_scroll {
+                    box_inner.saturating_sub(1).max(1)
+                } else {
+                    box_inner
+                };
+                let start = self.multiline_scroll_row.min(total_rows.saturating_sub(1));
+                let end = (start + visible_rows).min(total_rows);
+                let mut lines = all_lines[start..end].to_vec();
+                while lines.len() < visible_rows {
                     lines.push(String::new());
                 }
-                self.hero_copy_value_area = Some(Rect {
+                self.multiline_value_area = Some(Rect {
                     x: area.x.saturating_add(2),
                     y: area.y.saturating_add(5),
-                    width: box_inner.min(u16::MAX as usize) as u16,
-                    height: 3,
+                    width: content_width.min(u16::MAX as usize) as u16,
+                    height: visible_rows.min(u16::MAX as usize) as u16,
                 });
+                let thumb_row = if has_scroll {
+                    Some((self.multiline_scroll_row * visible_rows) / total_rows)
+                } else {
+                    None
+                };
+                let mut row_lines = Vec::with_capacity(visible_rows);
+                for (idx, line) in lines.iter().enumerate() {
+                    let mut rendered = fit_ascii_cell(line, content_width);
+                    if has_scroll {
+                        let ch = if Some(idx) == thumb_row { '#' } else { '|' };
+                        rendered.push(ch);
+                    }
+                    row_lines.push(format!("|{}|", rendered));
+                }
+                let field_label = match self.input_mode {
+                    Some(InputMode::EditHeroCopy) => {
+                        "Value (textarea, 3 rows; Enter newline | Ctrl+S save):"
+                    }
+                    Some(InputMode::EditAlternatingItemCopy) => {
+                        "Value (textarea, 5 rows; Enter newline | Ctrl+S save):"
+                    }
+                    Some(InputMode::EditBlockquoteCopy) => {
+                        "Value (textarea, 5 rows; Enter newline | Ctrl+S save):"
+                    }
+                    Some(InputMode::EditAccordionFirstContent) => {
+                        "Value (textarea, 5 rows; Enter newline | Ctrl+S save):"
+                    }
+                    _ => "Value:",
+                };
                 format!(
-                    "Value (textarea, 3 rows; Enter newline | Ctrl+S save):\n+{}+\n|{}|\n|{}|\n|{}|\n+{}+",
+                    "{}\n+{}+\n{}\n+{}+",
+                    field_label,
                     "-".repeat(box_inner),
-                    fit_ascii_cell(&lines[0], box_inner),
-                    fit_ascii_cell(&lines[1], box_inner),
-                    fit_ascii_cell(&lines[2], box_inner),
+                    row_lines.join("\n"),
                     "-".repeat(box_inner)
                 )
             } else {
@@ -480,7 +524,7 @@ impl App {
                 }
             }
             lines.push(String::new());
-            lines.push("Type to fuzzy search (e.g. hero, dd-accordion).".to_string());
+            lines.push("Type to fuzzy search (e.g. hero, dd-blockquote).".to_string());
             lines.push("Up/Down to choose, Enter to add, Esc to cancel.".to_string());
             let picker_widget = Paragraph::new(lines.join("\n"))
                 .style(
@@ -564,18 +608,20 @@ impl App {
         if self.input_mode.is_some() {
             let area = centered_rect(72, 60, frame.area());
             let inner_width = area.width.saturating_sub(2) as usize;
-            let (x, y) = if matches!(self.input_mode, Some(InputMode::EditHeroCopy)) {
+            let (x, y) = if self.is_multiline_input_mode() {
                 let (row_idx, col_count) = cursor_row_col(&self.input_buffer, self.input_cursor);
-                let value_area = self.hero_copy_value_area.unwrap_or(Rect {
+                let value_area = self.multiline_value_area.unwrap_or(Rect {
                     x: area.x.saturating_add(2),
                     y: area.y.saturating_add(5),
                     width: inner_width.saturating_sub(2).min(u16::MAX as usize) as u16,
-                    height: 3,
+                    height: self.multiline_rows().min(u16::MAX as usize) as u16,
                 });
                 let max_col = value_area.width.saturating_sub(1) as usize;
+                let visible_row = row_idx.saturating_sub(self.multiline_scroll_row);
+                let max_row = self.multiline_rows().saturating_sub(1);
                 (
                     value_area.x.saturating_add(col_count.min(max_col) as u16),
-                    value_area.y.saturating_add(row_idx.min(2) as u16),
+                    value_area.y.saturating_add(visible_row.min(max_row) as u16),
                 )
             } else {
                 (
@@ -617,8 +663,8 @@ impl App {
             let x = area
                 .x
                 .saturating_add(1)
-                    .saturating_add(prefix.chars().count() as u16)
-                    .saturating_add(picker.query.chars().count().min(max_query_width) as u16);
+                .saturating_add(prefix.chars().count() as u16)
+                .saturating_add(picker.query.chars().count().min(max_query_width) as u16);
             let y = area.y.saturating_add(1);
             frame.set_cursor_position((x, y));
             return Some((x, y, ' '));
@@ -630,7 +676,11 @@ impl App {
         if self.input_cursor >= self.input_buffer.chars().count() {
             return ' ';
         }
-        let ch = self.input_buffer.chars().nth(self.input_cursor).unwrap_or(' ');
+        let ch = self
+            .input_buffer
+            .chars()
+            .nth(self.input_cursor)
+            .unwrap_or(' ');
         if ch == '\n' { ' ' } else { ch }
     }
 
@@ -659,7 +709,9 @@ impl App {
         match evt {
             Event::Key(k) => match k.code {
                 KeyCode::F(1) => self.show_help = true,
-                KeyCode::Char('q') => self.should_quit = true,
+                KeyCode::Char('q') if k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.should_quit = true
+                }
                 KeyCode::Up => self.select_prev(),
                 KeyCode::Down => self.select_next(),
                 KeyCode::Char(' ') => self.toggle_selected_tree_expanded(),
@@ -704,20 +756,26 @@ impl App {
                     self.input_mode = None;
                     self.input_buffer.clear();
                     self.input_cursor = 0;
+                    self.multiline_scroll_row = 0;
                     self.status = "Edit cancelled.".to_string();
                     self.sync_tree_row_with_selection();
                 }
                 KeyCode::Enter => {
-                    if matches!(self.input_mode, Some(InputMode::EditHeroCopy))
+                    if self.is_multiline_input_mode()
                         && !key.modifiers.contains(KeyModifiers::CONTROL)
                     {
-                        let rows = self.input_buffer.lines().count().max(1);
-                        if rows < 3 {
+                        let rows = input_lines_preserve(&self.input_buffer).len().max(1);
+                        let max_rows = self.multiline_max_rows();
+                        if max_rows.map(|limit| rows < limit).unwrap_or(true) {
                             self.insert_char_at_cursor('\n');
                         } else {
-                            self.status =
-                                "hero.copy supports up to 3 lines. Press Ctrl+S to save."
-                                    .to_string();
+                            self.status = match self.input_mode {
+                                Some(InputMode::EditHeroCopy) => {
+                                    "hero.copy supports up to 3 lines. Press Ctrl+S to save."
+                                        .to_string()
+                                }
+                                _ => "Line limit reached. Press Ctrl+S to save.".to_string(),
+                            };
                         }
                         return Ok(());
                     }
@@ -726,7 +784,7 @@ impl App {
                 }
                 KeyCode::Char('s')
                     if key.modifiers.contains(KeyModifiers::CONTROL)
-                        && matches!(self.input_mode, Some(InputMode::EditHeroCopy)) =>
+                        && self.is_multiline_input_mode() =>
                 {
                     let _ = self.commit_input_edit();
                     self.sync_tree_row_with_selection();
@@ -738,6 +796,16 @@ impl App {
                 KeyCode::BackTab => {
                     self.tab_prev_component_field();
                     self.sync_tree_row_with_selection();
+                }
+                KeyCode::Up => {
+                    if self.is_multiline_input_mode() {
+                        self.move_cursor_up_line();
+                    }
+                }
+                KeyCode::Down => {
+                    if self.is_multiline_input_mode() {
+                        self.move_cursor_down_line();
+                    }
                 }
                 KeyCode::Left => match self.input_mode {
                     Some(InputMode::EditHeroClass) => {
@@ -754,8 +822,7 @@ impl App {
                     }
                     Some(InputMode::EditHeroCtaTarget) => {
                         self.cycle_hero_cta_target(false, false);
-                        if let Some(v) =
-                            self.value_for_component_mode(InputMode::EditHeroCtaTarget)
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditHeroCtaTarget)
                         {
                             self.input_buffer = v;
                         }
@@ -783,8 +850,15 @@ impl App {
                     }
                     Some(InputMode::EditBannerDataAos) => {
                         self.cycle_banner_data_aos(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditBannerDataAos)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditBlockquoteDataAos) => {
+                        self.cycle_blockquote_data_aos(false);
                         if let Some(v) =
-                            self.value_for_component_mode(InputMode::EditBannerDataAos)
+                            self.value_for_component_mode(InputMode::EditBlockquoteDataAos)
                         {
                             self.input_buffer = v;
                         }
@@ -844,8 +918,7 @@ impl App {
                     }
                     Some(InputMode::EditHeroCtaTarget) => {
                         self.cycle_hero_cta_target(false, true);
-                        if let Some(v) =
-                            self.value_for_component_mode(InputMode::EditHeroCtaTarget)
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditHeroCtaTarget)
                         {
                             self.input_buffer = v;
                         }
@@ -873,8 +946,15 @@ impl App {
                     }
                     Some(InputMode::EditBannerDataAos) => {
                         self.cycle_banner_data_aos(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditBannerDataAos)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditBlockquoteDataAos) => {
+                        self.cycle_blockquote_data_aos(true);
                         if let Some(v) =
-                            self.value_for_component_mode(InputMode::EditBannerDataAos)
+                            self.value_for_component_mode(InputMode::EditBlockquoteDataAos)
                         {
                             self.input_buffer = v;
                         }
@@ -927,36 +1007,104 @@ impl App {
                 }
                 _ => {}
             },
-            Event::Mouse(m) => {
-                if let MouseEventKind::Down(MouseButton::Left) = m.kind
-                    && matches!(self.input_mode, Some(InputMode::EditHeroCopy))
-                {
-                    self.set_hero_copy_cursor_from_point(m.column, m.row);
+            Event::Mouse(m) => match m.kind {
+                MouseEventKind::Down(MouseButton::Left) if self.is_multiline_input_mode() => {
+                    self.set_multiline_cursor_from_point(m.column, m.row);
                 }
-            }
+                MouseEventKind::ScrollUp if self.is_multiline_input_mode() => {
+                    self.move_cursor_up_line();
+                }
+                MouseEventKind::ScrollDown if self.is_multiline_input_mode() => {
+                    self.move_cursor_down_line();
+                }
+                _ => {}
+            },
             _ => {}
         }
         Ok(())
     }
 
-    fn clamp_hero_copy_input_if_needed(&mut self) {
-        if !matches!(self.input_mode, Some(InputMode::EditHeroCopy)) {
+    fn is_multiline_mode(mode: InputMode) -> bool {
+        matches!(
+            mode,
+            InputMode::EditHeroCopy
+                | InputMode::EditAlternatingItemCopy
+                | InputMode::EditBlockquoteCopy
+                | InputMode::EditAccordionFirstContent
+        )
+    }
+
+    fn is_multiline_input_mode(&self) -> bool {
+        self.input_mode.is_some_and(Self::is_multiline_mode)
+    }
+
+    fn multiline_rows_for_mode(mode: InputMode) -> usize {
+        match mode {
+            InputMode::EditHeroCopy => 3,
+            InputMode::EditAlternatingItemCopy
+            | InputMode::EditBlockquoteCopy
+            | InputMode::EditAccordionFirstContent => 5,
+            _ => 1,
+        }
+    }
+
+    fn multiline_rows(&self) -> usize {
+        self.input_mode
+            .map(Self::multiline_rows_for_mode)
+            .unwrap_or(1)
+    }
+
+    fn multiline_max_rows_for_mode(mode: InputMode) -> Option<usize> {
+        match mode {
+            InputMode::EditHeroCopy => Some(3),
+            InputMode::EditAlternatingItemCopy
+            | InputMode::EditBlockquoteCopy
+            | InputMode::EditAccordionFirstContent => None,
+            _ => None,
+        }
+    }
+
+    fn multiline_max_rows(&self) -> Option<usize> {
+        self.input_mode.and_then(Self::multiline_max_rows_for_mode)
+    }
+
+    fn ensure_multiline_cursor_visible(&mut self) {
+        if !self.is_multiline_input_mode() {
+            self.multiline_scroll_row = 0;
             return;
         }
+        let visible_rows = self.multiline_rows();
+        let (row_idx, _) = cursor_row_col(&self.input_buffer, self.input_cursor);
+        if row_idx < self.multiline_scroll_row {
+            self.multiline_scroll_row = row_idx;
+        } else if row_idx >= self.multiline_scroll_row + visible_rows {
+            self.multiline_scroll_row = row_idx.saturating_sub(visible_rows.saturating_sub(1));
+        }
+        let total_rows = input_lines_preserve(&self.input_buffer).len().max(1);
+        let max_scroll = total_rows.saturating_sub(visible_rows);
+        self.multiline_scroll_row = self.multiline_scroll_row.min(max_scroll);
+    }
+
+    fn clamp_multiline_input_if_needed(&mut self) {
+        let Some(max_rows) = self.multiline_max_rows() else {
+            return;
+        };
         let mut lines = self
             .input_buffer
-            .lines()
+            .split('\n')
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
-        if lines.len() > 3 {
-            lines.truncate(3);
+        if lines.len() > max_rows {
+            lines.truncate(max_rows);
             self.input_buffer = lines.join("\n");
+            self.input_cursor = self.input_cursor.min(self.input_buffer.chars().count());
         }
     }
 
     fn move_cursor_left(&mut self) {
         if self.input_cursor > 0 {
             self.input_cursor -= 1;
+            self.ensure_multiline_cursor_visible();
         }
     }
 
@@ -964,7 +1112,28 @@ impl App {
         let len = self.input_buffer.chars().count();
         if self.input_cursor < len {
             self.input_cursor += 1;
+            self.ensure_multiline_cursor_visible();
         }
+    }
+
+    fn move_cursor_up_line(&mut self) {
+        let (row, col) = cursor_row_col(&self.input_buffer, self.input_cursor);
+        if row == 0 {
+            return;
+        }
+        let lines = input_lines_preserve(&self.input_buffer);
+        self.input_cursor = cursor_from_row_col(&lines, row - 1, col);
+        self.ensure_multiline_cursor_visible();
+    }
+
+    fn move_cursor_down_line(&mut self) {
+        let (row, col) = cursor_row_col(&self.input_buffer, self.input_cursor);
+        let lines = input_lines_preserve(&self.input_buffer);
+        if row + 1 >= lines.len() {
+            return;
+        }
+        self.input_cursor = cursor_from_row_col(&lines, row + 1, col);
+        self.ensure_multiline_cursor_visible();
     }
 
     fn delete_char_before_cursor(&mut self) {
@@ -976,36 +1145,48 @@ impl App {
         let byte_end = byte_index_for_char(&self.input_buffer, self.input_cursor);
         self.input_buffer.replace_range(byte_start..byte_end, "");
         self.input_cursor = remove_at;
+        self.ensure_multiline_cursor_visible();
     }
 
     fn insert_char_at_cursor(&mut self, c: char) {
-        if matches!(self.input_mode, Some(InputMode::EditHeroCopy)) && c == '\n' {
+        if self.is_multiline_input_mode() && c == '\n' {
             let mut candidate = self.input_buffer.clone();
             let at = byte_index_for_char(&candidate, self.input_cursor);
             candidate.insert(at, '\n');
-            if candidate.lines().count().max(1) > 3 {
-                self.status = "hero.copy supports up to 3 lines.".to_string();
-                return;
+            if let Some(max_rows) = self.multiline_max_rows() {
+                if input_lines_preserve(&candidate).len().max(1) > max_rows {
+                    self.status = match self.input_mode {
+                        Some(InputMode::EditHeroCopy) => {
+                            "hero.copy supports up to 3 lines.".to_string()
+                        }
+                        _ => "Line limit reached.".to_string(),
+                    };
+                    return;
+                }
             }
             self.input_buffer = candidate;
             self.input_cursor += 1;
+            self.ensure_multiline_cursor_visible();
             return;
         }
         let at = byte_index_for_char(&self.input_buffer, self.input_cursor);
         self.input_buffer.insert(at, c);
         self.input_cursor += 1;
+        if self.is_multiline_input_mode() {
+            self.ensure_multiline_cursor_visible();
+        }
     }
 
-    fn set_hero_copy_cursor_from_point(&mut self, x: u16, y: u16) {
-        let Some(area) = self.hero_copy_value_area else {
+    fn set_multiline_cursor_from_point(&mut self, x: u16, y: u16) {
+        let Some(area) = self.multiline_value_area else {
             return;
         };
         if !contains(area, x, y) {
             return;
         }
-        let row = y.saturating_sub(area.y).min(2) as usize;
+        let row = y.saturating_sub(area.y) as usize + self.multiline_scroll_row;
         let col = x.saturating_sub(area.x) as usize;
-        let lines = self.input_buffer.lines().collect::<Vec<_>>();
+        let lines = input_lines_preserve(&self.input_buffer);
         let mut cursor = 0usize;
         for i in 0..row {
             if let Some(line) = lines.get(i) {
@@ -1022,6 +1203,7 @@ impl App {
             return;
         }
         self.input_cursor = cursor.min(self.input_buffer.chars().count());
+        self.ensure_multiline_cursor_visible();
     }
 
     fn tab_next_component_field(&mut self) {
@@ -1260,8 +1442,9 @@ impl App {
 
         self.input_mode = Some(mode);
         self.input_buffer = value;
-        self.clamp_hero_copy_input_if_needed();
+        self.clamp_multiline_input_if_needed();
         self.input_cursor = self.input_buffer.chars().count();
+        self.ensure_multiline_cursor_visible();
         self.status = match mode {
             InputMode::EditHeroImage => {
                 "Editing hero image URL. Enter to save, esc to cancel.".to_string()
@@ -1282,7 +1465,7 @@ impl App {
                 "Editing hero subtitle. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditHeroCopy => {
-                "Editing hero copy. Enter to save, esc to cancel.".to_string()
+                "Editing hero copy. Enter: newline, Ctrl+S: save, esc: cancel.".to_string()
             }
             InputMode::EditHeroCtaText => {
                 "Editing hero primary link text. Enter to save, esc to cancel.".to_string()
@@ -1336,7 +1519,26 @@ impl App {
                 "Editing dd-alternating item title. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAlternatingItemCopy => {
-                "Editing dd-alternating item copy. Enter to save, esc to cancel.".to_string()
+                "Editing dd-alternating item copy. Enter: newline, Ctrl+S: save, esc: cancel."
+                    .to_string()
+            }
+            InputMode::EditBlockquoteDataAos => {
+                "Editing dd-blockquote data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditBlockquoteImageUrl => {
+                "Editing dd-blockquote image URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditBlockquoteImageAlt => {
+                "Editing dd-blockquote image alt text. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditBlockquotePersonsName => {
+                "Editing dd-blockquote person name. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditBlockquotePersonsTitle => {
+                "Editing dd-blockquote person title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditBlockquoteCopy => {
+                "Editing dd-blockquote copy. Enter: newline, Ctrl+S: save, esc: cancel.".to_string()
             }
             InputMode::EditBannerClass => {
                 "Editing dd-banner class. Enter to save, esc to cancel.".to_string()
@@ -1366,7 +1568,8 @@ impl App {
                 "Editing dd-accordion first title. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAccordionFirstContent => {
-                "Editing dd-accordion first content. Enter to save, esc to cancel.".to_string()
+                "Editing dd-accordion item content. Enter: newline, Ctrl+S: save, esc: cancel."
+                    .to_string()
             }
         };
     }
@@ -1433,7 +1636,7 @@ impl App {
         let Some(mode) = self.input_mode else {
             return false;
         };
-        let value = if matches!(mode, InputMode::EditHeroCopy) {
+        let value = if Self::is_multiline_mode(mode) {
             self.input_buffer.clone()
         } else {
             self.input_buffer.trim().to_string()
@@ -1452,6 +1655,8 @@ impl App {
                 | InputMode::EditHeroCtaLink2
                 | InputMode::EditHeroCtaTarget2
                 | InputMode::EditSectionTitle
+                | InputMode::EditAlternatingItemCopy
+                | InputMode::EditBlockquoteCopy
         );
         if value.is_empty() && !allow_empty {
             self.status = "Value cannot be empty.".to_string();
@@ -1790,6 +1995,101 @@ impl App {
                     "Section has no components.".to_string()
                 }
             }
+            (PageNode::Section(v), InputMode::EditBlockquoteDataAos) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Blockquote(blockquote) =
+                        &mut v.components[ci]
+                    {
+                        if let Some(va) = parse_hero_aos(value.as_str()) {
+                            blockquote.blockquote_data_aos = va;
+                            applied = true;
+                            "Updated dd-blockquote data-aos.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-blockquote data-aos option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-blockquote.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditBlockquoteImageUrl) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Blockquote(blockquote) =
+                        &mut v.components[ci]
+                    {
+                        blockquote.blockquote_image_url = value;
+                        applied = true;
+                        "Updated dd-blockquote image URL.".to_string()
+                    } else {
+                        "Selected component is not dd-blockquote.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditBlockquoteImageAlt) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Blockquote(blockquote) =
+                        &mut v.components[ci]
+                    {
+                        blockquote.blockquote_image_alt = value;
+                        applied = true;
+                        "Updated dd-blockquote image alt text.".to_string()
+                    } else {
+                        "Selected component is not dd-blockquote.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditBlockquotePersonsName) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Blockquote(blockquote) =
+                        &mut v.components[ci]
+                    {
+                        blockquote.blockquote_persons_name = value;
+                        applied = true;
+                        "Updated dd-blockquote person name.".to_string()
+                    } else {
+                        "Selected component is not dd-blockquote.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditBlockquotePersonsTitle) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Blockquote(blockquote) =
+                        &mut v.components[ci]
+                    {
+                        blockquote.blockquote_persons_title = value;
+                        applied = true;
+                        "Updated dd-blockquote person title.".to_string()
+                    } else {
+                        "Selected component is not dd-blockquote.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditBlockquoteCopy) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Blockquote(blockquote) =
+                        &mut v.components[ci]
+                    {
+                        blockquote.blockquote_copy = value;
+                        applied = true;
+                        "Updated dd-blockquote copy.".to_string()
+                    } else {
+                        "Selected component is not dd-blockquote.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
             (PageNode::Section(v), InputMode::EditAccordionType) => {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
@@ -1901,6 +2201,7 @@ impl App {
             self.input_mode = None;
             self.input_buffer.clear();
             self.input_cursor = 0;
+            self.multiline_scroll_row = 0;
         }
         applied
     }
@@ -2581,6 +2882,12 @@ impl App {
             Some(InputMode::EditBannerDataAos) => "dd-banner.data_aos",
             Some(InputMode::EditBannerImageUrl) => "dd-banner_image_url",
             Some(InputMode::EditBannerImageAlt) => "dd-banner_image_alt",
+            Some(InputMode::EditBlockquoteDataAos) => "dd-blockquote.data_aos",
+            Some(InputMode::EditBlockquoteImageUrl) => "blockquote_image_url",
+            Some(InputMode::EditBlockquoteImageAlt) => "blockquote_image_alt",
+            Some(InputMode::EditBlockquotePersonsName) => "blockquote_persons_name",
+            Some(InputMode::EditBlockquotePersonsTitle) => "blockquote_persons_title",
+            Some(InputMode::EditBlockquoteCopy) => "blockquote_copy",
             Some(InputMode::EditAccordionType) => "dd-accordion.type",
             Some(InputMode::EditAccordionClass) => "dd-accordion.class",
             Some(InputMode::EditAccordionAos) => "dd-accordion.data_aos",
@@ -2615,7 +2922,10 @@ impl App {
                 cta_target_to_str(v.cta_target.unwrap_or(crate::model::CtaTarget::SelfTarget)),
                 v.cta_text_2.as_deref().unwrap_or("(none)"),
                 v.cta_link_2.as_deref().unwrap_or("(none)"),
-                cta_target_to_str(v.cta_target_2.unwrap_or(crate::model::CtaTarget::SelfTarget))
+                cta_target_to_str(
+                    v.cta_target_2
+                        .unwrap_or(crate::model::CtaTarget::SelfTarget)
+                )
             ),
             PageNode::Section(section) => {
                 let rows = self.build_node_tree_rows();
@@ -2648,8 +2958,7 @@ impl App {
                                 self.selected_component
                                     .min(col.components.len().saturating_sub(1)),
                             ) {
-                                if let crate::model::SectionComponent::Alternating(alt) =
-                                    component
+                                if let crate::model::SectionComponent::Alternating(alt) = component
                                 {
                                     match self.input_mode {
                                         Some(InputMode::EditAlternatingType)
@@ -2795,8 +3104,9 @@ impl App {
         };
         self.input_mode = Some(mode);
         self.input_buffer = value;
-        self.clamp_hero_copy_input_if_needed();
+        self.clamp_multiline_input_if_needed();
         self.input_cursor = self.input_buffer.chars().count();
+        self.ensure_multiline_cursor_visible();
         self.status = match mode {
             InputMode::EditHeroImage => {
                 "Editing hero image URL. Enter to save, esc to cancel.".to_string()
@@ -2817,7 +3127,7 @@ impl App {
                 "Editing hero subtitle. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditHeroCopy => {
-                "Editing hero copy. Enter to save, esc to cancel.".to_string()
+                "Editing hero copy. Enter: newline, Ctrl+S: save, esc: cancel.".to_string()
             }
             InputMode::EditHeroCtaText => {
                 "Editing hero primary link text. Enter to save, esc to cancel.".to_string()
@@ -2865,7 +3175,8 @@ impl App {
                 "Editing dd-alternating item title. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAlternatingItemCopy => {
-                "Editing dd-alternating item copy. Enter to save, esc to cancel.".to_string()
+                "Editing dd-alternating item copy. Enter: newline, Ctrl+S: save, esc: cancel."
+                    .to_string()
             }
             InputMode::EditBannerClass => {
                 "Editing dd-banner class. Enter to save, esc to cancel.".to_string()
@@ -2878,6 +3189,24 @@ impl App {
             }
             InputMode::EditBannerImageAlt => {
                 "Editing dd-banner image alt text. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditBlockquoteDataAos => {
+                "Editing dd-blockquote data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditBlockquoteImageUrl => {
+                "Editing dd-blockquote image URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditBlockquoteImageAlt => {
+                "Editing dd-blockquote image alt text. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditBlockquotePersonsName => {
+                "Editing dd-blockquote person name. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditBlockquotePersonsTitle => {
+                "Editing dd-blockquote person title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditBlockquoteCopy => {
+                "Editing dd-blockquote copy. Enter: newline, Ctrl+S: save, esc: cancel.".to_string()
             }
             InputMode::EditAccordionType => {
                 "Editing dd-accordion type. Enter to save, esc to cancel.".to_string()
@@ -2895,7 +3224,8 @@ impl App {
                 "Editing dd-accordion item title. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAccordionFirstContent => {
-                "Editing dd-accordion item content. Enter to save, esc to cancel.".to_string()
+                "Editing dd-accordion item content. Enter: newline, Ctrl+S: save, esc: cancel."
+                    .to_string()
             }
             _ => "Editing field. Enter to save, esc to cancel.".to_string(),
         };
@@ -2929,14 +3259,18 @@ impl App {
                 InputMode::EditHeroCtaText => Some(hero.cta_text.clone().unwrap_or_default()),
                 InputMode::EditHeroCtaLink => Some(hero.cta_link.clone().unwrap_or_default()),
                 InputMode::EditHeroCtaTarget => Some(
-                    cta_target_to_str(hero.cta_target.unwrap_or(crate::model::CtaTarget::SelfTarget))
-                        .to_string(),
+                    cta_target_to_str(
+                        hero.cta_target
+                            .unwrap_or(crate::model::CtaTarget::SelfTarget),
+                    )
+                    .to_string(),
                 ),
                 InputMode::EditHeroCtaText2 => Some(hero.cta_text_2.clone().unwrap_or_default()),
                 InputMode::EditHeroCtaLink2 => Some(hero.cta_link_2.clone().unwrap_or_default()),
                 InputMode::EditHeroCtaTarget2 => Some(
                     cta_target_to_str(
-                        hero.cta_target_2.unwrap_or(crate::model::CtaTarget::SelfTarget),
+                        hero.cta_target_2
+                            .unwrap_or(crate::model::CtaTarget::SelfTarget),
                     )
                     .to_string(),
                 ),
@@ -2944,7 +3278,9 @@ impl App {
             },
             PageNode::Section(section) => match mode {
                 InputMode::EditSectionId => Some(section.id.clone()),
-                InputMode::EditSectionTitle => Some(section.section_title.clone().unwrap_or_default()),
+                InputMode::EditSectionTitle => {
+                    Some(section.section_title.clone().unwrap_or_default())
+                }
                 InputMode::EditSectionClass => Some(
                     section_class_to_str(
                         section
@@ -2965,63 +3301,116 @@ impl App {
                 _ => {
                     let columns = section_columns_ref(section);
                     let col_i = self.selected_column.min(columns.len().saturating_sub(1));
-                    let ci = component_index(columns[col_i].components.len(), self.selected_component)?;
+                    let ci =
+                        component_index(columns[col_i].components.len(), self.selected_component)?;
                     let component = columns[col_i].components.get(ci)?;
                     match (mode, component) {
-                        (InputMode::EditAlternatingType, crate::model::SectionComponent::Alternating(v)) => {
-                            Some(alternating_type_to_str(v.alternating_type).to_string())
-                        }
-                        (InputMode::EditAlternatingClass, crate::model::SectionComponent::Alternating(v)) => {
-                            Some(v.alternating_class.clone())
-                        }
-                        (InputMode::EditAlternatingDataAos, crate::model::SectionComponent::Alternating(v)) => {
-                            Some(hero_aos_to_str(v.alternating_data_aos).to_string())
-                        }
-                        (InputMode::EditAlternatingItemImage, crate::model::SectionComponent::Alternating(v)) => {
+                        (
+                            InputMode::EditAlternatingType,
+                            crate::model::SectionComponent::Alternating(v),
+                        ) => Some(alternating_type_to_str(v.alternating_type).to_string()),
+                        (
+                            InputMode::EditAlternatingClass,
+                            crate::model::SectionComponent::Alternating(v),
+                        ) => Some(v.alternating_class.clone()),
+                        (
+                            InputMode::EditAlternatingDataAos,
+                            crate::model::SectionComponent::Alternating(v),
+                        ) => Some(hero_aos_to_str(v.alternating_data_aos).to_string()),
+                        (
+                            InputMode::EditAlternatingItemImage,
+                            crate::model::SectionComponent::Alternating(v),
+                        ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
                             Some(v.items[ni].image.clone())
                         }
-                        (InputMode::EditAlternatingItemImageAlt, crate::model::SectionComponent::Alternating(v)) => {
+                        (
+                            InputMode::EditAlternatingItemImageAlt,
+                            crate::model::SectionComponent::Alternating(v),
+                        ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
                             Some(v.items[ni].image_alt.clone())
                         }
-                        (InputMode::EditAlternatingItemTitle, crate::model::SectionComponent::Alternating(v)) => {
+                        (
+                            InputMode::EditAlternatingItemTitle,
+                            crate::model::SectionComponent::Alternating(v),
+                        ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
                             Some(v.items[ni].title.clone())
                         }
-                        (InputMode::EditAlternatingItemCopy, crate::model::SectionComponent::Alternating(v)) => {
+                        (
+                            InputMode::EditAlternatingItemCopy,
+                            crate::model::SectionComponent::Alternating(v),
+                        ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
                             Some(v.items[ni].copy.clone())
                         }
                         (InputMode::EditBannerClass, crate::model::SectionComponent::Banner(v)) => {
                             Some(banner_class_to_str(v.banner_class).to_string())
                         }
-                        (InputMode::EditBannerDataAos, crate::model::SectionComponent::Banner(v)) => {
-                            Some(hero_aos_to_str(v.banner_data_aos).to_string())
-                        }
-                        (InputMode::EditBannerImageUrl, crate::model::SectionComponent::Banner(v)) => {
-                            Some(v.banner_image_url.clone())
-                        }
-                        (InputMode::EditBannerImageAlt, crate::model::SectionComponent::Banner(v)) => {
-                            Some(v.banner_image_alt.clone())
-                        }
-                        (InputMode::EditAccordionType, crate::model::SectionComponent::Accordion(v)) => {
-                            Some(accordion_type_to_str(v.accordion_type).to_string())
-                        }
-                        (InputMode::EditAccordionClass, crate::model::SectionComponent::Accordion(v)) => {
-                            Some(accordion_class_to_str(v.accordion_class).to_string())
-                        }
-                        (InputMode::EditAccordionAos, crate::model::SectionComponent::Accordion(v)) => {
-                            Some(hero_aos_to_str(v.accordion_aos).to_string())
-                        }
-                        (InputMode::EditAccordionGroupName, crate::model::SectionComponent::Accordion(v)) => {
-                            Some(v.group_name.clone())
-                        }
-                        (InputMode::EditAccordionFirstTitle, crate::model::SectionComponent::Accordion(v)) => {
+                        (
+                            InputMode::EditBannerDataAos,
+                            crate::model::SectionComponent::Banner(v),
+                        ) => Some(hero_aos_to_str(v.banner_data_aos).to_string()),
+                        (
+                            InputMode::EditBannerImageUrl,
+                            crate::model::SectionComponent::Banner(v),
+                        ) => Some(v.banner_image_url.clone()),
+                        (
+                            InputMode::EditBannerImageAlt,
+                            crate::model::SectionComponent::Banner(v),
+                        ) => Some(v.banner_image_alt.clone()),
+                        (
+                            InputMode::EditBlockquoteDataAos,
+                            crate::model::SectionComponent::Blockquote(v),
+                        ) => Some(hero_aos_to_str(v.blockquote_data_aos).to_string()),
+                        (
+                            InputMode::EditBlockquoteImageUrl,
+                            crate::model::SectionComponent::Blockquote(v),
+                        ) => Some(v.blockquote_image_url.clone()),
+                        (
+                            InputMode::EditBlockquoteImageAlt,
+                            crate::model::SectionComponent::Blockquote(v),
+                        ) => Some(v.blockquote_image_alt.clone()),
+                        (
+                            InputMode::EditBlockquotePersonsName,
+                            crate::model::SectionComponent::Blockquote(v),
+                        ) => Some(v.blockquote_persons_name.clone()),
+                        (
+                            InputMode::EditBlockquotePersonsTitle,
+                            crate::model::SectionComponent::Blockquote(v),
+                        ) => Some(v.blockquote_persons_title.clone()),
+                        (
+                            InputMode::EditBlockquoteCopy,
+                            crate::model::SectionComponent::Blockquote(v),
+                        ) => Some(v.blockquote_copy.clone()),
+                        (
+                            InputMode::EditAccordionType,
+                            crate::model::SectionComponent::Accordion(v),
+                        ) => Some(accordion_type_to_str(v.accordion_type).to_string()),
+                        (
+                            InputMode::EditAccordionClass,
+                            crate::model::SectionComponent::Accordion(v),
+                        ) => Some(accordion_class_to_str(v.accordion_class).to_string()),
+                        (
+                            InputMode::EditAccordionAos,
+                            crate::model::SectionComponent::Accordion(v),
+                        ) => Some(hero_aos_to_str(v.accordion_aos).to_string()),
+                        (
+                            InputMode::EditAccordionGroupName,
+                            crate::model::SectionComponent::Accordion(v),
+                        ) => Some(v.group_name.clone()),
+                        (
+                            InputMode::EditAccordionFirstTitle,
+                            crate::model::SectionComponent::Accordion(v),
+                        ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
                             Some(v.items[ni].title.clone())
                         }
-                        (InputMode::EditAccordionFirstContent, crate::model::SectionComponent::Accordion(v)) => {
+                        (
+                            InputMode::EditAccordionFirstContent,
+                            crate::model::SectionComponent::Accordion(v),
+                        ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
                             Some(v.items[ni].content.clone())
                         }
@@ -3374,9 +3763,11 @@ impl App {
         match &mut page.nodes[idx] {
             PageNode::Hero(hero) => {
                 let current = if secondary {
-                    hero.cta_target_2.unwrap_or(crate::model::CtaTarget::SelfTarget)
+                    hero.cta_target_2
+                        .unwrap_or(crate::model::CtaTarget::SelfTarget)
                 } else {
-                    hero.cta_target.unwrap_or(crate::model::CtaTarget::SelfTarget)
+                    hero.cta_target
+                        .unwrap_or(crate::model::CtaTarget::SelfTarget)
                 };
                 let next = next_hero_cta_target(current, forward);
                 if secondary {
@@ -3424,6 +3815,15 @@ impl App {
                 b.banner_data_aos = next_hero_aos(b.banner_data_aos, forward);
             },
             "Cycled dd-banner data-aos.",
+        );
+    }
+
+    fn cycle_blockquote_data_aos(&mut self, forward: bool) {
+        self.mutate_selected_blockquote(
+            |b| {
+                b.blockquote_data_aos = next_hero_aos(b.blockquote_data_aos, forward);
+            },
+            "Cycled dd-blockquote data-aos.",
         );
     }
 
@@ -3507,6 +3907,44 @@ impl App {
                         success_message.to_string()
                     } else {
                         "Selected component is not dd-banner.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            _ => "Selected node is not a section.".to_string(),
+        };
+        self.status = result;
+    }
+
+    fn mutate_selected_blockquote<F>(&mut self, mutator: F, success_message: &str)
+    where
+        F: FnOnce(&mut crate::model::DdBlockquote),
+    {
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Blockquote(blockquote) =
+                        &mut components[ci]
+                    {
+                        mutator(blockquote);
+                        success_message.to_string()
+                    } else {
+                        "Selected component is not dd-blockquote.".to_string()
                     }
                 } else {
                     "Section has no components.".to_string()
@@ -4071,15 +4509,17 @@ impl App {
                         if let Some(ci) = component_index(components.len(), self.selected_component)
                         {
                             match &components[ci] {
-                                crate::model::SectionComponent::Banner(banner) => {
-                                    Some((
-                                        InputMode::EditBannerClass,
-                                        banner_class_to_str(banner.banner_class).to_string(),
-                                    ))
-                                }
+                                crate::model::SectionComponent::Banner(banner) => Some((
+                                    InputMode::EditBannerClass,
+                                    banner_class_to_str(banner.banner_class).to_string(),
+                                )),
                                 crate::model::SectionComponent::Accordion(acc) => Some((
                                     InputMode::EditAccordionType,
                                     accordion_type_to_str(acc.accordion_type).to_string(),
+                                )),
+                                crate::model::SectionComponent::Blockquote(v) => Some((
+                                    InputMode::EditBlockquoteDataAos,
+                                    hero_aos_to_str(v.blockquote_data_aos).to_string(),
                                 )),
                                 crate::model::SectionComponent::Alternating(alt) => Some((
                                     InputMode::EditAlternatingType,
@@ -4095,7 +4535,8 @@ impl App {
         };
 
         let Some((mode, value)) = selected else {
-            self.status = "Primary edit supports banner/accordion/alternating.".to_string();
+            self.status =
+                "Primary edit supports banner/blockquote/accordion/alternating.".to_string();
             return;
         };
         self.input_mode = Some(mode);
@@ -4119,6 +4560,9 @@ impl App {
             }
             InputMode::EditAccordionFirstTitle => {
                 "Editing dd-accordion first title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditBlockquoteDataAos => {
+                "Editing dd-blockquote data-aos. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAlternatingType => {
                 "Editing dd-alternating type. Enter to save, esc to cancel.".to_string()
@@ -4760,6 +5204,20 @@ fn fit_ascii_cell(value: &str, width: usize) -> String {
     format!("{shortened:<width$}")
 }
 
+fn input_lines_preserve(s: &str) -> Vec<String> {
+    s.split('\n').map(|line| line.to_string()).collect()
+}
+
+fn cursor_from_row_col(lines: &[String], target_row: usize, target_col: usize) -> usize {
+    let row = target_row.min(lines.len().saturating_sub(1));
+    let mut cursor = 0usize;
+    for line in lines.iter().take(row) {
+        cursor += line.chars().count() + 1;
+    }
+    let line_len = lines.get(row).map(|line| line.chars().count()).unwrap_or(0);
+    cursor + target_col.min(line_len)
+}
+
 fn byte_index_for_char(s: &str, char_idx: usize) -> usize {
     if char_idx == 0 {
         return 0;
@@ -4805,6 +5263,7 @@ fn truncate_ascii(value: &str, max_chars: usize) -> String {
 fn component_label(component: &crate::model::SectionComponent) -> &'static str {
     match component {
         crate::model::SectionComponent::Banner(_) => "dd-banner",
+        crate::model::SectionComponent::Blockquote(_) => "dd-blockquote",
         crate::model::SectionComponent::Accordion(_) => "dd-accordion",
         crate::model::SectionComponent::Alternating(_) => "dd-alternating",
     }
@@ -4825,6 +5284,10 @@ fn component_blueprint_label(component: &crate::model::SectionComponent) -> Stri
                 .first()
                 .map(|i| i.title.as_str())
                 .unwrap_or("(none)")
+        ),
+        crate::model::SectionComponent::Blockquote(v) => format!(
+            "dd-blockquote | blockquote_persons_name: {} | blockquote_persons_title: {}",
+            v.blockquote_persons_name, v.blockquote_persons_title
         ),
         _ => component_label(component).to_string(),
     }
@@ -4865,6 +5328,15 @@ fn component_form(
                 content
             )
         }
+        crate::model::SectionComponent::Blockquote(v) => format!(
+            "fields:\n  blockquote_data_aos: {}\n  blockquote_image_url: {}\n  blockquote_image_alt: {}\n  blockquote_persons_name: {}\n  blockquote_persons_title: {}\n  blockquote_copy: {}",
+            hero_aos_to_str(v.blockquote_data_aos),
+            v.blockquote_image_url,
+            v.blockquote_image_alt,
+            v.blockquote_persons_name,
+            v.blockquote_persons_title,
+            v.blockquote_copy
+        ),
         crate::model::SectionComponent::Alternating(v) => {
             let active = nested_index(v.items.len(), selected_nested_item)
                 .map(|i| i + 1)
@@ -5293,6 +5765,19 @@ fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]
             InputMode::EditBannerImageUrl,
             InputMode::EditBannerImageAlt,
         ]),
+        InputMode::EditBlockquoteDataAos
+        | InputMode::EditBlockquoteImageUrl
+        | InputMode::EditBlockquoteImageAlt
+        | InputMode::EditBlockquotePersonsName
+        | InputMode::EditBlockquotePersonsTitle
+        | InputMode::EditBlockquoteCopy => Some(&[
+            InputMode::EditBlockquoteDataAos,
+            InputMode::EditBlockquoteImageUrl,
+            InputMode::EditBlockquoteImageAlt,
+            InputMode::EditBlockquotePersonsName,
+            InputMode::EditBlockquotePersonsTitle,
+            InputMode::EditBlockquoteCopy,
+        ]),
         InputMode::EditAccordionType
         | InputMode::EditAccordionClass
         | InputMode::EditAccordionAos
@@ -5329,7 +5814,7 @@ fn help_text() -> String {
     [
         "Global:",
         "  F1: Open/close this help",
-        "  q: Quit",
+        "  Ctrl+Q: Quit",
         "  s: Open save modal and enter file path",
         "  Tab / Shift+Tab: Next/previous page",
         "",
@@ -5338,6 +5823,7 @@ fn help_text() -> String {
         "  Enter: Edit selected row",
         "  Space: Expand/collapse selected section or accordion/alternating items",
         "  /: Open insert fuzzy finder (hero/section/banner/accordion/alternating)",
+        "  (Includes dd-blockquote and any newly-added supported components)",
         "  A / X: Add/remove dd-accordion or dd-alternating item",
         "  d: Delete selected node",
         "  J / K: Move selected node down / up",
@@ -5352,8 +5838,8 @@ fn help_text() -> String {
         "Edit modal:",
         "  Any edit command opens a modal with editable fields",
         "  Tab / Shift+Tab: Next/previous editable field for selected row",
-        "  Enter in hero.copy: insert newline (up to 3 rows); Ctrl+S: save",
-        "  Left / Right: Cycle section/hero/accordion/alternating option fields when active",
+        "  hero.copy / alternating_copy / accordion_copy / blockquote_copy: Up/Down move line, wheel scroll, Enter newline, Ctrl+S save",
+        "  Left / Right: Cycle section/hero/banner/accordion/alternating/blockquote option fields when active",
         "  Enter: Confirm edit",
         "  Esc: Cancel edit",
         "  Backspace: Delete character",
@@ -5367,6 +5853,7 @@ impl ComponentKind {
             Self::Hero,
             Self::Section,
             Self::Banner,
+            Self::Blockquote,
             Self::Accordion,
             Self::Alternating,
         ]
@@ -5377,6 +5864,7 @@ impl ComponentKind {
             ComponentKind::Hero => "dd-hero",
             ComponentKind::Section => "dd-section",
             ComponentKind::Banner => "dd-banner",
+            ComponentKind::Blockquote => "dd-blockquote",
             ComponentKind::Accordion => "dd-accordion",
             ComponentKind::Alternating => "dd-alternating",
         }
@@ -5393,6 +5881,16 @@ impl ComponentKind {
                     banner_data_aos: crate::model::HeroAos::FadeIn,
                     banner_image_url: "https://dummyimage.com/1920x1080/000/fff".to_string(),
                     banner_image_alt: "Banner alt text".to_string(),
+                })
+            }
+            ComponentKind::Blockquote => {
+                crate::model::SectionComponent::Blockquote(crate::model::DdBlockquote {
+                    blockquote_data_aos: crate::model::HeroAos::FadeIn,
+                    blockquote_image_url: "https://dummyimage.com/512x512/000/fff".to_string(),
+                    blockquote_image_alt: "blockquote Persons Name".to_string(),
+                    blockquote_persons_name: "blockquote Persons Name".to_string(),
+                    blockquote_persons_title: "blockquote Persons Title".to_string(),
+                    blockquote_copy: "blockquote content".to_string(),
                 })
             }
             ComponentKind::Accordion => {
