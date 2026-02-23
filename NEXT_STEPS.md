@@ -1,40 +1,48 @@
-# Next Steps
+# NEXT_STEPS
 
-## Current State
-- Added ASCII section map in TUI details pane, including component names per column.
-- Active column is marked with `*` in the ASCII map.
-- Added TUI theming support with Catppuccin-style palette values.
-- Theme lookup order:
-  1. `./theme.yml`
-  2. `./.theme.yml`
-  3. `~/.config/ldnddev/dd_staticbuilder/.theme.yml`
-- Added local `theme.yml` with Catppuccin Mocha defaults.
-- Adjusted TUI layout so left `Nodes` pane is 30% width and right `Details` pane is 70%.
-- Replaced manual theme parsing with `serde_yaml`.
+## Current State (Implemented)
+- Nodes panel is now a tree/accordion:
+  - Section rows can expand/collapse.
+  - Expanded sections show columns and their components.
+- Details panel now renders page-level ASCII previews:
+  - `dd-hero` is rendered as full-width ASCII.
+  - `dd-section` columns/components are rendered responsively to panel width.
+- Editing is modal-based.
+- Enter key behavior:
+  - On section rows: expand/collapse.
+  - On hero/column/component rows: opens edit modal.
+- Component add workflow:
+  - `/` opens component picker modal.
+  - Picker supports fuzzy search (`card`, `dd_card`, etc.).
+  - `Enter` inserts selected component into active section column.
+- Save workflow:
+  - `s` opens Save modal.
+  - User enters path/filename and confirms with `Enter`.
+- Edit UX:
+  - Cursor is visible in active editable fields (edit/save/picker modals).
+  - `Tab` / `Shift+Tab` cycles between editable component fields.
+- Section ID and modifiers:
+  - Sections always get default IDs (`section-N`) and remain editable.
+  - Section modifier class options are surfaced in details/modal.
+- Theme:
+  - `theme.yml` updated with app-specific palette and key mapping comments.
 
-## Quick Resume Commands
+## Quick Resume
 ```bash
-cargo test
+cargo check
 cargo run -- tui
 ```
 
-## Suggested Follow-ups
-1. Add explicit documentation for theme keys/format in `README` or `Architecture.md`.
-2. Add unit tests for theme loading precedence and invalid theme handling.
-3. Consider making panel split ratio configurable in theme file (e.g. `layout.nodes_width_percent`).
-4. Improve ASCII map truncation for long component lists (optional scrolling or paging).
-5. Surface active-column context in status bar when adding/removing components.
+## Suggested Next Tasks
+1. Add mouse click support inside modals (field focus + picker selection).
+2. Add dedicated section modifier selector modal (instead of only cycle keys).
+3. Add “Save As existing file overwrite confirmation” modal.
+4. Add tests for:
+   - section id normalization on load
+   - fuzzy picker ranking
+   - tab/shift-tab field traversal behavior
+5. Add README usage section with updated keybindings and modal flows.
 
-## Example Theme File
-```yaml
-colors:
-  base: "#1e1e2e"
-  mantle: "#181825"
-  crust: "#11111b"
-  text: "#cdd6f4"
-  subtext0: "#a6adc8"
-  surface0: "#313244"
-  overlay0: "#6c7086"
-  lavender: "#b4befe"
-  blue: "#89b4fa"
-```
+## Notes
+- Active branch includes substantial `src/tui.rs` changes.
+- Before merging, run a manual TUI pass on narrow and wide terminal sizes.
