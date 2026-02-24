@@ -61,6 +61,8 @@ struct App {
     selected_component: usize,
     selected_nested_item: usize,
     list_area: Rect,
+    details_area: Rect,
+    details_scroll_row: usize,
     status: String,
     path: Option<PathBuf>,
     should_quit: bool,
@@ -77,6 +79,7 @@ struct App {
     expanded_sections: HashSet<(usize, usize)>,
     expanded_accordion_items: HashSet<(usize, usize, usize, usize)>,
     expanded_alternating_items: HashSet<(usize, usize, usize, usize)>,
+    expanded_card_items: HashSet<(usize, usize, usize, usize)>,
 }
 
 struct ComponentPickerState {
@@ -127,6 +130,17 @@ enum InputMode {
     EditAlternatingItemImageAlt,
     EditAlternatingItemTitle,
     EditAlternatingItemCopy,
+    EditCardType,
+    EditCardDataAos,
+    EditCardWidth,
+    EditCardItemImageUrl,
+    EditCardItemImageAlt,
+    EditCardItemTitle,
+    EditCardItemSubtitle,
+    EditCardItemCopy,
+    EditCardItemLinkUrl,
+    EditCardItemLinkTarget,
+    EditCardItemLinkLabel,
 }
 
 #[derive(Clone, Copy)]
@@ -137,6 +151,7 @@ enum ComponentKind {
     Blockquote,
     Accordion,
     Alternating,
+    Card,
 }
 
 #[derive(Clone, Copy)]
@@ -204,6 +219,12 @@ enum NodeTreeKind {
         component_idx: usize,
         item_idx: usize,
     },
+    CardItem {
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+        item_idx: usize,
+    },
 }
 
 impl App {
@@ -221,6 +242,8 @@ impl App {
             selected_component: 0,
             selected_nested_item: 0,
             list_area: Rect::default(),
+            details_area: Rect::default(),
+            details_scroll_row: 0,
             status: "Ready.".to_string(),
             path,
             should_quit: false,
@@ -237,6 +260,7 @@ impl App {
             expanded_sections: HashSet::new(),
             expanded_accordion_items: HashSet::new(),
             expanded_alternating_items: HashSet::new(),
+            expanded_card_items: HashSet::new(),
         }
     }
 
@@ -327,7 +351,14 @@ impl App {
         frame.render_stateful_widget(list, main[0], &mut state);
         self.list_area = main[0];
 
-        let details = Paragraph::new(self.details_text(main[1].width.saturating_sub(2) as usize))
+        self.details_area = main[1];
+        let details_width = main[1].width.saturating_sub(2) as usize;
+        let details_content = self.details_text(details_width);
+        let details_total_rows = details_content.lines().count().max(1);
+        let details_visible_rows = main[1].height.saturating_sub(2) as usize;
+        let details_max_scroll = details_total_rows.saturating_sub(details_visible_rows);
+        self.details_scroll_row = self.details_scroll_row.min(details_max_scroll);
+        let details = Paragraph::new(details_content)
             .style(
                 Style::default()
                     .fg(self.theme.foreground)
@@ -349,6 +380,7 @@ impl App {
                             .add_modifier(Modifier::BOLD),
                     ),
             )
+            .scroll((self.details_scroll_row.min(u16::MAX as usize) as u16, 0))
             .wrap(Wrap { trim: true });
         frame.render_widget(details, main[1]);
 
@@ -462,6 +494,9 @@ impl App {
                     Some(InputMode::EditBlockquoteCopy) => {
                         "Value (textarea, 5 rows; Enter newline | Ctrl+S save):"
                     }
+                    Some(InputMode::EditCardItemCopy) => {
+                        "Value (textarea, 5 rows; Enter newline | Ctrl+S save):"
+                    }
                     Some(InputMode::EditAccordionFirstContent) => {
                         "Value (textarea, 5 rows; Enter newline | Ctrl+S save):"
                     }
@@ -524,7 +559,7 @@ impl App {
                 }
             }
             lines.push(String::new());
-            lines.push("Type to fuzzy search (e.g. hero, dd-blockquote).".to_string());
+            lines.push("Type to fuzzy search (e.g. hero, dd-card).".to_string());
             lines.push("Up/Down to choose, Enter to add, Esc to cancel.".to_string());
             let picker_widget = Paragraph::new(lines.join("\n"))
                 .style(
@@ -714,6 +749,8 @@ impl App {
                 }
                 KeyCode::Up => self.select_prev(),
                 KeyCode::Down => self.select_next(),
+                KeyCode::PageUp => self.scroll_details_by(-5),
+                KeyCode::PageDown => self.scroll_details_by(5),
                 KeyCode::Char(' ') => self.toggle_selected_tree_expanded(),
                 KeyCode::Enter => self.handle_enter_on_selected_row(),
                 KeyCode::Tab => self.select_next_page(),
@@ -736,8 +773,20 @@ impl App {
                 _ => {}
             },
             Event::Mouse(m) => match m.kind {
-                MouseEventKind::ScrollUp => self.select_prev(),
-                MouseEventKind::ScrollDown => self.select_next(),
+                MouseEventKind::ScrollUp => {
+                    if contains(self.details_area, m.column, m.row) {
+                        self.scroll_details_by(-3);
+                    } else {
+                        self.select_prev();
+                    }
+                }
+                MouseEventKind::ScrollDown => {
+                    if contains(self.details_area, m.column, m.row) {
+                        self.scroll_details_by(3);
+                    } else {
+                        self.select_next();
+                    }
+                }
                 MouseEventKind::Down(MouseButton::Left) => {
                     self.handle_click(m.column, m.row);
                 }
@@ -863,6 +912,26 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
+                    Some(InputMode::EditCardType) => {
+                        self.cycle_card_type(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditCardType) {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditCardDataAos) => {
+                        self.cycle_card_data_aos(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditCardDataAos) {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditCardItemLinkTarget) => {
+                        self.cycle_card_link_target(false);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditCardItemLinkTarget)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
                     Some(InputMode::EditAlternatingType) => {
                         self.cycle_alternating_type(false);
                         if let Some(v) =
@@ -959,6 +1028,26 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
+                    Some(InputMode::EditCardType) => {
+                        self.cycle_card_type(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditCardType) {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditCardDataAos) => {
+                        self.cycle_card_data_aos(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditCardDataAos) {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditCardItemLinkTarget) => {
+                        self.cycle_card_link_target(true);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditCardItemLinkTarget)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
                     Some(InputMode::EditAlternatingType) => {
                         self.cycle_alternating_type(true);
                         if let Some(v) =
@@ -1030,6 +1119,7 @@ impl App {
             InputMode::EditHeroCopy
                 | InputMode::EditAlternatingItemCopy
                 | InputMode::EditBlockquoteCopy
+                | InputMode::EditCardItemCopy
                 | InputMode::EditAccordionFirstContent
         )
     }
@@ -1043,6 +1133,7 @@ impl App {
             InputMode::EditHeroCopy => 3,
             InputMode::EditAlternatingItemCopy
             | InputMode::EditBlockquoteCopy
+            | InputMode::EditCardItemCopy
             | InputMode::EditAccordionFirstContent => 5,
             _ => 1,
         }
@@ -1059,6 +1150,7 @@ impl App {
             InputMode::EditHeroCopy => Some(3),
             InputMode::EditAlternatingItemCopy
             | InputMode::EditBlockquoteCopy
+            | InputMode::EditCardItemCopy
             | InputMode::EditAccordionFirstContent => None,
             _ => None,
         }
@@ -1298,6 +1390,43 @@ impl App {
                 InputMode::EditAlternatingType,
                 InputMode::EditAlternatingClass,
                 InputMode::EditAlternatingDataAos,
+            ]);
+        }
+        let card_mode = matches!(
+            mode,
+            InputMode::EditCardType
+                | InputMode::EditCardDataAos
+                | InputMode::EditCardWidth
+                | InputMode::EditCardItemImageUrl
+                | InputMode::EditCardItemImageAlt
+                | InputMode::EditCardItemTitle
+                | InputMode::EditCardItemSubtitle
+                | InputMode::EditCardItemCopy
+                | InputMode::EditCardItemLinkUrl
+                | InputMode::EditCardItemLinkTarget
+                | InputMode::EditCardItemLinkLabel
+        );
+        if card_mode {
+            let rows = self.build_node_tree_rows();
+            let row_kind = rows
+                .get(self.selected_tree_row.min(rows.len().saturating_sub(1)))
+                .map(|r| r.kind);
+            if matches!(row_kind, Some(NodeTreeKind::CardItem { .. })) {
+                return Some(vec![
+                    InputMode::EditCardItemImageUrl,
+                    InputMode::EditCardItemImageAlt,
+                    InputMode::EditCardItemTitle,
+                    InputMode::EditCardItemSubtitle,
+                    InputMode::EditCardItemCopy,
+                    InputMode::EditCardItemLinkUrl,
+                    InputMode::EditCardItemLinkTarget,
+                    InputMode::EditCardItemLinkLabel,
+                ]);
+            }
+            return Some(vec![
+                InputMode::EditCardType,
+                InputMode::EditCardDataAos,
+                InputMode::EditCardWidth,
             ]);
         }
         component_edit_group_for_mode(mode).map(|modes| modes.to_vec())
@@ -1571,6 +1700,39 @@ impl App {
                 "Editing dd-accordion item content. Enter: newline, Ctrl+S: save, esc: cancel."
                     .to_string()
             }
+            InputMode::EditCardType => {
+                "Editing dd-card type. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardDataAos => {
+                "Editing dd-card data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardWidth => {
+                "Editing dd-card width class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardItemImageUrl => {
+                "Editing dd-card item image URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardItemImageAlt => {
+                "Editing dd-card item image alt text. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardItemTitle => {
+                "Editing dd-card item title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardItemSubtitle => {
+                "Editing dd-card item subtitle. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardItemCopy => {
+                "Editing dd-card item copy. Enter: newline, Ctrl+S: save, esc: cancel.".to_string()
+            }
+            InputMode::EditCardItemLinkUrl => {
+                "Editing dd-card item link URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardItemLinkTarget => {
+                "Editing dd-card item link target. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardItemLinkLabel => {
+                "Editing dd-card item link label. Enter to save, esc to cancel.".to_string()
+            }
         };
     }
 
@@ -1657,6 +1819,9 @@ impl App {
                 | InputMode::EditSectionTitle
                 | InputMode::EditAlternatingItemCopy
                 | InputMode::EditBlockquoteCopy
+                | InputMode::EditCardItemLinkUrl
+                | InputMode::EditCardItemLinkTarget
+                | InputMode::EditCardItemLinkLabel
         );
         if value.is_empty() && !allow_empty {
             self.status = "Value cannot be empty.".to_string();
@@ -2090,6 +2255,202 @@ impl App {
                     "Section has no components.".to_string()
                 }
             }
+            (PageNode::Section(v), InputMode::EditCardType) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                        if let Some(vt) = parse_card_type(value.as_str()) {
+                            card.card_type = vt;
+                            applied = true;
+                            "Updated dd-card type.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-card type option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-card.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCardDataAos) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                        if let Some(va) = parse_hero_aos(value.as_str()) {
+                            card.card_data_aos = va;
+                            applied = true;
+                            "Updated dd-card data-aos.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-card data-aos option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-card.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCardWidth) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                        card.card_width = value;
+                        applied = true;
+                        "Updated dd-card width classes.".to_string()
+                    } else {
+                        "Selected component is not dd-card.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCardItemImageUrl) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
+                            card.items[ni].card_image_url = value;
+                            applied = true;
+                            format!("Updated dd-card item {} image URL.", ni + 1)
+                        } else {
+                            "dd-card has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-card.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCardItemImageAlt) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
+                            card.items[ni].card_image_alt = value;
+                            applied = true;
+                            format!("Updated dd-card item {} image alt.", ni + 1)
+                        } else {
+                            "dd-card has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-card.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCardItemTitle) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
+                            card.items[ni].card_title = value;
+                            applied = true;
+                            format!("Updated dd-card item {} title.", ni + 1)
+                        } else {
+                            "dd-card has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-card.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCardItemSubtitle) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
+                            card.items[ni].card_subtitle = value;
+                            applied = true;
+                            format!("Updated dd-card item {} subtitle.", ni + 1)
+                        } else {
+                            "dd-card has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-card.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCardItemCopy) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
+                            card.items[ni].card_copy = value;
+                            applied = true;
+                            format!("Updated dd-card item {} copy.", ni + 1)
+                        } else {
+                            "dd-card has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-card.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCardItemLinkUrl) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
+                            card.items[ni].card_link_url =
+                                if value.is_empty() { None } else { Some(value) };
+                            applied = true;
+                            format!("Updated dd-card item {} link URL.", ni + 1)
+                        } else {
+                            "dd-card has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-card.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCardItemLinkTarget) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
+                            if value.is_empty() {
+                                card.items[ni].card_link_target = None;
+                                applied = true;
+                                format!("Updated dd-card item {} link target.", ni + 1)
+                            } else if let Some(vt) = parse_card_link_target(value.as_str()) {
+                                card.items[ni].card_link_target = Some(vt);
+                                applied = true;
+                                format!("Updated dd-card item {} link target.", ni + 1)
+                            } else {
+                                clear_input = false;
+                                "Invalid dd-card link target option.".to_string()
+                            }
+                        } else {
+                            "dd-card has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-card.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCardItemLinkLabel) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
+                            card.items[ni].card_link_label =
+                                if value.is_empty() { None } else { Some(value) };
+                            applied = true;
+                            format!("Updated dd-card item {} link label.", ni + 1)
+                        } else {
+                            "dd-card has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-card.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
             (PageNode::Section(v), InputMode::EditAccordionType) => {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
@@ -2315,6 +2676,26 @@ impl App {
                                         }
                                     }
                                 }
+                                if let Some(crate::model::SectionComponent::Card(card)) =
+                                    col.components.get(component_idx)
+                                {
+                                    if self.is_card_items_expanded(
+                                        node_idx,
+                                        column_idx,
+                                        component_idx,
+                                    ) {
+                                        for (item_idx, _) in card.items.iter().enumerate() {
+                                            rows.push(NodeTreeRow {
+                                                kind: NodeTreeKind::CardItem {
+                                                    node_idx,
+                                                    column_idx,
+                                                    component_idx,
+                                                    item_idx,
+                                                },
+                                            });
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -2378,6 +2759,13 @@ impl App {
                     format!("       - {} {} {}", comp_i + 1, marker, label)
                 } else if matches!(component, crate::model::SectionComponent::Alternating(_)) {
                     let marker = if self.is_alternating_items_expanded(node_idx, col_i, comp_i) {
+                        "[-]"
+                    } else {
+                        "[+]"
+                    };
+                    format!("       - {} {} {}", comp_i + 1, marker, label)
+                } else if matches!(component, crate::model::SectionComponent::Card(_)) {
+                    let marker = if self.is_card_items_expanded(node_idx, col_i, comp_i) {
                         "[-]"
                     } else {
                         "[+]"
@@ -2463,6 +2851,44 @@ impl App {
                     truncate_ascii(title, 48)
                 )
             }
+            NodeTreeKind::CardItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                    return format!("          - item {}", item_idx + 1);
+                };
+                let columns = section_columns_ref(section);
+                let col_i = column_idx.min(columns.len().saturating_sub(1));
+                let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
+                let title = if let Some(crate::model::SectionComponent::Card(card)) =
+                    columns[col_i].components.get(comp_i)
+                {
+                    card.items
+                        .get(item_idx)
+                        .map(|i| i.card_title.as_str())
+                        .unwrap_or("(none)")
+                } else {
+                    "(none)"
+                };
+                let marker = if node_idx == self.selected_node
+                    && col_i == self.selected_column
+                    && comp_i == self.selected_component
+                    && item_idx == self.selected_nested_item
+                {
+                    "*"
+                } else {
+                    "-"
+                };
+                format!(
+                    "          {} item {}: {}",
+                    marker,
+                    item_idx + 1,
+                    truncate_ascii(title, 48)
+                )
+            }
         }
     }
 
@@ -2521,6 +2947,17 @@ impl App {
                 self.selected_component = component_idx;
                 self.selected_nested_item = item_idx;
             }
+            NodeTreeKind::CardItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                self.selected_node = node_idx;
+                self.selected_column = column_idx;
+                self.selected_component = component_idx;
+                self.selected_nested_item = item_idx;
+            }
         }
     }
 
@@ -2559,6 +2996,17 @@ impl App {
                     && item_idx == self.selected_nested_item
             }
             NodeTreeKind::AlternatingItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                node_idx == self.selected_node
+                    && column_idx == self.selected_column
+                    && component_idx == self.selected_component
+                    && item_idx == self.selected_nested_item
+            }
+            NodeTreeKind::CardItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -2658,6 +3106,35 @@ impl App {
         }
     }
 
+    fn is_card_items_expanded(
+        &self,
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+    ) -> bool {
+        !self.expanded_card_items.contains(&(
+            self.selected_page,
+            node_idx,
+            column_idx,
+            component_idx,
+        ))
+    }
+
+    fn set_card_items_expanded(
+        &mut self,
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+        expanded: bool,
+    ) {
+        let key = (self.selected_page, node_idx, column_idx, component_idx);
+        if expanded {
+            self.expanded_card_items.remove(&key);
+        } else {
+            self.expanded_card_items.insert(key);
+        }
+    }
+
     fn toggle_selected_tree_expanded(&mut self) {
         let rows = self.build_node_tree_rows();
         if rows.is_empty() {
@@ -2676,6 +3153,12 @@ impl App {
             ..
         }
         | NodeTreeKind::AlternatingItem {
+            node_idx,
+            column_idx,
+            component_idx,
+            ..
+        }
+        | NodeTreeKind::CardItem {
             node_idx,
             column_idx,
             component_idx,
@@ -2726,6 +3209,24 @@ impl App {
                 self.sync_tree_row_with_selection();
                 return;
             }
+            if matches!(
+                columns[col_i].components.get(comp_i),
+                Some(crate::model::SectionComponent::Card(_))
+            ) {
+                let expanded = self.is_card_items_expanded(node_idx, col_i, comp_i);
+                self.set_card_items_expanded(node_idx, col_i, comp_i, !expanded);
+                self.selected_node = node_idx;
+                self.selected_column = col_i;
+                self.selected_component = comp_i;
+                self.selected_nested_item = 0;
+                self.status = if expanded {
+                    "Collapsed card items.".to_string()
+                } else {
+                    "Expanded card items.".to_string()
+                };
+                self.sync_tree_row_with_selection();
+                return;
+            }
         }
         let node_idx = match row.kind {
             NodeTreeKind::Section { node_idx } => node_idx,
@@ -2733,6 +3234,7 @@ impl App {
             NodeTreeKind::Component { node_idx, .. } => node_idx,
             NodeTreeKind::AccordionItem { node_idx, .. } => node_idx,
             NodeTreeKind::AlternatingItem { node_idx, .. } => node_idx,
+            NodeTreeKind::CardItem { node_idx, .. } => node_idx,
             NodeTreeKind::Hero { .. } => {
                 self.status = "Selected row is not a section.".to_string();
                 return;
@@ -2776,6 +3278,12 @@ impl App {
             }
             NodeTreeKind::AlternatingItem { .. } => {
                 if self.set_component_input_mode(InputMode::EditAlternatingItemTitle) {
+                    return;
+                }
+                self.begin_edit_selected_component_primary();
+            }
+            NodeTreeKind::CardItem { .. } => {
+                if self.set_component_input_mode(InputMode::EditCardItemImageUrl) {
                     return;
                 }
                 self.begin_edit_selected_component_primary();
@@ -2888,6 +3396,17 @@ impl App {
             Some(InputMode::EditBlockquotePersonsName) => "blockquote_persons_name",
             Some(InputMode::EditBlockquotePersonsTitle) => "blockquote_persons_title",
             Some(InputMode::EditBlockquoteCopy) => "blockquote_copy",
+            Some(InputMode::EditCardType) => "card_type",
+            Some(InputMode::EditCardDataAos) => "card_data_aos",
+            Some(InputMode::EditCardWidth) => "card_width",
+            Some(InputMode::EditCardItemImageUrl) => "dd-card.active.card_image_url",
+            Some(InputMode::EditCardItemImageAlt) => "dd-card.active.card_image_alt",
+            Some(InputMode::EditCardItemTitle) => "dd-card.active.card_title",
+            Some(InputMode::EditCardItemSubtitle) => "dd-card.active.card_subtitle",
+            Some(InputMode::EditCardItemCopy) => "dd-card.active.card_copy",
+            Some(InputMode::EditCardItemLinkUrl) => "dd-card.active.card_link_url",
+            Some(InputMode::EditCardItemLinkTarget) => "dd-card.active.card_link_target",
+            Some(InputMode::EditCardItemLinkLabel) => "dd-card.active.card_link_label",
             Some(InputMode::EditAccordionType) => "dd-accordion.type",
             Some(InputMode::EditAccordionClass) => "dd-accordion.class",
             Some(InputMode::EditAccordionAos) => "dd-accordion.data_aos",
@@ -2949,7 +3468,8 @@ impl App {
                     }
                     Some(NodeTreeKind::Component { .. })
                     | Some(NodeTreeKind::AccordionItem { .. })
-                    | Some(NodeTreeKind::AlternatingItem { .. }) => {
+                    | Some(NodeTreeKind::AlternatingItem { .. })
+                    | Some(NodeTreeKind::CardItem { .. }) => {
                         let columns = section_columns_ref(section);
                         if let Some(col) =
                             columns.get(self.selected_column.min(columns.len().saturating_sub(1)))
@@ -2958,7 +3478,84 @@ impl App {
                                 self.selected_component
                                     .min(col.components.len().saturating_sub(1)),
                             ) {
-                                if let crate::model::SectionComponent::Alternating(alt) = component
+                                if let crate::model::SectionComponent::Card(card) = component {
+                                    match self.input_mode {
+                                        Some(InputMode::EditCardType)
+                                        | Some(InputMode::EditCardDataAos)
+                                        | Some(InputMode::EditCardWidth) => vec![
+                                            format!(
+                                                "- card_type: {}",
+                                                card_type_to_str(card.card_type)
+                                            ),
+                                            format!(
+                                                "- card_data_aos: {}",
+                                                hero_aos_to_str(card.card_data_aos)
+                                            ),
+                                            format!("- card_width: {}", card.card_width),
+                                        ]
+                                        .join("\n"),
+                                        Some(InputMode::EditCardItemImageUrl)
+                                        | Some(InputMode::EditCardItemImageAlt)
+                                        | Some(InputMode::EditCardItemTitle)
+                                        | Some(InputMode::EditCardItemSubtitle)
+                                        | Some(InputMode::EditCardItemCopy)
+                                        | Some(InputMode::EditCardItemLinkUrl)
+                                        | Some(InputMode::EditCardItemLinkTarget)
+                                        | Some(InputMode::EditCardItemLinkLabel) => {
+                                            let item = nested_index(
+                                                card.items.len(),
+                                                self.selected_nested_item,
+                                            )
+                                            .and_then(|i| card.items.get(i));
+                                            vec![
+                                                format!(
+                                                    "- card_image_url: {}",
+                                                    item.map(|i| i.card_image_url.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- card_image_alt: {}",
+                                                    item.map(|i| i.card_image_alt.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- card_title: {}",
+                                                    item.map(|i| i.card_title.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- card_subtitle: {}",
+                                                    item.map(|i| i.card_subtitle.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- card_copy: {}",
+                                                    item.map(|i| i.card_copy.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- card_link_url: {}",
+                                                    item.and_then(|i| i.card_link_url.as_deref())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- card_link_target: {}",
+                                                    item.and_then(|i| i.card_link_target)
+                                                        .map(card_link_target_to_str)
+                                                        .unwrap_or("_self")
+                                                ),
+                                                format!(
+                                                    "- card_link_label: {}",
+                                                    item.and_then(|i| i.card_link_label.as_deref())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                            ]
+                                            .join("\n")
+                                        }
+                                        _ => component_form(component, self.selected_nested_item),
+                                    }
+                                } else if let crate::model::SectionComponent::Alternating(alt) =
+                                    component
                                 {
                                     match self.input_mode {
                                         Some(InputMode::EditAlternatingType)
@@ -3208,6 +3805,39 @@ impl App {
             InputMode::EditBlockquoteCopy => {
                 "Editing dd-blockquote copy. Enter: newline, Ctrl+S: save, esc: cancel.".to_string()
             }
+            InputMode::EditCardType => {
+                "Editing dd-card type. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardDataAos => {
+                "Editing dd-card data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardWidth => {
+                "Editing dd-card width classes. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardItemImageUrl => {
+                "Editing dd-card item image URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardItemImageAlt => {
+                "Editing dd-card item image alt. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardItemTitle => {
+                "Editing dd-card item title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardItemSubtitle => {
+                "Editing dd-card item subtitle. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardItemCopy => {
+                "Editing dd-card item copy. Enter: newline, Ctrl+S: save, esc: cancel.".to_string()
+            }
+            InputMode::EditCardItemLinkUrl => {
+                "Editing dd-card item link URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardItemLinkTarget => {
+                "Editing dd-card item link target. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCardItemLinkLabel => {
+                "Editing dd-card item link label. Enter to save, esc to cancel.".to_string()
+            }
             InputMode::EditAccordionType => {
                 "Editing dd-accordion type. Enter to save, esc to cancel.".to_string()
             }
@@ -3360,6 +3990,72 @@ impl App {
                             InputMode::EditBannerImageAlt,
                             crate::model::SectionComponent::Banner(v),
                         ) => Some(v.banner_image_alt.clone()),
+                        (InputMode::EditCardType, crate::model::SectionComponent::Card(v)) => {
+                            Some(card_type_to_str(v.card_type).to_string())
+                        }
+                        (InputMode::EditCardDataAos, crate::model::SectionComponent::Card(v)) => {
+                            Some(hero_aos_to_str(v.card_data_aos).to_string())
+                        }
+                        (InputMode::EditCardWidth, crate::model::SectionComponent::Card(v)) => {
+                            Some(v.card_width.clone())
+                        }
+                        (
+                            InputMode::EditCardItemImageUrl,
+                            crate::model::SectionComponent::Card(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].card_image_url.clone())
+                        }
+                        (
+                            InputMode::EditCardItemImageAlt,
+                            crate::model::SectionComponent::Card(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].card_image_alt.clone())
+                        }
+                        (InputMode::EditCardItemTitle, crate::model::SectionComponent::Card(v)) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].card_title.clone())
+                        }
+                        (
+                            InputMode::EditCardItemSubtitle,
+                            crate::model::SectionComponent::Card(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].card_subtitle.clone())
+                        }
+                        (InputMode::EditCardItemCopy, crate::model::SectionComponent::Card(v)) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].card_copy.clone())
+                        }
+                        (
+                            InputMode::EditCardItemLinkUrl,
+                            crate::model::SectionComponent::Card(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].card_link_url.clone().unwrap_or_default())
+                        }
+                        (
+                            InputMode::EditCardItemLinkTarget,
+                            crate::model::SectionComponent::Card(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(
+                                card_link_target_to_str(
+                                    v.items[ni]
+                                        .card_link_target
+                                        .unwrap_or(crate::model::CardLinkTarget::SelfTarget),
+                                )
+                                .to_string(),
+                            )
+                        }
+                        (
+                            InputMode::EditCardItemLinkLabel,
+                            crate::model::SectionComponent::Card(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].card_link_label.clone().unwrap_or_default())
+                        }
                         (
                             InputMode::EditBlockquoteDataAos,
                             crate::model::SectionComponent::Blockquote(v),
@@ -3471,6 +4167,7 @@ impl App {
         self.selected_column = 0;
         self.selected_component = 0;
         self.selected_nested_item = 0;
+        self.details_scroll_row = 0;
         self.sync_tree_row_with_selection();
     }
 
@@ -3488,6 +4185,7 @@ impl App {
         self.selected_column = 0;
         self.selected_component = 0;
         self.selected_nested_item = 0;
+        self.details_scroll_row = 0;
         self.sync_tree_row_with_selection();
     }
 
@@ -3827,6 +4525,70 @@ impl App {
         );
     }
 
+    fn cycle_card_type(&mut self, forward: bool) {
+        self.mutate_selected_card(
+            |c| {
+                c.card_type = next_card_type(c.card_type, forward);
+            },
+            "Cycled dd-card type.",
+        );
+    }
+
+    fn cycle_card_data_aos(&mut self, forward: bool) {
+        self.mutate_selected_card(
+            |c| {
+                c.card_data_aos = next_hero_aos(c.card_data_aos, forward);
+            },
+            "Cycled dd-card data-aos.",
+        );
+    }
+
+    fn cycle_card_link_target(&mut self, forward: bool) {
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let selected_nested_item = self.selected_nested_item;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut components[ci] {
+                        if let Some(item_i) = nested_index(card.items.len(), selected_nested_item) {
+                            let current = card.items[item_i]
+                                .card_link_target
+                                .unwrap_or(crate::model::CardLinkTarget::SelfTarget);
+                            let next = next_card_link_target(current, forward);
+                            card.items[item_i].card_link_target = Some(next);
+                            format!(
+                                "dd-card item {} link target: {}",
+                                item_i + 1,
+                                card_link_target_to_str(next)
+                            )
+                        } else {
+                            "dd-card has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-card.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            _ => "Selected node is not a section.".to_string(),
+        };
+        self.status = result;
+    }
+
     fn cycle_alternating_type(&mut self, forward: bool) {
         self.mutate_selected_alternating(
             |a| {
@@ -3955,6 +4717,42 @@ impl App {
         self.status = result;
     }
 
+    fn mutate_selected_card<F>(&mut self, mutator: F, success_message: &str)
+    where
+        F: FnOnce(&mut crate::model::DdCard),
+    {
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut components[ci] {
+                        mutator(card);
+                        success_message.to_string()
+                    } else {
+                        "Selected component is not dd-card.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            _ => "Selected node is not a section.".to_string(),
+        };
+        self.status = result;
+    }
+
     fn cycle_accordion_type(&mut self, forward: bool) {
         self.mutate_selected_accordion(
             |a| {
@@ -4029,6 +4827,7 @@ impl App {
             Some(crate::model::SectionComponent::Alternating(_)) => {
                 self.add_selected_alternating_item()
             }
+            Some(crate::model::SectionComponent::Card(_)) => self.add_selected_card_item(),
             Some(_) => {
                 self.status = "Selected component does not support collection items.".to_string();
             }
@@ -4047,6 +4846,7 @@ impl App {
             Some(crate::model::SectionComponent::Alternating(_)) => {
                 self.remove_selected_alternating_item()
             }
+            Some(crate::model::SectionComponent::Card(_)) => self.remove_selected_card_item(),
             Some(_) => {
                 self.status = "Selected component does not support collection items.".to_string();
             }
@@ -4296,6 +5096,134 @@ impl App {
         self.status = result.1;
     }
 
+    fn add_selected_card_item(&mut self) {
+        let rows = self.build_node_tree_rows();
+        if rows.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let preferred_insert_after = match row.kind {
+            NodeTreeKind::CardItem { item_idx, .. } => Some(item_idx),
+            _ => None,
+        };
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut components[ci] {
+                        let insert_idx = preferred_insert_after
+                            .map(|i| (i + 1).min(card.items.len()))
+                            .unwrap_or(card.items.len());
+                        let next_num = card.items.len() + 1;
+                        card.items.insert(
+                            insert_idx,
+                            crate::model::CardItem {
+                                card_image_url: "https://dummyimage.com/720x720/000/fff"
+                                    .to_string(),
+                                card_image_alt: "Image alt text".to_string(),
+                                card_title: format!("Title {}", next_num),
+                                card_subtitle: "Subtitle".to_string(),
+                                card_copy: "Copy".to_string(),
+                                card_link_url: Some("/front".to_string()),
+                                card_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                                card_link_label: Some("Learn More".to_string()),
+                            },
+                        );
+                        (
+                            Some(insert_idx),
+                            format!("Added dd-card item {}.", insert_idx + 1),
+                        )
+                    } else {
+                        (None, "Selected component is not dd-card.".to_string())
+                    }
+                } else {
+                    (None, "Section has no components.".to_string())
+                }
+            }
+            _ => (None, "Selected node is not a section.".to_string()),
+        };
+        if let Some(item_i) = result.0 {
+            self.selected_nested_item = item_i;
+            self.set_card_items_expanded(ni, selected_column, selected_component, true);
+            self.sync_tree_row_with_selection();
+        }
+        self.status = result.1;
+    }
+
+    fn remove_selected_card_item(&mut self) {
+        let rows = self.build_node_tree_rows();
+        if rows.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let selected_nested_item = self.selected_nested_item;
+        let preferred_remove = match row.kind {
+            NodeTreeKind::CardItem { item_idx, .. } => Some(item_idx),
+            _ => None,
+        };
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut components[ci] {
+                        if card.items.len() <= 1 {
+                            (None, "dd-card must keep at least one item.".to_string())
+                        } else {
+                            let remove_i = preferred_remove.unwrap_or_else(|| {
+                                selected_nested_item.min(card.items.len().saturating_sub(1))
+                            });
+                            card.items.remove(remove_i);
+                            let next_i = remove_i.min(card.items.len().saturating_sub(1));
+                            (
+                                Some(next_i),
+                                format!("Removed dd-card item {}.", remove_i + 1),
+                            )
+                        }
+                    } else {
+                        (None, "Selected component is not dd-card.".to_string())
+                    }
+                } else {
+                    (None, "Section has no components.".to_string())
+                }
+            }
+            _ => (None, "Selected node is not a section.".to_string()),
+        };
+        if let Some(item_i) = result.0 {
+            self.selected_nested_item = item_i;
+            self.set_card_items_expanded(ni, selected_column, selected_component, true);
+            self.sync_tree_row_with_selection();
+        }
+        self.status = result.1;
+    }
+
     fn mutate_selected_section<F>(&mut self, mutator: F, success_message: &str)
     where
         F: FnOnce(&mut crate::model::DdSection),
@@ -4513,6 +5441,10 @@ impl App {
                                     InputMode::EditBannerClass,
                                     banner_class_to_str(banner.banner_class).to_string(),
                                 )),
+                                crate::model::SectionComponent::Card(card) => Some((
+                                    InputMode::EditCardType,
+                                    card_type_to_str(card.card_type).to_string(),
+                                )),
                                 crate::model::SectionComponent::Accordion(acc) => Some((
                                     InputMode::EditAccordionType,
                                     accordion_type_to_str(acc.accordion_type).to_string(),
@@ -4536,7 +5468,7 @@ impl App {
 
         let Some((mode, value)) = selected else {
             self.status =
-                "Primary edit supports banner/blockquote/accordion/alternating.".to_string();
+                "Primary edit supports banner/card/blockquote/accordion/alternating.".to_string();
             return;
         };
         self.input_mode = Some(mode);
@@ -4564,6 +5496,9 @@ impl App {
             InputMode::EditBlockquoteDataAos => {
                 "Editing dd-blockquote data-aos. Enter to save, esc to cancel.".to_string()
             }
+            InputMode::EditCardType => {
+                "Editing dd-card type. Enter to save, esc to cancel.".to_string()
+            }
             InputMode::EditAlternatingType => {
                 "Editing dd-alternating type. Enter to save, esc to cancel.".to_string()
             }
@@ -4581,6 +5516,25 @@ impl App {
             PageNode::Hero(_) => None,
             PageNode::Section(section) => Some(section_columns_ref(section).len()),
         }
+    }
+
+    fn details_max_scroll(&self) -> usize {
+        let visible_rows = self.details_area.height.saturating_sub(2) as usize;
+        if visible_rows == 0 {
+            return 0;
+        }
+        let detail_width = self.details_area.width.saturating_sub(2) as usize;
+        if detail_width == 0 {
+            return 0;
+        }
+        let total_rows = self.details_text(detail_width).lines().count().max(1);
+        total_rows.saturating_sub(visible_rows)
+    }
+
+    fn scroll_details_by(&mut self, delta: isize) {
+        let max_scroll = self.details_max_scroll() as isize;
+        let next = self.details_scroll_row as isize + delta;
+        self.details_scroll_row = next.clamp(0, max_scroll) as usize;
     }
 }
 
@@ -4708,13 +5662,29 @@ fn section_ascii_map(
                 ));
             } else {
                 for component in col.components.iter().take(MAX_COMPONENT_ROWS) {
-                    box_lines.push(format!(
-                        "| {} |",
-                        fit_ascii_cell(
-                            &format!("- {}", component_blueprint_label(component)),
-                            item_inner_width
-                        )
-                    ));
+                    match component {
+                        crate::model::SectionComponent::Card(card) => {
+                            box_lines.push(format!(
+                                "| {} |",
+                                fit_ascii_cell("- dd-card", item_inner_width)
+                            ));
+                            for line in card_items_ascii_lines(card, item_inner_width) {
+                                box_lines.push(format!(
+                                    "| {} |",
+                                    fit_ascii_cell(&line, item_inner_width)
+                                ));
+                            }
+                        }
+                        _ => {
+                            box_lines.push(format!(
+                                "| {} |",
+                                fit_ascii_cell(
+                                    &format!("- {}", component_blueprint_label(component)),
+                                    item_inner_width
+                                )
+                            ));
+                        }
+                    }
                 }
                 let more = col.components.len().saturating_sub(MAX_COMPONENT_ROWS);
                 if more > 0 {
@@ -4792,6 +5762,95 @@ fn section_ascii_map(
     }
     out.push(border);
     out.join("\n")
+}
+
+fn card_items_ascii_lines(
+    card: &crate::model::DdCard,
+    container_inner_width: usize,
+) -> Vec<String> {
+    if card.items.is_empty() {
+        return vec![fit_ascii_cell("(empty)", container_inner_width)];
+    }
+
+    let child_inner_width = section_item_ascii_inner_width(&card.card_width, container_inner_width)
+        .min(container_inner_width.saturating_sub(6))
+        .max(10);
+    let child_border = format!("+{}+", "-".repeat(child_inner_width + 2));
+
+    let child_boxes = card
+        .items
+        .iter()
+        .enumerate()
+        .map(|(idx, item)| {
+            vec![
+                child_border.clone(),
+                format!(
+                    "| {} |",
+                    fit_ascii_cell(&format!("card {}:", idx + 1), child_inner_width)
+                ),
+                format!(
+                    "| {} |",
+                    fit_ascii_cell(&format!("title: {}", item.card_title), child_inner_width)
+                ),
+                child_border.clone(),
+            ]
+        })
+        .collect::<Vec<_>>();
+
+    let box_widths = child_boxes
+        .iter()
+        .map(|b| b.first().map(|s| s.chars().count()).unwrap_or(0))
+        .collect::<Vec<_>>();
+
+    let gap = 2usize;
+    let mut row_groups: Vec<Vec<usize>> = Vec::new();
+    let mut current_row: Vec<usize> = Vec::new();
+    let mut current_row_width = 0usize;
+    for (idx, width) in box_widths.iter().copied().enumerate() {
+        let next = if current_row.is_empty() {
+            width
+        } else {
+            current_row_width + gap + width
+        };
+        if !current_row.is_empty() && next > container_inner_width {
+            row_groups.push(current_row);
+            current_row = vec![idx];
+            current_row_width = width;
+        } else {
+            current_row.push(idx);
+            current_row_width = next;
+        }
+    }
+    if !current_row.is_empty() {
+        row_groups.push(current_row);
+    }
+
+    let mut lines = Vec::new();
+    for (row_idx, row) in row_groups.iter().enumerate() {
+        if row_idx > 0 {
+            lines.push(String::new());
+        }
+        let row_height = row
+            .iter()
+            .map(|idx| child_boxes[*idx].len())
+            .max()
+            .unwrap_or(0);
+        for line_idx in 0..row_height {
+            let mut composed = String::new();
+            for (pos, idx) in row.iter().enumerate() {
+                if pos > 0 {
+                    composed.push_str("  ");
+                }
+                let part = child_boxes[*idx]
+                    .get(line_idx)
+                    .cloned()
+                    .unwrap_or_else(|| " ".repeat(box_widths[*idx]));
+                composed.push_str(&part);
+            }
+            lines.push(composed);
+        }
+    }
+    lines
 }
 
 fn section_item_ascii_inner_width(width_class: &str, section_inner_width: usize) -> usize {
@@ -5056,6 +6115,67 @@ fn next_banner_class(
     all[next_idx]
 }
 
+fn card_type_to_str(v: crate::model::CardType) -> &'static str {
+    match v {
+        crate::model::CardType::Default => "-default",
+        crate::model::CardType::Horizontal => "-horizontal",
+    }
+}
+
+fn parse_card_type(raw: &str) -> Option<crate::model::CardType> {
+    match raw.trim() {
+        "-default" => Some(crate::model::CardType::Default),
+        "-horizontal" => Some(crate::model::CardType::Horizontal),
+        _ => None,
+    }
+}
+
+fn next_card_type(current: crate::model::CardType, forward: bool) -> crate::model::CardType {
+    use crate::model::CardType;
+    let all = [CardType::Default, CardType::Horizontal];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
+}
+
+fn card_link_target_to_str(v: crate::model::CardLinkTarget) -> &'static str {
+    match v {
+        crate::model::CardLinkTarget::SelfTarget => "_self",
+        crate::model::CardLinkTarget::Blank => "_blank",
+    }
+}
+
+fn parse_card_link_target(raw: &str) -> Option<crate::model::CardLinkTarget> {
+    match raw.trim() {
+        "_self" => Some(crate::model::CardLinkTarget::SelfTarget),
+        "_blank" => Some(crate::model::CardLinkTarget::Blank),
+        _ => None,
+    }
+}
+
+fn next_card_link_target(
+    current: crate::model::CardLinkTarget,
+    forward: bool,
+) -> crate::model::CardLinkTarget {
+    use crate::model::CardLinkTarget;
+    let all = [CardLinkTarget::SelfTarget, CardLinkTarget::Blank];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
+}
+
 fn alternating_type_to_str(v: crate::model::AlternatingType) -> &'static str {
     match v {
         crate::model::AlternatingType::Default => "-default",
@@ -5263,6 +6383,7 @@ fn truncate_ascii(value: &str, max_chars: usize) -> String {
 fn component_label(component: &crate::model::SectionComponent) -> &'static str {
     match component {
         crate::model::SectionComponent::Banner(_) => "dd-banner",
+        crate::model::SectionComponent::Card(_) => "dd-card",
         crate::model::SectionComponent::Blockquote(_) => "dd-blockquote",
         crate::model::SectionComponent::Accordion(_) => "dd-accordion",
         crate::model::SectionComponent::Alternating(_) => "dd-alternating",
@@ -5283,6 +6404,13 @@ fn component_blueprint_label(component: &crate::model::SectionComponent) -> Stri
             v.items
                 .first()
                 .map(|i| i.title.as_str())
+                .unwrap_or("(none)")
+        ),
+        crate::model::SectionComponent::Card(v) => format!(
+            "dd-card | card_title: {}",
+            v.items
+                .first()
+                .map(|i| i.card_title.as_str())
                 .unwrap_or("(none)")
         ),
         crate::model::SectionComponent::Blockquote(v) => format!(
@@ -5367,6 +6495,32 @@ fn component_form(
                 image_alt,
                 title,
                 copy
+            )
+        }
+        crate::model::SectionComponent::Card(v) => {
+            let active = nested_index(v.items.len(), selected_nested_item)
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            let item =
+                nested_index(v.items.len(), selected_nested_item).and_then(|i| v.items.get(i));
+            format!(
+                "fields:\n  card_type: {}\n  card_data_aos: {}\n  card_width: {}\n  active_item: {}\n  card_image_url: {}\n  card_image_alt: {}\n  card_title: {}\n  card_subtitle: {}\n  card_copy: {}\n  card_link_url: {}\n  card_link_target: {}\n  card_link_label: {}",
+                card_type_to_str(v.card_type),
+                hero_aos_to_str(v.card_data_aos),
+                v.card_width,
+                active,
+                item.map(|i| i.card_image_url.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.card_image_alt.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.card_title.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.card_subtitle.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.card_copy.as_str()).unwrap_or("(none)"),
+                item.and_then(|i| i.card_link_url.as_deref())
+                    .unwrap_or("(none)"),
+                item.and_then(|i| i.card_link_target)
+                    .map(card_link_target_to_str)
+                    .unwrap_or("_self"),
+                item.and_then(|i| i.card_link_label.as_deref())
+                    .unwrap_or("(none)")
             )
         }
     }
@@ -5778,6 +6932,29 @@ fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]
             InputMode::EditBlockquotePersonsTitle,
             InputMode::EditBlockquoteCopy,
         ]),
+        InputMode::EditCardType
+        | InputMode::EditCardDataAos
+        | InputMode::EditCardWidth
+        | InputMode::EditCardItemImageUrl
+        | InputMode::EditCardItemImageAlt
+        | InputMode::EditCardItemTitle
+        | InputMode::EditCardItemSubtitle
+        | InputMode::EditCardItemCopy
+        | InputMode::EditCardItemLinkUrl
+        | InputMode::EditCardItemLinkTarget
+        | InputMode::EditCardItemLinkLabel => Some(&[
+            InputMode::EditCardType,
+            InputMode::EditCardDataAos,
+            InputMode::EditCardWidth,
+            InputMode::EditCardItemImageUrl,
+            InputMode::EditCardItemImageAlt,
+            InputMode::EditCardItemTitle,
+            InputMode::EditCardItemSubtitle,
+            InputMode::EditCardItemCopy,
+            InputMode::EditCardItemLinkUrl,
+            InputMode::EditCardItemLinkTarget,
+            InputMode::EditCardItemLinkLabel,
+        ]),
         InputMode::EditAccordionType
         | InputMode::EditAccordionClass
         | InputMode::EditAccordionAos
@@ -5820,11 +6997,11 @@ fn help_text() -> String {
         "",
         "Node navigation and edits:",
         "  Up/Down or mouse wheel: Select row in Nodes tree",
+        "  PageUp/PageDown: Scroll Details blueprint panel",
         "  Enter: Edit selected row",
         "  Space: Expand/collapse selected section or accordion/alternating items",
-        "  /: Open insert fuzzy finder (hero/section/banner/accordion/alternating)",
-        "  (Includes dd-blockquote and any newly-added supported components)",
-        "  A / X: Add/remove dd-accordion or dd-alternating item",
+        "  /: Open insert fuzzy finder (hero/section/banner/blockquote/accordion/alternating/card)",
+        "  A / X: Add/remove dd-accordion, dd-alternating, or dd-card item",
         "  d: Delete selected node",
         "  J / K: Move selected node down / up",
         "",
@@ -5838,8 +7015,8 @@ fn help_text() -> String {
         "Edit modal:",
         "  Any edit command opens a modal with editable fields",
         "  Tab / Shift+Tab: Next/previous editable field for selected row",
-        "  hero.copy / alternating_copy / accordion_copy / blockquote_copy: Up/Down move line, wheel scroll, Enter newline, Ctrl+S save",
-        "  Left / Right: Cycle section/hero/banner/accordion/alternating/blockquote option fields when active",
+        "  hero.copy / alternating_copy / accordion_copy / blockquote_copy / card_copy: Up/Down move line, wheel scroll, Enter newline, Ctrl+S save",
+        "  Left / Right: Cycle section/hero/banner/accordion/alternating/blockquote/card option fields when active",
         "  Enter: Confirm edit",
         "  Esc: Cancel edit",
         "  Backspace: Delete character",
@@ -5856,6 +7033,7 @@ impl ComponentKind {
             Self::Blockquote,
             Self::Accordion,
             Self::Alternating,
+            Self::Card,
         ]
     }
 
@@ -5867,6 +7045,7 @@ impl ComponentKind {
             ComponentKind::Blockquote => "dd-blockquote",
             ComponentKind::Accordion => "dd-accordion",
             ComponentKind::Alternating => "dd-alternating",
+            ComponentKind::Card => "dd-card",
         }
     }
 
@@ -5919,6 +7098,159 @@ impl ComponentKind {
                     }],
                 })
             }
+            ComponentKind::Card => crate::model::SectionComponent::Card(crate::model::DdCard {
+                card_type: crate::model::CardType::Default,
+                card_data_aos: crate::model::HeroAos::FadeIn,
+                card_width: "dd-u-1-1 dd-u-md-12-24 dd-u-lg-8-24".to_string(),
+                items: vec![crate::model::CardItem {
+                    card_image_url: "https://dummyimage.com/720x720/000/fff".to_string(),
+                    card_image_alt: "Image alt text".to_string(),
+                    card_title: "Title".to_string(),
+                    card_subtitle: "Subtitle".to_string(),
+                    card_copy: "Copy".to_string(),
+                    card_link_url: Some("/front".to_string()),
+                    card_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                    card_link_label: Some("Learn More".to_string()),
+                }],
+            }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::KeyEvent;
+
+    fn app_with_card() -> App {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_page = 0;
+        app.selected_node = 1;
+        app.set_section_expanded(1, true);
+        if let PageNode::Section(section) = &mut app.site.pages[0].nodes[1] {
+            normalize_section_columns(section);
+            section.columns[0]
+                .components
+                .push(ComponentKind::Card.default_component());
+        } else {
+            panic!("expected starter node 2 to be dd-section");
+        }
+        app.selected_column = 0;
+        app.selected_component = 0;
+        app.selected_nested_item = 0;
+        app.sync_tree_row_with_selection();
+        app
+    }
+
+    fn send_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+        app.handle_event(Event::Key(KeyEvent::new(code, modifiers)))
+            .expect("key event should be handled");
+    }
+
+    fn selected_card(app: &App) -> &crate::model::DdCard {
+        let page = &app.site.pages[app.selected_page];
+        let section = match &page.nodes[app.selected_node] {
+            PageNode::Section(section) => section,
+            _ => panic!("selected node is not dd-section"),
+        };
+        let component = &section.columns[app.selected_column].components[app.selected_component];
+        match component {
+            crate::model::SectionComponent::Card(card) => card,
+            _ => panic!("selected component is not dd-card"),
+        }
+    }
+
+    #[test]
+    fn dd_card_keyflow_enter_tab_backtab_and_left_right_parent_fields() {
+        let mut app = app_with_card();
+        let rows = app.build_node_tree_rows();
+        let row_idx = rows
+            .iter()
+            .position(|row| {
+                matches!(
+                    row.kind,
+                    NodeTreeKind::Component {
+                        node_idx: 1,
+                        column_idx: 0,
+                        component_idx: 0
+                    }
+                )
+            })
+            .expect("dd-card component row should exist");
+        app.selected_tree_row = row_idx;
+        app.apply_tree_row_selection(rows[row_idx]);
+
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(app.input_mode, Some(InputMode::EditCardType)));
+        assert_eq!(app.input_buffer, "-default");
+
+        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        assert_eq!(app.input_buffer, "-horizontal");
+        assert_eq!(
+            selected_card(&app).card_type,
+            crate::model::CardType::Horizontal
+        );
+
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert!(matches!(app.input_mode, Some(InputMode::EditCardDataAos)));
+        let prev_aos = app.input_buffer.clone();
+        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        assert_ne!(app.input_buffer, prev_aos);
+
+        send_key(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT);
+        assert!(matches!(app.input_mode, Some(InputMode::EditCardType)));
+    }
+
+    #[test]
+    fn dd_card_keyflow_item_row_enter_and_link_target_cycle() {
+        let mut app = app_with_card();
+
+        let rows = app.build_node_tree_rows();
+        let row_idx = rows
+            .iter()
+            .position(|row| matches!(row.kind, NodeTreeKind::CardItem { .. }))
+            .expect("card item row should exist");
+        app.selected_tree_row = row_idx;
+        app.apply_tree_row_selection(rows[row_idx]);
+
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(
+            app.input_mode,
+            Some(InputMode::EditCardItemImageUrl)
+        ));
+        let fields = app.current_modal_fields();
+        assert!(fields.contains("- card_title:"));
+        assert!(!fields.contains("- section.id:"));
+
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // image_alt
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // title
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // subtitle
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // copy
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // link_url
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // link_target
+        assert!(matches!(
+            app.input_mode,
+            Some(InputMode::EditCardItemLinkTarget)
+        ));
+        assert_eq!(app.input_buffer, "_self");
+
+        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        assert_eq!(app.input_buffer, "_blank");
+    }
+
+    #[test]
+    fn dd_card_keyflow_add_remove_items_with_min_guard() {
+        let mut app = app_with_card();
+        assert_eq!(selected_card(&app).items.len(), 1);
+
+        send_key(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT);
+        assert_eq!(selected_card(&app).items.len(), 2);
+
+        send_key(&mut app, KeyCode::Char('X'), KeyModifiers::SHIFT);
+        assert_eq!(selected_card(&app).items.len(), 1);
+
+        send_key(&mut app, KeyCode::Char('X'), KeyModifiers::SHIFT);
+        assert_eq!(selected_card(&app).items.len(), 1);
+        assert!(app.status.contains("must keep at least one item"));
     }
 }

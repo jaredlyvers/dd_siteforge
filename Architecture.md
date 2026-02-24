@@ -19,6 +19,7 @@ Only these components are supported:
 4. `dd-accordion`
 5. `dd-alternating`
 6. `dd-blockquote`
+7. `dd-card`
 
 ### Typed Model
 
@@ -30,6 +31,7 @@ enum PageNode {
 
 enum SectionComponent {
     Banner(DdBanner),
+    Card(DdCard),
     Accordion(DdAccordion),
     Alternating(DdAlternating),
     Blockquote(DdBlockquote),
@@ -43,6 +45,7 @@ enum SectionComponent {
 - `dd-section` renders a column grid and each section component inside the selected columns.
 - `dd-accordion` FAQ schema (`ld+json`) is rendered only when `accordion_type` is `-faq`.
 - `dd-blockquote` renders quotation markup + `ld+json` quotation schema.
+- `dd-card` renders card item collections with optional link output when URL + label are present.
 - `dd-hero` and component AOS/class options are rendered from typed enum/string fields.
 - `dd-hero.copy` accepts Markdown and HTML; it is converted to HTML at export.
 
@@ -56,6 +59,7 @@ Validation runs on create/update/export:
 - Accordion: non-empty `group_name`; at least one item; each item needs title/content.
 - Alternating: at least one item; each item needs image, alt, title, and copy.
 - Blockquote: required image URL/alt, person name/title, and quote copy.
+- Card: non-empty `card_width`; at least one item; each item needs image/alt/title/subtitle/copy; optional links must provide URL + label together.
 
 ### TUI Editing Contract
 

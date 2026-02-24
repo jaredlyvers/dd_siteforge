@@ -85,6 +85,24 @@ mod tests {
                     blockquote_copy: "Quote A".to_string(),
                 }));
 
+            section
+                .components
+                .push(SectionComponent::Card(crate::model::DdCard {
+                    card_type: crate::model::CardType::Default,
+                    card_data_aos: crate::model::HeroAos::FadeIn,
+                    card_width: "dd-u-1-1 dd-u-md-12-24 dd-u-lg-8-24".to_string(),
+                    items: vec![crate::model::CardItem {
+                        card_image_url: "/assets/images/card.jpg".to_string(),
+                        card_image_alt: "Card image".to_string(),
+                        card_title: "Card A".to_string(),
+                        card_subtitle: "Sub A".to_string(),
+                        card_copy: "Copy A".to_string(),
+                        card_link_url: Some("/front".to_string()),
+                        card_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                        card_link_label: Some("Learn More".to_string()),
+                    }],
+                }));
+
             section.components.swap(0, 2);
         } else {
             panic!("starter site expected section at node index 1");
@@ -100,7 +118,7 @@ mod tests {
             panic!("loaded page expected section at node index 1");
         };
 
-        assert_eq!(loaded_section.components.len(), 4);
+        assert_eq!(loaded_section.components.len(), 5);
 
         match &loaded_section.components[0] {
             SectionComponent::Alternating(alternating) => {
@@ -131,6 +149,14 @@ mod tests {
                 assert_eq!(blockquote.blockquote_copy, "Quote A");
             }
             other => panic!("expected blockquote at index 3, got {:?}", other),
+        }
+
+        match &loaded_section.components[4] {
+            SectionComponent::Card(card) => {
+                assert_eq!(card.items.len(), 1);
+                assert_eq!(card.items[0].card_title, "Card A");
+            }
+            other => panic!("expected card at index 4, got {:?}", other),
         }
     }
 

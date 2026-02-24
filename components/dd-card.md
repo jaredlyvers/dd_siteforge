@@ -9,13 +9,13 @@ insert:
     card_width: "dd-u-1-1 dd-u-md-12-24 dd-u-lg-8-24"
     items:
       - card_image_url: "https://dummyimage.com/720x720/000/fff"
-      - card_image_alt: "Image alt text"
-      - card_title: "Title"
-      - card_subtitle: "Subtitle"
-      - card_copy: "Copy"
-      - card_link_url: "/front"
-      - card_link_target: "_self"
-      - card_link_label: "Learn More"
+        card_image_alt: "Image alt text"
+        card_title: "Title"
+        card_subtitle: "Subtitle"
+        card_copy: "Copy"
+        card_link_url: "/front"
+        card_link_target: "_self"
+        card_link_label: "Learn More"
 fields:
   - id: card_type
     required: true
@@ -29,14 +29,15 @@ fields:
     options: ["fade-in","fade-up","fade-right","fade-down","fade-left","zoom-in","zoom-in-up","zoom-in-down"]
     default: "fade-in"
     maps_to: ".dd-card__item[data-aos]"
+  - id: card_width
+    required: true
+    type: string
+    default: "dd-u-1-1 dd-u-md-12-24 dd-u-lg-8-24"
+    maps_to: ".dd-card__item class token"
   - id: items
     required: true
     type: array
     min_items: 1
-  - id: card_width
-    required: true
-    type: string
-    maps_to: ".dd-card__item class token"
     item_fields:
       - id: card_image_url
         required: true
@@ -50,6 +51,10 @@ fields:
         required: true
         type: string
         maps_to: ".dd-card__title"
+      - id: card_subtitle
+        required: true
+        type: string
+        maps_to: ".dd-card__subtitle"
       - id: card_copy
         required: true
         type: string
@@ -66,26 +71,32 @@ fields:
           mouse:
             wheel: "scroll lines"
       - id: card_link_url
-        required: true
+        required: false
         type: string
         maps_to: ".dd-card__link a[href]"
       - id: card_link_target
-        required: true
+        required: false
         type: enum
         options: ["_self", "_blank"]
+        default: "_self"
         maps_to: ".dd-card__link a[target]"
       - id: card_link_label
-        required: true
+        required: false
         type: string
         maps_to: ".dd-card__link a"
 edit_ui:
   tab_order:
     - card_type
-    - card_class
     - card_data_aos
-    - group_name
+    - card_width
+    - items[].card_image_url
+    - items[].card_image_alt
     - items[].card_title
+    - items[].card_subtitle
     - items[].card_copy
+    - items[].card_link_url
+    - items[].card_link_target
+    - items[].card_link_label
   navigation_tree:
     parent_row: "dd-card"
     child_rows: "items[]"
@@ -102,12 +113,17 @@ edit_ui:
   modal_fields:
     parent_edit_modes:
       - card_type
-      - card_class
       - card_data_aos
-      - group_name
+      - card_width
     item_edit_modes:
+      - items[].card_image_url
+      - items[].card_image_alt
       - items[].card_title
+      - items[].card_subtitle
       - items[].card_copy
+      - items[].card_link_url
+      - items[].card_link_target
+      - items[].card_link_label
     scope_rule: "when editing an items[] row, parent card fields are not editable; when editing parent row, item fields are not editable"
     hide_when_editing_card:
       - column.id
@@ -123,12 +139,13 @@ blueprint:
 ## HTML Template
 
 ```html
-<div class="dd-card">
+<div class="dd-card [card_type]">
   <div class="dd-card__items dd-g"><!-- cards loop inside items -->
-    <div class="dd-card__item l-box dd-u-1-1 dd-u-md-12-24" data-aos="fade-up">
+    <!-- repeat: items -->
+    <div class="dd-card__item l-box [card_width]" data-aos="[card_data_aos]">
       <div class="dd-card__body dd-g">
         <div class="dd-card__image">
-          <img src="[card_image_url]" alt="[card_image_alt]" class="dd-image" loading="lazy">
+          <img src="[card_image_url]" alt="[card_image_alt]" class="dd-img" loading="lazy">
         </div>
         <div class="dd-card__copy l-box">
           <div class="dd-card__title">
@@ -149,3 +166,8 @@ blueprint:
   </div>
 </div>
 ```
+
+## Conditional Markup
+
+- render `.dd-card__links` only when both `card_link_url` and `card_link_label` are non-empty
+- when `card_link_target` is empty, default to `_self`

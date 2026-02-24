@@ -10,7 +10,7 @@ insert:
     group_name: "group1"
     items:
       - accordion_title: "Accordion Item"
-        accordion_copy: "Accordion content"
+      - accordion_copy: "Accordion content"
 fields:
   - id: accordion_type
     required: true

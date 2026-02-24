@@ -6,7 +6,7 @@ use handlebars::Handlebars;
 use serde_json::{Value, json};
 
 use crate::model::{
-    DdAccordion, DdAlternating, DdBanner, DdBlockquote, DdHero, DdSection, Page, PageNode,
+    DdAccordion, DdAlternating, DdBanner, DdBlockquote, DdCard, DdHero, DdSection, Page, PageNode,
     SectionColumn, SectionComponent, Site,
 };
 
@@ -123,6 +123,7 @@ fn render_section(section: &DdSection) -> anyhow::Result<String> {
         for component in &column.components {
             let html = match component {
                 SectionComponent::Alternating(v) => render_alternating(v)?,
+                SectionComponent::Card(v) => render_card(v)?,
                 SectionComponent::Banner(v) => render_banner(v)?,
                 SectionComponent::Accordion(v) => render_accordion(v)?,
                 SectionComponent::Blockquote(v) => render_blockquote(v)?,
@@ -217,6 +218,78 @@ fn render_alternating(alternating: &DdAlternating) -> anyhow::Result<String> {
         );
     }
     render_inline(template, v)
+}
+
+fn render_card(card: &DdCard) -> anyhow::Result<String> {
+    let template = r#"<div class="dd-card {{card_type}}">
+  <div class="dd-card__items dd-g">
+    {{#each items}}
+    <div class="dd-card__item l-box {{../card_width}}" data-aos="{{../card_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+      <div class="dd-card__body dd-g">
+        <div class="dd-card__image">
+          <img src="{{card_image_url}}" alt="{{card_image_alt}}" class="dd-img" loading="lazy">
+        </div>
+        <div class="dd-card__copy l-box">
+          <div class="dd-card__title">
+            <h3>{{card_title}}</h3>
+          </div>
+          <div class="dd-card__subtitle">
+            <strong>{{card_subtitle}}</strong>
+          </div>
+          <p>{{card_copy}}</p>
+          {{#if has_link}}
+          <div class="dd-card__links dd-g">
+            <div class="dd-card__link">
+              <a href="{{card_link_url}}" target="{{card_link_target}}" class="dd-button -primary">{{card_link_label}}</a>
+            </div>
+          </div>
+          {{/if}}
+        </div>
+      </div>
+    </div>
+    {{/each}}
+  </div>
+</div>"#;
+    let mut items = Vec::new();
+    for item in &card.items {
+        let link_url = item
+            .card_link_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string);
+        let link_label = item
+            .card_link_label
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string);
+        let has_link = link_url.is_some() && link_label.is_some();
+        let link_target = item
+            .card_link_target
+            .as_ref()
+            .and_then(|v| serde_json::to_value(v).ok())
+            .map(|v| stringify_json(&v))
+            .unwrap_or_else(|| "_self".to_string());
+        items.push(json!({
+            "card_image_url": item.card_image_url,
+            "card_image_alt": item.card_image_alt,
+            "card_title": item.card_title,
+            "card_subtitle": item.card_subtitle,
+            "card_copy": item.card_copy,
+            "card_link_url": link_url.unwrap_or_default(),
+            "card_link_target": link_target,
+            "card_link_label": link_label.unwrap_or_default(),
+            "has_link": has_link
+        }));
+    }
+    let data = json!({
+        "card_type": serde_json::to_value(card.card_type).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-default".to_string()),
+        "card_data_aos": serde_json::to_value(card.card_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
+        "card_width": card.card_width,
+        "items": items
+    });
+    render_inline(template, data)
 }
 
 fn render_banner(banner: &DdBanner) -> anyhow::Result<String> {

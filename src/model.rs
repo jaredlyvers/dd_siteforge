@@ -79,6 +79,7 @@ pub struct SectionColumn {
 #[serde(tag = "component_type", rename_all = "snake_case")]
 pub enum SectionComponent {
     Alternating(DdAlternating),
+    Card(DdCard),
     Banner(DdBanner),
     Accordion(DdAccordion),
     Blockquote(DdBlockquote),
@@ -93,6 +94,29 @@ pub struct DdAlternating {
     #[serde(default = "default_alternating_data_aos")]
     pub alternating_data_aos: HeroAos,
     pub items: Vec<AlternatingItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DdCard {
+    #[serde(default = "default_card_type")]
+    pub card_type: CardType,
+    #[serde(default = "default_card_data_aos")]
+    pub card_data_aos: HeroAos,
+    #[serde(default = "default_card_width")]
+    pub card_width: String,
+    pub items: Vec<CardItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CardItem {
+    pub card_image_url: String,
+    pub card_image_alt: String,
+    pub card_title: String,
+    pub card_subtitle: String,
+    pub card_copy: String,
+    pub card_link_url: Option<String>,
+    pub card_link_target: Option<CardLinkTarget>,
+    pub card_link_label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,6 +194,18 @@ fn default_alternating_class() -> String {
 
 fn default_alternating_data_aos() -> HeroAos {
     HeroAos::FadeIn
+}
+
+fn default_card_type() -> CardType {
+    CardType::Default
+}
+
+fn default_card_data_aos() -> HeroAos {
+    HeroAos::FadeIn
+}
+
+fn default_card_width() -> String {
+    "dd-u-1-1 dd-u-md-12-24 dd-u-lg-8-24".to_string()
 }
 
 fn default_banner_class() -> BannerClass {
@@ -282,6 +318,22 @@ pub enum AlternatingType {
     Reverse,
     #[serde(rename = "-no-alternate")]
     NoAlternate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CardType {
+    #[serde(rename = "-default")]
+    Default,
+    #[serde(rename = "-horizontal")]
+    Horizontal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CardLinkTarget {
+    #[serde(rename = "_self")]
+    SelfTarget,
+    #[serde(rename = "_blank")]
+    Blank,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
