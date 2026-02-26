@@ -20,6 +20,9 @@ Only these components are supported:
 5. `dd-alternating`
 6. `dd-blockquote`
 7. `dd-card`
+8. `dd-cta`
+9. `dd-filmstrip`
+10. `dd-milestones`
 
 ### Typed Model
 
@@ -30,6 +33,9 @@ enum PageNode {
 }
 
 enum SectionComponent {
+    Cta(DdCta),
+    Filmstrip(DdFilmstrip),
+    Milestones(DdMilestones),
     Banner(DdBanner),
     Card(DdCard),
     Accordion(DdAccordion),
@@ -46,6 +52,9 @@ enum SectionComponent {
 - `dd-accordion` FAQ schema (`ld+json`) is rendered only when `accordion_type` is `-faq`.
 - `dd-blockquote` renders quotation markup + `ld+json` quotation schema.
 - `dd-card` renders card item collections with optional link output when URL + label are present.
+- `dd-cta` renders parent-only CTA content with optional link output when URL + label are present.
+- `dd-filmstrip` renders one item collection twice using identical source data; the second loop is aria-hidden.
+- `dd-milestones` renders an item grid using parent `data-aos` + width classes and optional per-item links.
 - `dd-hero` and component AOS/class options are rendered from typed enum/string fields.
 - `dd-hero.copy` accepts Markdown and HTML; it is converted to HTML at export.
 
@@ -60,6 +69,9 @@ Validation runs on create/update/export:
 - Alternating: at least one item; each item needs image, alt, title, and copy.
 - Blockquote: required image URL/alt, person name/title, and quote copy.
 - Card: non-empty `card_width`; at least one item; each item needs image/alt/title/subtitle/copy; optional links must provide URL + label together.
+- CTA: required class/image/aos/title/subtitle/copy; optional link fields must provide URL + label together.
+- Filmstrip: at least one item; each item needs image URL/alt/title; image URLs must be valid.
+- Milestones: non-empty `parent_width`; at least one item; each item needs percentage/title/subtitle/copy; optional links must provide URL + label together.
 
 ### TUI Editing Contract
 
@@ -67,7 +79,7 @@ Validation runs on create/update/export:
 - `Enter` starts editing selected node/row.
 - `Tab` / `Shift+Tab` moves between editable fields.
 - `Left` / `Right` cycles enum-style field options on active fields.
-- In multiline textarea fields (`hero.copy`, `alternating_copy`, `accordion_copy`, `blockquote_copy`), `Enter` inserts newline and `Ctrl+S` saves.
+- In multiline textarea fields (`hero.copy`, `alternating_copy`, `accordion_copy`, `blockquote_copy`, `cta_copy`, `card_copy`, `child_copy`), `Enter` inserts newline and `Ctrl+S` saves.
 - Editing is scoped to selected row type:
   - parent row edits parent fields
   - child row edits child fields

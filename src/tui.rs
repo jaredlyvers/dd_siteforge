@@ -80,6 +80,8 @@ struct App {
     expanded_accordion_items: HashSet<(usize, usize, usize, usize)>,
     expanded_alternating_items: HashSet<(usize, usize, usize, usize)>,
     expanded_card_items: HashSet<(usize, usize, usize, usize)>,
+    expanded_filmstrip_items: HashSet<(usize, usize, usize, usize)>,
+    expanded_milestones_items: HashSet<(usize, usize, usize, usize)>,
 }
 
 struct ComponentPickerState {
@@ -111,6 +113,16 @@ enum InputMode {
     EditBannerDataAos,
     EditBannerImageUrl,
     EditBannerImageAlt,
+    EditCtaClass,
+    EditCtaImageUrl,
+    EditCtaImageAlt,
+    EditCtaDataAos,
+    EditCtaTitle,
+    EditCtaSubtitle,
+    EditCtaCopy,
+    EditCtaLinkUrl,
+    EditCtaLinkTarget,
+    EditCtaLinkLabel,
     EditBlockquoteDataAos,
     EditBlockquoteImageUrl,
     EditBlockquoteImageAlt,
@@ -141,6 +153,20 @@ enum InputMode {
     EditCardItemLinkUrl,
     EditCardItemLinkTarget,
     EditCardItemLinkLabel,
+    EditFilmstripType,
+    EditFilmstripDataAos,
+    EditFilmstripItemImageUrl,
+    EditFilmstripItemImageAlt,
+    EditFilmstripItemTitle,
+    EditMilestonesDataAos,
+    EditMilestonesWidth,
+    EditMilestonesItemPercentage,
+    EditMilestonesItemTitle,
+    EditMilestonesItemSubtitle,
+    EditMilestonesItemCopy,
+    EditMilestonesItemLinkUrl,
+    EditMilestonesItemLinkTarget,
+    EditMilestonesItemLinkLabel,
 }
 
 #[derive(Clone, Copy)]
@@ -148,10 +174,13 @@ enum ComponentKind {
     Hero,
     Section,
     Banner,
+    Cta,
     Blockquote,
     Accordion,
     Alternating,
     Card,
+    Filmstrip,
+    Milestones,
 }
 
 #[derive(Clone, Copy)]
@@ -225,6 +254,18 @@ enum NodeTreeKind {
         component_idx: usize,
         item_idx: usize,
     },
+    FilmstripItem {
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+        item_idx: usize,
+    },
+    MilestonesItem {
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+        item_idx: usize,
+    },
 }
 
 impl App {
@@ -261,6 +302,8 @@ impl App {
             expanded_accordion_items: HashSet::new(),
             expanded_alternating_items: HashSet::new(),
             expanded_card_items: HashSet::new(),
+            expanded_filmstrip_items: HashSet::new(),
+            expanded_milestones_items: HashSet::new(),
         }
     }
 
@@ -559,7 +602,7 @@ impl App {
                 }
             }
             lines.push(String::new());
-            lines.push("Type to fuzzy search (e.g. hero, dd-card).".to_string());
+            lines.push("Type to fuzzy search (e.g. hero, dd-cta, dd-milestones).".to_string());
             lines.push("Up/Down to choose, Enter to add, Esc to cancel.".to_string());
             let picker_widget = Paragraph::new(lines.join("\n"))
                 .style(
@@ -904,6 +947,25 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
+                    Some(InputMode::EditCtaClass) => {
+                        self.cycle_cta_class(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditCtaClass) {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditCtaDataAos) => {
+                        self.cycle_cta_data_aos(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditCtaDataAos) {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditCtaLinkTarget) => {
+                        self.cycle_cta_link_target(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditCtaLinkTarget)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
                     Some(InputMode::EditBlockquoteDataAos) => {
                         self.cycle_blockquote_data_aos(false);
                         if let Some(v) =
@@ -928,6 +990,37 @@ impl App {
                         self.cycle_card_link_target(false);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditCardItemLinkTarget)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditFilmstripType) => {
+                        self.cycle_filmstrip_type(false);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditFilmstripType)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditFilmstripDataAos) => {
+                        self.cycle_filmstrip_data_aos(false);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditFilmstripDataAos)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditMilestonesDataAos) => {
+                        self.cycle_milestones_data_aos(false);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditMilestonesDataAos)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditMilestonesItemLinkTarget) => {
+                        self.cycle_milestones_link_target(false);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditMilestonesItemLinkTarget)
                         {
                             self.input_buffer = v;
                         }
@@ -1020,6 +1113,25 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
+                    Some(InputMode::EditCtaClass) => {
+                        self.cycle_cta_class(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditCtaClass) {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditCtaDataAos) => {
+                        self.cycle_cta_data_aos(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditCtaDataAos) {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditCtaLinkTarget) => {
+                        self.cycle_cta_link_target(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditCtaLinkTarget)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
                     Some(InputMode::EditBlockquoteDataAos) => {
                         self.cycle_blockquote_data_aos(true);
                         if let Some(v) =
@@ -1044,6 +1156,37 @@ impl App {
                         self.cycle_card_link_target(true);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditCardItemLinkTarget)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditFilmstripType) => {
+                        self.cycle_filmstrip_type(true);
+                        if let Some(v) = self.value_for_component_mode(InputMode::EditFilmstripType)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditFilmstripDataAos) => {
+                        self.cycle_filmstrip_data_aos(true);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditFilmstripDataAos)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditMilestonesDataAos) => {
+                        self.cycle_milestones_data_aos(true);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditMilestonesDataAos)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
+                    Some(InputMode::EditMilestonesItemLinkTarget) => {
+                        self.cycle_milestones_link_target(true);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditMilestonesItemLinkTarget)
                         {
                             self.input_buffer = v;
                         }
@@ -1118,8 +1261,10 @@ impl App {
             mode,
             InputMode::EditHeroCopy
                 | InputMode::EditAlternatingItemCopy
+                | InputMode::EditCtaCopy
                 | InputMode::EditBlockquoteCopy
                 | InputMode::EditCardItemCopy
+                | InputMode::EditMilestonesItemCopy
                 | InputMode::EditAccordionFirstContent
         )
     }
@@ -1132,8 +1277,10 @@ impl App {
         match mode {
             InputMode::EditHeroCopy => 3,
             InputMode::EditAlternatingItemCopy
+            | InputMode::EditCtaCopy
             | InputMode::EditBlockquoteCopy
             | InputMode::EditCardItemCopy
+            | InputMode::EditMilestonesItemCopy
             | InputMode::EditAccordionFirstContent => 5,
             _ => 1,
         }
@@ -1149,8 +1296,10 @@ impl App {
         match mode {
             InputMode::EditHeroCopy => Some(3),
             InputMode::EditAlternatingItemCopy
+            | InputMode::EditCtaCopy
             | InputMode::EditBlockquoteCopy
             | InputMode::EditCardItemCopy
+            | InputMode::EditMilestonesItemCopy
             | InputMode::EditAccordionFirstContent => None,
             _ => None,
         }
@@ -1429,6 +1578,64 @@ impl App {
                 InputMode::EditCardWidth,
             ]);
         }
+        let filmstrip_mode = matches!(
+            mode,
+            InputMode::EditFilmstripType
+                | InputMode::EditFilmstripDataAos
+                | InputMode::EditFilmstripItemImageUrl
+                | InputMode::EditFilmstripItemImageAlt
+                | InputMode::EditFilmstripItemTitle
+        );
+        if filmstrip_mode {
+            let rows = self.build_node_tree_rows();
+            let row_kind = rows
+                .get(self.selected_tree_row.min(rows.len().saturating_sub(1)))
+                .map(|r| r.kind);
+            if matches!(row_kind, Some(NodeTreeKind::FilmstripItem { .. })) {
+                return Some(vec![
+                    InputMode::EditFilmstripItemImageUrl,
+                    InputMode::EditFilmstripItemImageAlt,
+                    InputMode::EditFilmstripItemTitle,
+                ]);
+            }
+            return Some(vec![
+                InputMode::EditFilmstripType,
+                InputMode::EditFilmstripDataAos,
+            ]);
+        }
+        let milestones_mode = matches!(
+            mode,
+            InputMode::EditMilestonesDataAos
+                | InputMode::EditMilestonesWidth
+                | InputMode::EditMilestonesItemPercentage
+                | InputMode::EditMilestonesItemTitle
+                | InputMode::EditMilestonesItemSubtitle
+                | InputMode::EditMilestonesItemCopy
+                | InputMode::EditMilestonesItemLinkUrl
+                | InputMode::EditMilestonesItemLinkTarget
+                | InputMode::EditMilestonesItemLinkLabel
+        );
+        if milestones_mode {
+            let rows = self.build_node_tree_rows();
+            let row_kind = rows
+                .get(self.selected_tree_row.min(rows.len().saturating_sub(1)))
+                .map(|r| r.kind);
+            if matches!(row_kind, Some(NodeTreeKind::MilestonesItem { .. })) {
+                return Some(vec![
+                    InputMode::EditMilestonesItemPercentage,
+                    InputMode::EditMilestonesItemTitle,
+                    InputMode::EditMilestonesItemSubtitle,
+                    InputMode::EditMilestonesItemCopy,
+                    InputMode::EditMilestonesItemLinkUrl,
+                    InputMode::EditMilestonesItemLinkTarget,
+                    InputMode::EditMilestonesItemLinkLabel,
+                ]);
+            }
+            return Some(vec![
+                InputMode::EditMilestonesDataAos,
+                InputMode::EditMilestonesWidth,
+            ]);
+        }
         component_edit_group_for_mode(mode).map(|modes| modes.to_vec())
     }
 
@@ -1681,6 +1888,36 @@ impl App {
             InputMode::EditBannerImageAlt => {
                 "Editing dd-banner image alt text. Enter to save, esc to cancel.".to_string()
             }
+            InputMode::EditCtaClass => {
+                "Editing dd-cta class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaImageUrl => {
+                "Editing dd-cta image URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaImageAlt => {
+                "Editing dd-cta image alt text. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaDataAos => {
+                "Editing dd-cta data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaTitle => {
+                "Editing dd-cta title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaSubtitle => {
+                "Editing dd-cta subtitle. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaCopy => {
+                "Editing dd-cta copy. Enter: newline, Ctrl+S: save, esc: cancel.".to_string()
+            }
+            InputMode::EditCtaLinkUrl => {
+                "Editing dd-cta link URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaLinkTarget => {
+                "Editing dd-cta link target. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaLinkLabel => {
+                "Editing dd-cta link label. Enter to save, esc to cancel.".to_string()
+            }
             InputMode::EditAccordionType => {
                 "Editing dd-accordion type. Enter to save, esc to cancel.".to_string()
             }
@@ -1732,6 +1969,50 @@ impl App {
             }
             InputMode::EditCardItemLinkLabel => {
                 "Editing dd-card item link label. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditFilmstripType => {
+                "Editing dd-filmstrip type. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditFilmstripDataAos => {
+                "Editing dd-filmstrip data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditFilmstripItemImageUrl => {
+                "Editing dd-filmstrip item image URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditFilmstripItemImageAlt => {
+                "Editing dd-filmstrip item image alt text. Enter to save, esc to cancel."
+                    .to_string()
+            }
+            InputMode::EditFilmstripItemTitle => {
+                "Editing dd-filmstrip item title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesDataAos => {
+                "Editing dd-milestones parent_data_aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesWidth => {
+                "Editing dd-milestones parent_width. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesItemPercentage => {
+                "Editing dd-milestones child_percentage. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesItemTitle => {
+                "Editing dd-milestones child_title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesItemSubtitle => {
+                "Editing dd-milestones child_subtitle. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesItemCopy => {
+                "Editing dd-milestones child_copy. Enter: newline, Ctrl+S: save, esc: cancel."
+                    .to_string()
+            }
+            InputMode::EditMilestonesItemLinkUrl => {
+                "Editing dd-milestones child_link_url. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesItemLinkTarget => {
+                "Editing dd-milestones child_link_target. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesItemLinkLabel => {
+                "Editing dd-milestones child_link_label. Enter to save, esc to cancel.".to_string()
             }
         };
     }
@@ -1818,6 +2099,9 @@ impl App {
                 | InputMode::EditHeroCtaTarget2
                 | InputMode::EditSectionTitle
                 | InputMode::EditAlternatingItemCopy
+                | InputMode::EditCtaLinkUrl
+                | InputMode::EditCtaLinkTarget
+                | InputMode::EditCtaLinkLabel
                 | InputMode::EditBlockquoteCopy
                 | InputMode::EditCardItemLinkUrl
                 | InputMode::EditCardItemLinkTarget
@@ -2155,6 +2439,441 @@ impl App {
                         "Updated dd-banner image alt text.".to_string()
                     } else {
                         "Selected component is not dd-banner.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCtaClass) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
+                        if let Some(vc) = parse_cta_class(value.as_str()) {
+                            cta.cta_class = vc;
+                            applied = true;
+                            "Updated dd-cta class.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-cta class option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-cta.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCtaImageUrl) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
+                        cta.cta_image_url = value;
+                        applied = true;
+                        "Updated dd-cta image URL.".to_string()
+                    } else {
+                        "Selected component is not dd-cta.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCtaImageAlt) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
+                        cta.cta_image_alt = value;
+                        applied = true;
+                        "Updated dd-cta image alt text.".to_string()
+                    } else {
+                        "Selected component is not dd-cta.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCtaDataAos) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
+                        if let Some(va) = parse_hero_aos(value.as_str()) {
+                            cta.cta_data_aos = va;
+                            applied = true;
+                            "Updated dd-cta data-aos.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-cta data-aos option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-cta.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCtaTitle) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
+                        cta.cta_title = value;
+                        applied = true;
+                        "Updated dd-cta title.".to_string()
+                    } else {
+                        "Selected component is not dd-cta.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCtaSubtitle) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
+                        cta.cta_subtitle = value;
+                        applied = true;
+                        "Updated dd-cta subtitle.".to_string()
+                    } else {
+                        "Selected component is not dd-cta.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCtaCopy) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
+                        cta.cta_copy = value;
+                        applied = true;
+                        "Updated dd-cta copy.".to_string()
+                    } else {
+                        "Selected component is not dd-cta.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCtaLinkUrl) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
+                        cta.cta_link_url = if value.is_empty() { None } else { Some(value) };
+                        applied = true;
+                        "Updated dd-cta link URL.".to_string()
+                    } else {
+                        "Selected component is not dd-cta.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCtaLinkTarget) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
+                        if value.is_empty() {
+                            cta.cta_link_target = None;
+                            applied = true;
+                            "Updated dd-cta link target.".to_string()
+                        } else if let Some(vt) = parse_card_link_target(value.as_str()) {
+                            cta.cta_link_target = Some(vt);
+                            applied = true;
+                            "Updated dd-cta link target.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-cta link target option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-cta.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditCtaLinkLabel) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
+                        cta.cta_link_label = if value.is_empty() { None } else { Some(value) };
+                        applied = true;
+                        "Updated dd-cta link label.".to_string()
+                    } else {
+                        "Selected component is not dd-cta.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditFilmstripType) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Filmstrip(filmstrip) =
+                        &mut v.components[ci]
+                    {
+                        if let Some(vt) = parse_filmstrip_type(value.as_str()) {
+                            filmstrip.filmstrip_type = vt;
+                            applied = true;
+                            "Updated dd-filmstrip type.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-filmstrip type option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-filmstrip.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditFilmstripDataAos) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Filmstrip(filmstrip) =
+                        &mut v.components[ci]
+                    {
+                        if let Some(va) = parse_hero_aos(value.as_str()) {
+                            filmstrip.filmstrip_data_aos = va;
+                            applied = true;
+                            "Updated dd-filmstrip data-aos.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-filmstrip data-aos option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-filmstrip.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditFilmstripItemImageUrl) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Filmstrip(filmstrip) =
+                        &mut v.components[ci]
+                    {
+                        if let Some(ni) = nested_index(filmstrip.items.len(), selected_nested_item)
+                        {
+                            filmstrip.items[ni].image_url = value;
+                            applied = true;
+                            format!("Updated dd-filmstrip item {} image URL.", ni + 1)
+                        } else {
+                            "dd-filmstrip has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-filmstrip.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditFilmstripItemImageAlt) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Filmstrip(filmstrip) =
+                        &mut v.components[ci]
+                    {
+                        if let Some(ni) = nested_index(filmstrip.items.len(), selected_nested_item)
+                        {
+                            filmstrip.items[ni].image_alt = value;
+                            applied = true;
+                            format!("Updated dd-filmstrip item {} image alt.", ni + 1)
+                        } else {
+                            "dd-filmstrip has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-filmstrip.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditFilmstripItemTitle) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Filmstrip(filmstrip) =
+                        &mut v.components[ci]
+                    {
+                        if let Some(ni) = nested_index(filmstrip.items.len(), selected_nested_item)
+                        {
+                            filmstrip.items[ni].title = value;
+                            applied = true;
+                            format!("Updated dd-filmstrip item {} title.", ni + 1)
+                        } else {
+                            "dd-filmstrip has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-filmstrip.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditMilestonesDataAos) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Milestones(milestones) =
+                        &mut v.components[ci]
+                    {
+                        if let Some(va) = parse_hero_aos(value.as_str()) {
+                            milestones.parent_data_aos = va;
+                            applied = true;
+                            "Updated dd-milestones parent_data_aos.".to_string()
+                        } else {
+                            clear_input = false;
+                            "Invalid dd-milestones parent_data_aos option.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-milestones.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditMilestonesWidth) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Milestones(milestones) =
+                        &mut v.components[ci]
+                    {
+                        milestones.parent_width = value;
+                        applied = true;
+                        "Updated dd-milestones parent_width.".to_string()
+                    } else {
+                        "Selected component is not dd-milestones.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditMilestonesItemPercentage) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Milestones(milestones) =
+                        &mut v.components[ci]
+                    {
+                        if let Some(ni) = nested_index(milestones.items.len(), selected_nested_item)
+                        {
+                            milestones.items[ni].child_percentage = value;
+                            applied = true;
+                            format!("Updated dd-milestones item {} child_percentage.", ni + 1)
+                        } else {
+                            "dd-milestones has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-milestones.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditMilestonesItemTitle) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Milestones(milestones) =
+                        &mut v.components[ci]
+                    {
+                        if let Some(ni) = nested_index(milestones.items.len(), selected_nested_item)
+                        {
+                            milestones.items[ni].child_title = value;
+                            applied = true;
+                            format!("Updated dd-milestones item {} child_title.", ni + 1)
+                        } else {
+                            "dd-milestones has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-milestones.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditMilestonesItemSubtitle) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Milestones(milestones) =
+                        &mut v.components[ci]
+                    {
+                        if let Some(ni) = nested_index(milestones.items.len(), selected_nested_item)
+                        {
+                            milestones.items[ni].child_subtitle = value;
+                            applied = true;
+                            format!("Updated dd-milestones item {} child_subtitle.", ni + 1)
+                        } else {
+                            "dd-milestones has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-milestones.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditMilestonesItemCopy) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Milestones(milestones) =
+                        &mut v.components[ci]
+                    {
+                        if let Some(ni) = nested_index(milestones.items.len(), selected_nested_item)
+                        {
+                            milestones.items[ni].child_copy = value;
+                            applied = true;
+                            format!("Updated dd-milestones item {} child_copy.", ni + 1)
+                        } else {
+                            "dd-milestones has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-milestones.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditMilestonesItemLinkUrl) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Milestones(milestones) =
+                        &mut v.components[ci]
+                    {
+                        if let Some(ni) = nested_index(milestones.items.len(), selected_nested_item)
+                        {
+                            milestones.items[ni].child_link_url =
+                                if value.is_empty() { None } else { Some(value) };
+                            applied = true;
+                            format!("Updated dd-milestones item {} child_link_url.", ni + 1)
+                        } else {
+                            "dd-milestones has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-milestones.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditMilestonesItemLinkTarget) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Milestones(milestones) =
+                        &mut v.components[ci]
+                    {
+                        if let Some(ni) = nested_index(milestones.items.len(), selected_nested_item)
+                        {
+                            if value.is_empty() {
+                                milestones.items[ni].child_link_target = None;
+                                applied = true;
+                                format!("Updated dd-milestones item {} child_link_target.", ni + 1)
+                            } else if let Some(vt) = parse_card_link_target(value.as_str()) {
+                                milestones.items[ni].child_link_target = Some(vt);
+                                applied = true;
+                                format!("Updated dd-milestones item {} child_link_target.", ni + 1)
+                            } else {
+                                clear_input = false;
+                                "Invalid dd-milestones child_link_target option.".to_string()
+                            }
+                        } else {
+                            "dd-milestones has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-milestones.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditMilestonesItemLinkLabel) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Milestones(milestones) =
+                        &mut v.components[ci]
+                    {
+                        if let Some(ni) = nested_index(milestones.items.len(), selected_nested_item)
+                        {
+                            milestones.items[ni].child_link_label =
+                                if value.is_empty() { None } else { Some(value) };
+                            applied = true;
+                            format!("Updated dd-milestones item {} child_link_label.", ni + 1)
+                        } else {
+                            "dd-milestones has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-milestones.".to_string()
                     }
                 } else {
                     "Section has no components.".to_string()
@@ -2696,6 +3415,47 @@ impl App {
                                         }
                                     }
                                 }
+                                if let Some(crate::model::SectionComponent::Filmstrip(filmstrip)) =
+                                    col.components.get(component_idx)
+                                {
+                                    if self.is_filmstrip_items_expanded(
+                                        node_idx,
+                                        column_idx,
+                                        component_idx,
+                                    ) {
+                                        for (item_idx, _) in filmstrip.items.iter().enumerate() {
+                                            rows.push(NodeTreeRow {
+                                                kind: NodeTreeKind::FilmstripItem {
+                                                    node_idx,
+                                                    column_idx,
+                                                    component_idx,
+                                                    item_idx,
+                                                },
+                                            });
+                                        }
+                                    }
+                                }
+                                if let Some(crate::model::SectionComponent::Milestones(
+                                    milestones,
+                                )) = col.components.get(component_idx)
+                                {
+                                    if self.is_milestones_items_expanded(
+                                        node_idx,
+                                        column_idx,
+                                        component_idx,
+                                    ) {
+                                        for (item_idx, _) in milestones.items.iter().enumerate() {
+                                            rows.push(NodeTreeRow {
+                                                kind: NodeTreeKind::MilestonesItem {
+                                                    node_idx,
+                                                    column_idx,
+                                                    component_idx,
+                                                    item_idx,
+                                                },
+                                            });
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -2766,6 +3526,20 @@ impl App {
                     format!("       - {} {} {}", comp_i + 1, marker, label)
                 } else if matches!(component, crate::model::SectionComponent::Card(_)) {
                     let marker = if self.is_card_items_expanded(node_idx, col_i, comp_i) {
+                        "[-]"
+                    } else {
+                        "[+]"
+                    };
+                    format!("       - {} {} {}", comp_i + 1, marker, label)
+                } else if matches!(component, crate::model::SectionComponent::Filmstrip(_)) {
+                    let marker = if self.is_filmstrip_items_expanded(node_idx, col_i, comp_i) {
+                        "[-]"
+                    } else {
+                        "[+]"
+                    };
+                    format!("       - {} {} {}", comp_i + 1, marker, label)
+                } else if matches!(component, crate::model::SectionComponent::Milestones(_)) {
+                    let marker = if self.is_milestones_items_expanded(node_idx, col_i, comp_i) {
                         "[-]"
                     } else {
                         "[+]"
@@ -2889,6 +3663,84 @@ impl App {
                     truncate_ascii(title, 48)
                 )
             }
+            NodeTreeKind::FilmstripItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                    return format!("          - item {}", item_idx + 1);
+                };
+                let columns = section_columns_ref(section);
+                let col_i = column_idx.min(columns.len().saturating_sub(1));
+                let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
+                let title = if let Some(crate::model::SectionComponent::Filmstrip(filmstrip)) =
+                    columns[col_i].components.get(comp_i)
+                {
+                    filmstrip
+                        .items
+                        .get(item_idx)
+                        .map(|i| i.title.as_str())
+                        .unwrap_or("(none)")
+                } else {
+                    "(none)"
+                };
+                let marker = if node_idx == self.selected_node
+                    && col_i == self.selected_column
+                    && comp_i == self.selected_component
+                    && item_idx == self.selected_nested_item
+                {
+                    "*"
+                } else {
+                    "-"
+                };
+                format!(
+                    "          {} item {}: {}",
+                    marker,
+                    item_idx + 1,
+                    truncate_ascii(title, 48)
+                )
+            }
+            NodeTreeKind::MilestonesItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                    return format!("          - item {}", item_idx + 1);
+                };
+                let columns = section_columns_ref(section);
+                let col_i = column_idx.min(columns.len().saturating_sub(1));
+                let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
+                let title = if let Some(crate::model::SectionComponent::Milestones(milestones)) =
+                    columns[col_i].components.get(comp_i)
+                {
+                    milestones
+                        .items
+                        .get(item_idx)
+                        .map(|i| i.child_title.as_str())
+                        .unwrap_or("(none)")
+                } else {
+                    "(none)"
+                };
+                let marker = if node_idx == self.selected_node
+                    && col_i == self.selected_column
+                    && comp_i == self.selected_component
+                    && item_idx == self.selected_nested_item
+                {
+                    "*"
+                } else {
+                    "-"
+                };
+                format!(
+                    "          {} item {}: {}",
+                    marker,
+                    item_idx + 1,
+                    truncate_ascii(title, 48)
+                )
+            }
         }
     }
 
@@ -2958,6 +3810,28 @@ impl App {
                 self.selected_component = component_idx;
                 self.selected_nested_item = item_idx;
             }
+            NodeTreeKind::FilmstripItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                self.selected_node = node_idx;
+                self.selected_column = column_idx;
+                self.selected_component = component_idx;
+                self.selected_nested_item = item_idx;
+            }
+            NodeTreeKind::MilestonesItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                self.selected_node = node_idx;
+                self.selected_column = column_idx;
+                self.selected_component = component_idx;
+                self.selected_nested_item = item_idx;
+            }
         }
     }
 
@@ -3007,6 +3881,28 @@ impl App {
                     && item_idx == self.selected_nested_item
             }
             NodeTreeKind::CardItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                node_idx == self.selected_node
+                    && column_idx == self.selected_column
+                    && component_idx == self.selected_component
+                    && item_idx == self.selected_nested_item
+            }
+            NodeTreeKind::FilmstripItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                node_idx == self.selected_node
+                    && column_idx == self.selected_column
+                    && component_idx == self.selected_component
+                    && item_idx == self.selected_nested_item
+            }
+            NodeTreeKind::MilestonesItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -3135,6 +4031,64 @@ impl App {
         }
     }
 
+    fn is_filmstrip_items_expanded(
+        &self,
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+    ) -> bool {
+        !self.expanded_filmstrip_items.contains(&(
+            self.selected_page,
+            node_idx,
+            column_idx,
+            component_idx,
+        ))
+    }
+
+    fn set_filmstrip_items_expanded(
+        &mut self,
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+        expanded: bool,
+    ) {
+        let key = (self.selected_page, node_idx, column_idx, component_idx);
+        if expanded {
+            self.expanded_filmstrip_items.remove(&key);
+        } else {
+            self.expanded_filmstrip_items.insert(key);
+        }
+    }
+
+    fn is_milestones_items_expanded(
+        &self,
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+    ) -> bool {
+        !self.expanded_milestones_items.contains(&(
+            self.selected_page,
+            node_idx,
+            column_idx,
+            component_idx,
+        ))
+    }
+
+    fn set_milestones_items_expanded(
+        &mut self,
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+        expanded: bool,
+    ) {
+        let key = (self.selected_page, node_idx, column_idx, component_idx);
+        if expanded {
+            self.expanded_milestones_items.remove(&key);
+        } else {
+            self.expanded_milestones_items.insert(key);
+        }
+    }
+
     fn toggle_selected_tree_expanded(&mut self) {
         let rows = self.build_node_tree_rows();
         if rows.is_empty() {
@@ -3159,6 +4113,18 @@ impl App {
             ..
         }
         | NodeTreeKind::CardItem {
+            node_idx,
+            column_idx,
+            component_idx,
+            ..
+        }
+        | NodeTreeKind::FilmstripItem {
+            node_idx,
+            column_idx,
+            component_idx,
+            ..
+        }
+        | NodeTreeKind::MilestonesItem {
             node_idx,
             column_idx,
             component_idx,
@@ -3227,6 +4193,42 @@ impl App {
                 self.sync_tree_row_with_selection();
                 return;
             }
+            if matches!(
+                columns[col_i].components.get(comp_i),
+                Some(crate::model::SectionComponent::Filmstrip(_))
+            ) {
+                let expanded = self.is_filmstrip_items_expanded(node_idx, col_i, comp_i);
+                self.set_filmstrip_items_expanded(node_idx, col_i, comp_i, !expanded);
+                self.selected_node = node_idx;
+                self.selected_column = col_i;
+                self.selected_component = comp_i;
+                self.selected_nested_item = 0;
+                self.status = if expanded {
+                    "Collapsed filmstrip items.".to_string()
+                } else {
+                    "Expanded filmstrip items.".to_string()
+                };
+                self.sync_tree_row_with_selection();
+                return;
+            }
+            if matches!(
+                columns[col_i].components.get(comp_i),
+                Some(crate::model::SectionComponent::Milestones(_))
+            ) {
+                let expanded = self.is_milestones_items_expanded(node_idx, col_i, comp_i);
+                self.set_milestones_items_expanded(node_idx, col_i, comp_i, !expanded);
+                self.selected_node = node_idx;
+                self.selected_column = col_i;
+                self.selected_component = comp_i;
+                self.selected_nested_item = 0;
+                self.status = if expanded {
+                    "Collapsed milestones items.".to_string()
+                } else {
+                    "Expanded milestones items.".to_string()
+                };
+                self.sync_tree_row_with_selection();
+                return;
+            }
         }
         let node_idx = match row.kind {
             NodeTreeKind::Section { node_idx } => node_idx,
@@ -3235,6 +4237,8 @@ impl App {
             NodeTreeKind::AccordionItem { node_idx, .. } => node_idx,
             NodeTreeKind::AlternatingItem { node_idx, .. } => node_idx,
             NodeTreeKind::CardItem { node_idx, .. } => node_idx,
+            NodeTreeKind::FilmstripItem { node_idx, .. } => node_idx,
+            NodeTreeKind::MilestonesItem { node_idx, .. } => node_idx,
             NodeTreeKind::Hero { .. } => {
                 self.status = "Selected row is not a section.".to_string();
                 return;
@@ -3284,6 +4288,18 @@ impl App {
             }
             NodeTreeKind::CardItem { .. } => {
                 if self.set_component_input_mode(InputMode::EditCardItemImageUrl) {
+                    return;
+                }
+                self.begin_edit_selected_component_primary();
+            }
+            NodeTreeKind::FilmstripItem { .. } => {
+                if self.set_component_input_mode(InputMode::EditFilmstripItemImageUrl) {
+                    return;
+                }
+                self.begin_edit_selected_component_primary();
+            }
+            NodeTreeKind::MilestonesItem { .. } => {
+                if self.set_component_input_mode(InputMode::EditMilestonesItemPercentage) {
                     return;
                 }
                 self.begin_edit_selected_component_primary();
@@ -3390,6 +4406,34 @@ impl App {
             Some(InputMode::EditBannerDataAos) => "dd-banner.data_aos",
             Some(InputMode::EditBannerImageUrl) => "dd-banner_image_url",
             Some(InputMode::EditBannerImageAlt) => "dd-banner_image_alt",
+            Some(InputMode::EditCtaClass) => "dd-cta.class",
+            Some(InputMode::EditCtaImageUrl) => "dd-cta_image_url",
+            Some(InputMode::EditCtaImageAlt) => "dd-cta_image_alt",
+            Some(InputMode::EditCtaDataAos) => "dd-cta.data_aos",
+            Some(InputMode::EditCtaTitle) => "dd-cta_title",
+            Some(InputMode::EditCtaSubtitle) => "dd-cta_subtitle",
+            Some(InputMode::EditCtaCopy) => "dd-cta_copy",
+            Some(InputMode::EditCtaLinkUrl) => "dd-cta_link_url",
+            Some(InputMode::EditCtaLinkTarget) => "dd-cta_link_target",
+            Some(InputMode::EditCtaLinkLabel) => "dd-cta_link_label",
+            Some(InputMode::EditFilmstripType) => "dd-filmstrip.type",
+            Some(InputMode::EditFilmstripDataAos) => "dd-filmstrip.data_aos",
+            Some(InputMode::EditFilmstripItemImageUrl) => "dd-filmstrip.active.image_url",
+            Some(InputMode::EditFilmstripItemImageAlt) => "dd-filmstrip.active.image_alt",
+            Some(InputMode::EditFilmstripItemTitle) => "dd-filmstrip.active.title",
+            Some(InputMode::EditMilestonesDataAos) => "dd-milestones.parent_data_aos",
+            Some(InputMode::EditMilestonesWidth) => "dd-milestones.parent_width",
+            Some(InputMode::EditMilestonesItemPercentage) => {
+                "dd-milestones.active.child_percentage"
+            }
+            Some(InputMode::EditMilestonesItemTitle) => "dd-milestones.active.child_title",
+            Some(InputMode::EditMilestonesItemSubtitle) => "dd-milestones.active.child_subtitle",
+            Some(InputMode::EditMilestonesItemCopy) => "dd-milestones.active.child_copy",
+            Some(InputMode::EditMilestonesItemLinkUrl) => "dd-milestones.active.child_link_url",
+            Some(InputMode::EditMilestonesItemLinkTarget) => {
+                "dd-milestones.active.child_link_target"
+            }
+            Some(InputMode::EditMilestonesItemLinkLabel) => "dd-milestones.active.child_link_label",
             Some(InputMode::EditBlockquoteDataAos) => "dd-blockquote.data_aos",
             Some(InputMode::EditBlockquoteImageUrl) => "blockquote_image_url",
             Some(InputMode::EditBlockquoteImageAlt) => "blockquote_image_alt",
@@ -3469,7 +4513,9 @@ impl App {
                     Some(NodeTreeKind::Component { .. })
                     | Some(NodeTreeKind::AccordionItem { .. })
                     | Some(NodeTreeKind::AlternatingItem { .. })
-                    | Some(NodeTreeKind::CardItem { .. }) => {
+                    | Some(NodeTreeKind::CardItem { .. })
+                    | Some(NodeTreeKind::FilmstripItem { .. })
+                    | Some(NodeTreeKind::MilestonesItem { .. }) => {
                         let columns = section_columns_ref(section);
                         if let Some(col) =
                             columns.get(self.selected_column.min(columns.len().saturating_sub(1)))
@@ -3547,6 +4593,121 @@ impl App {
                                                 format!(
                                                     "- card_link_label: {}",
                                                     item.and_then(|i| i.card_link_label.as_deref())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                            ]
+                                            .join("\n")
+                                        }
+                                        _ => component_form(component, self.selected_nested_item),
+                                    }
+                                } else if let crate::model::SectionComponent::Filmstrip(filmstrip) =
+                                    component
+                                {
+                                    match self.input_mode {
+                                        Some(InputMode::EditFilmstripType)
+                                        | Some(InputMode::EditFilmstripDataAos) => vec![
+                                            format!(
+                                                "- parent_type: {}",
+                                                filmstrip_type_to_str(filmstrip.filmstrip_type)
+                                            ),
+                                            format!(
+                                                "- parent_data_aos: {}",
+                                                hero_aos_to_str(filmstrip.filmstrip_data_aos)
+                                            ),
+                                        ]
+                                        .join("\n"),
+                                        Some(InputMode::EditFilmstripItemImageUrl)
+                                        | Some(InputMode::EditFilmstripItemImageAlt)
+                                        | Some(InputMode::EditFilmstripItemTitle) => {
+                                            let item = nested_index(
+                                                filmstrip.items.len(),
+                                                self.selected_nested_item,
+                                            )
+                                            .and_then(|i| filmstrip.items.get(i));
+                                            vec![
+                                                format!(
+                                                    "- child_image_url: {}",
+                                                    item.map(|i| i.image_url.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- child_image_alt: {}",
+                                                    item.map(|i| i.image_alt.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- child_title: {}",
+                                                    item.map(|i| i.title.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                            ]
+                                            .join("\n")
+                                        }
+                                        _ => component_form(component, self.selected_nested_item),
+                                    }
+                                } else if let crate::model::SectionComponent::Milestones(
+                                    milestones,
+                                ) = component
+                                {
+                                    match self.input_mode {
+                                        Some(InputMode::EditMilestonesDataAos)
+                                        | Some(InputMode::EditMilestonesWidth) => vec![
+                                            format!(
+                                                "- parent_data_aos: {}",
+                                                hero_aos_to_str(milestones.parent_data_aos)
+                                            ),
+                                            format!("- parent_width: {}", milestones.parent_width),
+                                        ]
+                                        .join("\n"),
+                                        Some(InputMode::EditMilestonesItemPercentage)
+                                        | Some(InputMode::EditMilestonesItemTitle)
+                                        | Some(InputMode::EditMilestonesItemSubtitle)
+                                        | Some(InputMode::EditMilestonesItemCopy)
+                                        | Some(InputMode::EditMilestonesItemLinkUrl)
+                                        | Some(InputMode::EditMilestonesItemLinkTarget)
+                                        | Some(InputMode::EditMilestonesItemLinkLabel) => {
+                                            let item = nested_index(
+                                                milestones.items.len(),
+                                                self.selected_nested_item,
+                                            )
+                                            .and_then(|i| milestones.items.get(i));
+                                            vec![
+                                                format!(
+                                                    "- child_percentage: {}",
+                                                    item.map(|i| i.child_percentage.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- child_title: {}",
+                                                    item.map(|i| i.child_title.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- child_subtitle: {}",
+                                                    item.map(|i| i.child_subtitle.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- child_copy: {}",
+                                                    item.map(|i| i.child_copy.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- child_link_url: {}",
+                                                    item.and_then(|i| i.child_link_url.as_deref())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- child_link_target: {}",
+                                                    item.and_then(|i| i.child_link_target)
+                                                        .map(card_link_target_to_str)
+                                                        .unwrap_or("_self")
+                                                ),
+                                                format!(
+                                                    "- child_link_label: {}",
+                                                    item.and_then(|i| i
+                                                        .child_link_label
+                                                        .as_deref())
                                                         .unwrap_or("(none)")
                                                 ),
                                             ]
@@ -3787,6 +4948,80 @@ impl App {
             InputMode::EditBannerImageAlt => {
                 "Editing dd-banner image alt text. Enter to save, esc to cancel.".to_string()
             }
+            InputMode::EditCtaClass => {
+                "Editing dd-cta class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaImageUrl => {
+                "Editing dd-cta image URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaImageAlt => {
+                "Editing dd-cta image alt text. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaDataAos => {
+                "Editing dd-cta data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaTitle => {
+                "Editing dd-cta title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaSubtitle => {
+                "Editing dd-cta subtitle. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaCopy => {
+                "Editing dd-cta copy. Enter: newline, Ctrl+S: save, esc: cancel.".to_string()
+            }
+            InputMode::EditCtaLinkUrl => {
+                "Editing dd-cta link URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaLinkTarget => {
+                "Editing dd-cta link target. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaLinkLabel => {
+                "Editing dd-cta link label. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditFilmstripType => {
+                "Editing dd-filmstrip type. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditFilmstripDataAos => {
+                "Editing dd-filmstrip data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditFilmstripItemImageUrl => {
+                "Editing dd-filmstrip item image URL. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditFilmstripItemImageAlt => {
+                "Editing dd-filmstrip item image alt text. Enter to save, esc to cancel."
+                    .to_string()
+            }
+            InputMode::EditFilmstripItemTitle => {
+                "Editing dd-filmstrip item title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesDataAos => {
+                "Editing dd-milestones parent_data_aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesWidth => {
+                "Editing dd-milestones parent_width. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesItemPercentage => {
+                "Editing dd-milestones child_percentage. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesItemTitle => {
+                "Editing dd-milestones child_title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesItemSubtitle => {
+                "Editing dd-milestones child_subtitle. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesItemCopy => {
+                "Editing dd-milestones child_copy. Enter: newline, Ctrl+S: save, esc: cancel."
+                    .to_string()
+            }
+            InputMode::EditMilestonesItemLinkUrl => {
+                "Editing dd-milestones child_link_url. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesItemLinkTarget => {
+                "Editing dd-milestones child_link_target. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesItemLinkLabel => {
+                "Editing dd-milestones child_link_label. Enter to save, esc to cancel.".to_string()
+            }
             InputMode::EditBlockquoteDataAos => {
                 "Editing dd-blockquote data-aos. Enter to save, esc to cancel.".to_string()
             }
@@ -3990,6 +5225,134 @@ impl App {
                             InputMode::EditBannerImageAlt,
                             crate::model::SectionComponent::Banner(v),
                         ) => Some(v.banner_image_alt.clone()),
+                        (InputMode::EditCtaClass, crate::model::SectionComponent::Cta(v)) => {
+                            Some(cta_class_to_str(v.cta_class).to_string())
+                        }
+                        (InputMode::EditCtaImageUrl, crate::model::SectionComponent::Cta(v)) => {
+                            Some(v.cta_image_url.clone())
+                        }
+                        (InputMode::EditCtaImageAlt, crate::model::SectionComponent::Cta(v)) => {
+                            Some(v.cta_image_alt.clone())
+                        }
+                        (InputMode::EditCtaDataAos, crate::model::SectionComponent::Cta(v)) => {
+                            Some(hero_aos_to_str(v.cta_data_aos).to_string())
+                        }
+                        (InputMode::EditCtaTitle, crate::model::SectionComponent::Cta(v)) => {
+                            Some(v.cta_title.clone())
+                        }
+                        (InputMode::EditCtaSubtitle, crate::model::SectionComponent::Cta(v)) => {
+                            Some(v.cta_subtitle.clone())
+                        }
+                        (InputMode::EditCtaCopy, crate::model::SectionComponent::Cta(v)) => {
+                            Some(v.cta_copy.clone())
+                        }
+                        (InputMode::EditCtaLinkUrl, crate::model::SectionComponent::Cta(v)) => {
+                            Some(v.cta_link_url.clone().unwrap_or_default())
+                        }
+                        (InputMode::EditCtaLinkTarget, crate::model::SectionComponent::Cta(v)) => {
+                            Some(
+                                v.cta_link_target
+                                    .map(card_link_target_to_str)
+                                    .unwrap_or("_self")
+                                    .to_string(),
+                            )
+                        }
+                        (InputMode::EditCtaLinkLabel, crate::model::SectionComponent::Cta(v)) => {
+                            Some(v.cta_link_label.clone().unwrap_or_default())
+                        }
+                        (
+                            InputMode::EditFilmstripType,
+                            crate::model::SectionComponent::Filmstrip(v),
+                        ) => Some(filmstrip_type_to_str(v.filmstrip_type).to_string()),
+                        (
+                            InputMode::EditFilmstripDataAos,
+                            crate::model::SectionComponent::Filmstrip(v),
+                        ) => Some(hero_aos_to_str(v.filmstrip_data_aos).to_string()),
+                        (
+                            InputMode::EditFilmstripItemImageUrl,
+                            crate::model::SectionComponent::Filmstrip(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].image_url.clone())
+                        }
+                        (
+                            InputMode::EditFilmstripItemImageAlt,
+                            crate::model::SectionComponent::Filmstrip(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].image_alt.clone())
+                        }
+                        (
+                            InputMode::EditFilmstripItemTitle,
+                            crate::model::SectionComponent::Filmstrip(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].title.clone())
+                        }
+                        (
+                            InputMode::EditMilestonesDataAos,
+                            crate::model::SectionComponent::Milestones(v),
+                        ) => Some(hero_aos_to_str(v.parent_data_aos).to_string()),
+                        (
+                            InputMode::EditMilestonesWidth,
+                            crate::model::SectionComponent::Milestones(v),
+                        ) => Some(v.parent_width.clone()),
+                        (
+                            InputMode::EditMilestonesItemPercentage,
+                            crate::model::SectionComponent::Milestones(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].child_percentage.clone())
+                        }
+                        (
+                            InputMode::EditMilestonesItemTitle,
+                            crate::model::SectionComponent::Milestones(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].child_title.clone())
+                        }
+                        (
+                            InputMode::EditMilestonesItemSubtitle,
+                            crate::model::SectionComponent::Milestones(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].child_subtitle.clone())
+                        }
+                        (
+                            InputMode::EditMilestonesItemCopy,
+                            crate::model::SectionComponent::Milestones(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].child_copy.clone())
+                        }
+                        (
+                            InputMode::EditMilestonesItemLinkUrl,
+                            crate::model::SectionComponent::Milestones(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].child_link_url.clone().unwrap_or_default())
+                        }
+                        (
+                            InputMode::EditMilestonesItemLinkTarget,
+                            crate::model::SectionComponent::Milestones(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(
+                                card_link_target_to_str(
+                                    v.items[ni]
+                                        .child_link_target
+                                        .unwrap_or(crate::model::CardLinkTarget::SelfTarget),
+                                )
+                                .to_string(),
+                            )
+                        }
+                        (
+                            InputMode::EditMilestonesItemLinkLabel,
+                            crate::model::SectionComponent::Milestones(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].child_link_label.clone().unwrap_or_default())
+                        }
                         (InputMode::EditCardType, crate::model::SectionComponent::Card(v)) => {
                             Some(card_type_to_str(v.card_type).to_string())
                         }
@@ -4589,6 +5952,48 @@ impl App {
         self.status = result;
     }
 
+    fn cycle_filmstrip_type(&mut self, forward: bool) {
+        self.mutate_selected_filmstrip(
+            |f| {
+                f.filmstrip_type = next_filmstrip_type(f.filmstrip_type, forward);
+            },
+            "Cycled dd-filmstrip type.",
+        );
+    }
+
+    fn cycle_filmstrip_data_aos(&mut self, forward: bool) {
+        self.mutate_selected_filmstrip(
+            |f| {
+                f.filmstrip_data_aos = next_hero_aos(f.filmstrip_data_aos, forward);
+            },
+            "Cycled dd-filmstrip data-aos.",
+        );
+    }
+
+    fn cycle_milestones_data_aos(&mut self, forward: bool) {
+        self.mutate_selected_milestones(
+            |m| {
+                m.parent_data_aos = next_hero_aos(m.parent_data_aos, forward);
+            },
+            "Cycled dd-milestones parent_data_aos.",
+        );
+    }
+
+    fn cycle_milestones_link_target(&mut self, forward: bool) {
+        let selected_nested_item = self.selected_nested_item;
+        self.mutate_selected_milestones(
+            |m| {
+                if let Some(ni) = nested_index(m.items.len(), selected_nested_item) {
+                    let current = m.items[ni]
+                        .child_link_target
+                        .unwrap_or(crate::model::CardLinkTarget::SelfTarget);
+                    m.items[ni].child_link_target = Some(next_card_link_target(current, forward));
+                }
+            },
+            "Cycled dd-milestones child_link_target.",
+        );
+    }
+
     fn cycle_alternating_type(&mut self, forward: bool) {
         self.mutate_selected_alternating(
             |a| {
@@ -4679,6 +6084,72 @@ impl App {
         self.status = result;
     }
 
+    fn cycle_cta_class(&mut self, forward: bool) {
+        self.mutate_selected_cta(
+            |cta| {
+                cta.cta_class = next_cta_class(cta.cta_class, forward);
+            },
+            "Cycled dd-cta class.",
+        );
+    }
+
+    fn cycle_cta_data_aos(&mut self, forward: bool) {
+        self.mutate_selected_cta(
+            |cta| {
+                cta.cta_data_aos = next_hero_aos(cta.cta_data_aos, forward);
+            },
+            "Cycled dd-cta data-aos.",
+        );
+    }
+
+    fn cycle_cta_link_target(&mut self, forward: bool) {
+        self.mutate_selected_cta(
+            |cta| {
+                let current = cta
+                    .cta_link_target
+                    .unwrap_or(crate::model::CardLinkTarget::SelfTarget);
+                cta.cta_link_target = Some(next_card_link_target(current, forward));
+            },
+            "Cycled dd-cta link target.",
+        );
+    }
+
+    fn mutate_selected_cta<F>(&mut self, mutator: F, success_message: &str)
+    where
+        F: FnOnce(&mut crate::model::DdCta),
+    {
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut components[ci] {
+                        mutator(cta);
+                        success_message.to_string()
+                    } else {
+                        "Selected component is not dd-cta.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            _ => "Selected node is not a section.".to_string(),
+        };
+        self.status = result;
+    }
+
     fn mutate_selected_blockquote<F>(&mut self, mutator: F, success_message: &str)
     where
         F: FnOnce(&mut crate::model::DdBlockquote),
@@ -4743,6 +6214,82 @@ impl App {
                         success_message.to_string()
                     } else {
                         "Selected component is not dd-card.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            _ => "Selected node is not a section.".to_string(),
+        };
+        self.status = result;
+    }
+
+    fn mutate_selected_filmstrip<F>(&mut self, mutator: F, success_message: &str)
+    where
+        F: FnOnce(&mut crate::model::DdFilmstrip),
+    {
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Filmstrip(filmstrip) =
+                        &mut components[ci]
+                    {
+                        mutator(filmstrip);
+                        success_message.to_string()
+                    } else {
+                        "Selected component is not dd-filmstrip.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            _ => "Selected node is not a section.".to_string(),
+        };
+        self.status = result;
+    }
+
+    fn mutate_selected_milestones<F>(&mut self, mutator: F, success_message: &str)
+    where
+        F: FnOnce(&mut crate::model::DdMilestones),
+    {
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Milestones(milestones) =
+                        &mut components[ci]
+                    {
+                        mutator(milestones);
+                        success_message.to_string()
+                    } else {
+                        "Selected component is not dd-milestones.".to_string()
                     }
                 } else {
                     "Section has no components.".to_string()
@@ -4828,6 +6375,12 @@ impl App {
                 self.add_selected_alternating_item()
             }
             Some(crate::model::SectionComponent::Card(_)) => self.add_selected_card_item(),
+            Some(crate::model::SectionComponent::Filmstrip(_)) => {
+                self.add_selected_filmstrip_item()
+            }
+            Some(crate::model::SectionComponent::Milestones(_)) => {
+                self.add_selected_milestones_item()
+            }
             Some(_) => {
                 self.status = "Selected component does not support collection items.".to_string();
             }
@@ -4847,6 +6400,12 @@ impl App {
                 self.remove_selected_alternating_item()
             }
             Some(crate::model::SectionComponent::Card(_)) => self.remove_selected_card_item(),
+            Some(crate::model::SectionComponent::Filmstrip(_)) => {
+                self.remove_selected_filmstrip_item()
+            }
+            Some(crate::model::SectionComponent::Milestones(_)) => {
+                self.remove_selected_milestones_item()
+            }
             Some(_) => {
                 self.status = "Selected component does not support collection items.".to_string();
             }
@@ -5224,6 +6783,268 @@ impl App {
         self.status = result.1;
     }
 
+    fn add_selected_filmstrip_item(&mut self) {
+        let rows = self.build_node_tree_rows();
+        if rows.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let preferred_insert_after = match row.kind {
+            NodeTreeKind::FilmstripItem { item_idx, .. } => Some(item_idx),
+            _ => None,
+        };
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Filmstrip(filmstrip) =
+                        &mut components[ci]
+                    {
+                        let insert_idx = preferred_insert_after
+                            .map(|i| (i + 1).min(filmstrip.items.len()))
+                            .unwrap_or(filmstrip.items.len());
+                        let next_num = filmstrip.items.len() + 1;
+                        filmstrip.items.insert(
+                            insert_idx,
+                            crate::model::FilmstripItem {
+                                image_url: "https://dummyimage.com/256x256/000/fff".to_string(),
+                                image_alt: "Image alt text".to_string(),
+                                title: format!("Title {}", next_num),
+                            },
+                        );
+                        (
+                            Some(insert_idx),
+                            format!("Added dd-filmstrip item {}.", insert_idx + 1),
+                        )
+                    } else {
+                        (None, "Selected component is not dd-filmstrip.".to_string())
+                    }
+                } else {
+                    (None, "Section has no components.".to_string())
+                }
+            }
+            _ => (None, "Selected node is not a section.".to_string()),
+        };
+        if let Some(item_i) = result.0 {
+            self.selected_nested_item = item_i;
+            self.set_filmstrip_items_expanded(ni, selected_column, selected_component, true);
+            self.sync_tree_row_with_selection();
+        }
+        self.status = result.1;
+    }
+
+    fn remove_selected_filmstrip_item(&mut self) {
+        let rows = self.build_node_tree_rows();
+        if rows.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let selected_nested_item = self.selected_nested_item;
+        let preferred_remove = match row.kind {
+            NodeTreeKind::FilmstripItem { item_idx, .. } => Some(item_idx),
+            _ => None,
+        };
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Filmstrip(filmstrip) =
+                        &mut components[ci]
+                    {
+                        if filmstrip.items.len() <= 1 {
+                            (
+                                None,
+                                "dd-filmstrip must keep at least one item.".to_string(),
+                            )
+                        } else {
+                            let remove_i = preferred_remove.unwrap_or_else(|| {
+                                selected_nested_item.min(filmstrip.items.len().saturating_sub(1))
+                            });
+                            filmstrip.items.remove(remove_i);
+                            let next_i = remove_i.min(filmstrip.items.len().saturating_sub(1));
+                            (
+                                Some(next_i),
+                                format!("Removed dd-filmstrip item {}.", remove_i + 1),
+                            )
+                        }
+                    } else {
+                        (None, "Selected component is not dd-filmstrip.".to_string())
+                    }
+                } else {
+                    (None, "Section has no components.".to_string())
+                }
+            }
+            _ => (None, "Selected node is not a section.".to_string()),
+        };
+        if let Some(item_i) = result.0 {
+            self.selected_nested_item = item_i;
+            self.set_filmstrip_items_expanded(ni, selected_column, selected_component, true);
+            self.sync_tree_row_with_selection();
+        }
+        self.status = result.1;
+    }
+
+    fn add_selected_milestones_item(&mut self) {
+        let rows = self.build_node_tree_rows();
+        if rows.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let preferred_insert_after = match row.kind {
+            NodeTreeKind::MilestonesItem { item_idx, .. } => Some(item_idx),
+            _ => None,
+        };
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Milestones(milestones) =
+                        &mut components[ci]
+                    {
+                        let insert_idx = preferred_insert_after
+                            .map(|i| (i + 1).min(milestones.items.len()))
+                            .unwrap_or(milestones.items.len());
+                        let next_num = milestones.items.len() + 1;
+                        milestones.items.insert(
+                            insert_idx,
+                            crate::model::MilestonesItem {
+                                child_percentage: "70".to_string(),
+                                child_title: format!("Title {}", next_num),
+                                child_subtitle: "Subtitle".to_string(),
+                                child_copy: "Copy".to_string(),
+                                child_link_url: None,
+                                child_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                                child_link_label: None,
+                            },
+                        );
+                        (
+                            Some(insert_idx),
+                            format!("Added dd-milestones item {}.", insert_idx + 1),
+                        )
+                    } else {
+                        (None, "Selected component is not dd-milestones.".to_string())
+                    }
+                } else {
+                    (None, "Section has no components.".to_string())
+                }
+            }
+            _ => (None, "Selected node is not a section.".to_string()),
+        };
+        if let Some(item_i) = result.0 {
+            self.selected_nested_item = item_i;
+            self.set_milestones_items_expanded(ni, selected_column, selected_component, true);
+            self.sync_tree_row_with_selection();
+        }
+        self.status = result.1;
+    }
+
+    fn remove_selected_milestones_item(&mut self) {
+        let rows = self.build_node_tree_rows();
+        if rows.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let selected_nested_item = self.selected_nested_item;
+        let preferred_remove = match row.kind {
+            NodeTreeKind::MilestonesItem { item_idx, .. } => Some(item_idx),
+            _ => None,
+        };
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Milestones(milestones) =
+                        &mut components[ci]
+                    {
+                        if milestones.items.len() <= 1 {
+                            (
+                                None,
+                                "dd-milestones must keep at least one item.".to_string(),
+                            )
+                        } else {
+                            let remove_i = preferred_remove.unwrap_or_else(|| {
+                                selected_nested_item.min(milestones.items.len().saturating_sub(1))
+                            });
+                            milestones.items.remove(remove_i);
+                            let next_i = remove_i.min(milestones.items.len().saturating_sub(1));
+                            (
+                                Some(next_i),
+                                format!("Removed dd-milestones item {}.", remove_i + 1),
+                            )
+                        }
+                    } else {
+                        (None, "Selected component is not dd-milestones.".to_string())
+                    }
+                } else {
+                    (None, "Section has no components.".to_string())
+                }
+            }
+            _ => (None, "Selected node is not a section.".to_string()),
+        };
+        if let Some(item_i) = result.0 {
+            self.selected_nested_item = item_i;
+            self.set_milestones_items_expanded(ni, selected_column, selected_component, true);
+            self.sync_tree_row_with_selection();
+        }
+        self.status = result.1;
+    }
+
     fn mutate_selected_section<F>(&mut self, mutator: F, success_message: &str)
     where
         F: FnOnce(&mut crate::model::DdSection),
@@ -5441,6 +7262,18 @@ impl App {
                                     InputMode::EditBannerClass,
                                     banner_class_to_str(banner.banner_class).to_string(),
                                 )),
+                                crate::model::SectionComponent::Cta(cta) => Some((
+                                    InputMode::EditCtaClass,
+                                    cta_class_to_str(cta.cta_class).to_string(),
+                                )),
+                                crate::model::SectionComponent::Filmstrip(filmstrip) => Some((
+                                    InputMode::EditFilmstripType,
+                                    filmstrip_type_to_str(filmstrip.filmstrip_type).to_string(),
+                                )),
+                                crate::model::SectionComponent::Milestones(milestones) => Some((
+                                    InputMode::EditMilestonesDataAos,
+                                    hero_aos_to_str(milestones.parent_data_aos).to_string(),
+                                )),
                                 crate::model::SectionComponent::Card(card) => Some((
                                     InputMode::EditCardType,
                                     card_type_to_str(card.card_type).to_string(),
@@ -5468,7 +7301,8 @@ impl App {
 
         let Some((mode, value)) = selected else {
             self.status =
-                "Primary edit supports banner/card/blockquote/accordion/alternating.".to_string();
+                "Primary edit supports cta/filmstrip/milestones/banner/card/blockquote/accordion/alternating."
+                    .to_string();
             return;
         };
         self.input_mode = Some(mode);
@@ -5477,6 +7311,15 @@ impl App {
         self.status = match mode {
             InputMode::EditBannerClass => {
                 "Editing dd-banner class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditCtaClass => {
+                "Editing dd-cta class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditFilmstripType => {
+                "Editing dd-filmstrip type. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditMilestonesDataAos => {
+                "Editing dd-milestones parent_data_aos. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAccordionType => {
                 "Editing dd-accordion type. Enter to save, esc to cancel.".to_string()
@@ -6073,6 +7916,59 @@ fn banner_class_to_str(v: crate::model::BannerClass) -> &'static str {
     }
 }
 
+fn cta_class_to_str(v: crate::model::CtaClass) -> &'static str {
+    match v {
+        crate::model::CtaClass::TopLeft => "-top-left",
+        crate::model::CtaClass::TopCenter => "-top-center",
+        crate::model::CtaClass::TopRight => "-top-right",
+        crate::model::CtaClass::CenterLeft => "-center-left",
+        crate::model::CtaClass::CenterCenter => "-center-center",
+        crate::model::CtaClass::CenterRight => "-center-right",
+        crate::model::CtaClass::BottomLeft => "-bottom-left",
+        crate::model::CtaClass::BottomCenter => "-bottom-center",
+        crate::model::CtaClass::BottomRight => "-bottom-right",
+    }
+}
+
+fn parse_cta_class(raw: &str) -> Option<crate::model::CtaClass> {
+    match raw.trim() {
+        "-top-left" => Some(crate::model::CtaClass::TopLeft),
+        "-top-center" => Some(crate::model::CtaClass::TopCenter),
+        "-top-right" => Some(crate::model::CtaClass::TopRight),
+        "-center-left" => Some(crate::model::CtaClass::CenterLeft),
+        "-center-center" => Some(crate::model::CtaClass::CenterCenter),
+        "-center-right" => Some(crate::model::CtaClass::CenterRight),
+        "-bottom-left" => Some(crate::model::CtaClass::BottomLeft),
+        "-bottom-center" => Some(crate::model::CtaClass::BottomCenter),
+        "-bottom-right" => Some(crate::model::CtaClass::BottomRight),
+        _ => None,
+    }
+}
+
+fn next_cta_class(current: crate::model::CtaClass, forward: bool) -> crate::model::CtaClass {
+    use crate::model::CtaClass;
+    let all = [
+        CtaClass::TopLeft,
+        CtaClass::TopCenter,
+        CtaClass::TopRight,
+        CtaClass::CenterLeft,
+        CtaClass::CenterCenter,
+        CtaClass::CenterRight,
+        CtaClass::BottomLeft,
+        CtaClass::BottomCenter,
+        CtaClass::BottomRight,
+    ];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
+}
+
 fn parse_banner_class(raw: &str) -> Option<crate::model::BannerClass> {
     match raw.trim() {
         "-bg-top-left" => Some(crate::model::BannerClass::BgTopLeft),
@@ -6133,6 +8029,38 @@ fn parse_card_type(raw: &str) -> Option<crate::model::CardType> {
 fn next_card_type(current: crate::model::CardType, forward: bool) -> crate::model::CardType {
     use crate::model::CardType;
     let all = [CardType::Default, CardType::Horizontal];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
+}
+
+fn filmstrip_type_to_str(v: crate::model::FilmstripType) -> &'static str {
+    match v {
+        crate::model::FilmstripType::Default => "-default",
+        crate::model::FilmstripType::Reverse => "-reverse",
+    }
+}
+
+fn parse_filmstrip_type(raw: &str) -> Option<crate::model::FilmstripType> {
+    match raw.trim() {
+        "-default" => Some(crate::model::FilmstripType::Default),
+        "-reverse" => Some(crate::model::FilmstripType::Reverse),
+        _ => None,
+    }
+}
+
+fn next_filmstrip_type(
+    current: crate::model::FilmstripType,
+    forward: bool,
+) -> crate::model::FilmstripType {
+    use crate::model::FilmstripType;
+    let all = [FilmstripType::Default, FilmstripType::Reverse];
     let idx = all.iter().position(|v| *v == current).unwrap_or(0);
     let next_idx = if forward {
         (idx + 1) % all.len()
@@ -6382,6 +8310,9 @@ fn truncate_ascii(value: &str, max_chars: usize) -> String {
 
 fn component_label(component: &crate::model::SectionComponent) -> &'static str {
     match component {
+        crate::model::SectionComponent::Cta(_) => "dd-cta",
+        crate::model::SectionComponent::Filmstrip(_) => "dd-filmstrip",
+        crate::model::SectionComponent::Milestones(_) => "dd-milestones",
         crate::model::SectionComponent::Banner(_) => "dd-banner",
         crate::model::SectionComponent::Card(_) => "dd-card",
         crate::model::SectionComponent::Blockquote(_) => "dd-blockquote",
@@ -6392,6 +8323,23 @@ fn component_label(component: &crate::model::SectionComponent) -> &'static str {
 
 fn component_blueprint_label(component: &crate::model::SectionComponent) -> String {
     match component {
+        crate::model::SectionComponent::Cta(v) => {
+            format!("dd-cta | cta_title: {}", v.cta_title)
+        }
+        crate::model::SectionComponent::Filmstrip(v) => format!(
+            "dd-filmstrip | child_title: {}",
+            v.items
+                .first()
+                .map(|i| i.title.as_str())
+                .unwrap_or("(none)")
+        ),
+        crate::model::SectionComponent::Milestones(v) => format!(
+            "dd-milestones | child_title: {}",
+            v.items
+                .first()
+                .map(|i| i.child_title.as_str())
+                .unwrap_or("(none)")
+        ),
         crate::model::SectionComponent::Accordion(v) => format!(
             "dd-accordion | accordion_title: {}",
             v.items
@@ -6426,6 +8374,62 @@ fn component_form(
     selected_nested_item: usize,
 ) -> String {
     match component {
+        crate::model::SectionComponent::Cta(v) => format!(
+            "fields:\n  cta.class: {}\n  cta_image_url: {}\n  cta_image_alt: {}\n  cta.data_aos: {}\n  cta_title: {}\n  cta_subtitle: {}\n  cta_copy: {}\n  cta_link_url: {}\n  cta_link_target: {}\n  cta_link_label: {}",
+            cta_class_to_str(v.cta_class),
+            v.cta_image_url,
+            v.cta_image_alt,
+            hero_aos_to_str(v.cta_data_aos),
+            v.cta_title,
+            v.cta_subtitle,
+            v.cta_copy,
+            v.cta_link_url.as_deref().unwrap_or("(none)"),
+            v.cta_link_target
+                .map(card_link_target_to_str)
+                .unwrap_or("_self"),
+            v.cta_link_label.as_deref().unwrap_or("(none)")
+        ),
+        crate::model::SectionComponent::Filmstrip(v) => {
+            let active = nested_index(v.items.len(), selected_nested_item)
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            let item =
+                nested_index(v.items.len(), selected_nested_item).and_then(|i| v.items.get(i));
+            format!(
+                "fields:\n  parent_type: {}\n  parent_data_aos: {}\n  active_item: {}\n  child_image_url: {}\n  child_image_alt: {}\n  child_title: {}",
+                filmstrip_type_to_str(v.filmstrip_type),
+                hero_aos_to_str(v.filmstrip_data_aos),
+                active,
+                item.map(|i| i.image_url.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.image_alt.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.title.as_str()).unwrap_or("(none)")
+            )
+        }
+        crate::model::SectionComponent::Milestones(v) => {
+            let active = nested_index(v.items.len(), selected_nested_item)
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            let item =
+                nested_index(v.items.len(), selected_nested_item).and_then(|i| v.items.get(i));
+            format!(
+                "fields:\n  parent_data_aos: {}\n  parent_width: {}\n  active_item: {}\n  child_percentage: {}\n  child_title: {}\n  child_subtitle: {}\n  child_copy: {}\n  child_link_url: {}\n  child_link_target: {}\n  child_link_label: {}",
+                hero_aos_to_str(v.parent_data_aos),
+                v.parent_width,
+                active,
+                item.map(|i| i.child_percentage.as_str())
+                    .unwrap_or("(none)"),
+                item.map(|i| i.child_title.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.child_subtitle.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.child_copy.as_str()).unwrap_or("(none)"),
+                item.and_then(|i| i.child_link_url.as_deref())
+                    .unwrap_or("(none)"),
+                item.and_then(|i| i.child_link_target)
+                    .map(card_link_target_to_str)
+                    .unwrap_or("_self"),
+                item.and_then(|i| i.child_link_label.as_deref())
+                    .unwrap_or("(none)")
+            )
+        }
         crate::model::SectionComponent::Banner(v) => format!(
             "fields:\n  banner.class: {}\n  banner.data_aos: {}\n  banner_image_url: {}\n  banner_image_alt: {}",
             banner_class_to_str(v.banner_class),
@@ -6919,6 +8923,27 @@ fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]
             InputMode::EditBannerImageUrl,
             InputMode::EditBannerImageAlt,
         ]),
+        InputMode::EditCtaClass
+        | InputMode::EditCtaImageUrl
+        | InputMode::EditCtaImageAlt
+        | InputMode::EditCtaDataAos
+        | InputMode::EditCtaTitle
+        | InputMode::EditCtaSubtitle
+        | InputMode::EditCtaCopy
+        | InputMode::EditCtaLinkUrl
+        | InputMode::EditCtaLinkTarget
+        | InputMode::EditCtaLinkLabel => Some(&[
+            InputMode::EditCtaClass,
+            InputMode::EditCtaImageUrl,
+            InputMode::EditCtaImageAlt,
+            InputMode::EditCtaDataAos,
+            InputMode::EditCtaTitle,
+            InputMode::EditCtaSubtitle,
+            InputMode::EditCtaCopy,
+            InputMode::EditCtaLinkUrl,
+            InputMode::EditCtaLinkTarget,
+            InputMode::EditCtaLinkLabel,
+        ]),
         InputMode::EditBlockquoteDataAos
         | InputMode::EditBlockquoteImageUrl
         | InputMode::EditBlockquoteImageAlt
@@ -6954,6 +8979,36 @@ fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]
             InputMode::EditCardItemLinkUrl,
             InputMode::EditCardItemLinkTarget,
             InputMode::EditCardItemLinkLabel,
+        ]),
+        InputMode::EditFilmstripType
+        | InputMode::EditFilmstripDataAos
+        | InputMode::EditFilmstripItemImageUrl
+        | InputMode::EditFilmstripItemImageAlt
+        | InputMode::EditFilmstripItemTitle => Some(&[
+            InputMode::EditFilmstripType,
+            InputMode::EditFilmstripDataAos,
+            InputMode::EditFilmstripItemImageUrl,
+            InputMode::EditFilmstripItemImageAlt,
+            InputMode::EditFilmstripItemTitle,
+        ]),
+        InputMode::EditMilestonesDataAos
+        | InputMode::EditMilestonesWidth
+        | InputMode::EditMilestonesItemPercentage
+        | InputMode::EditMilestonesItemTitle
+        | InputMode::EditMilestonesItemSubtitle
+        | InputMode::EditMilestonesItemCopy
+        | InputMode::EditMilestonesItemLinkUrl
+        | InputMode::EditMilestonesItemLinkTarget
+        | InputMode::EditMilestonesItemLinkLabel => Some(&[
+            InputMode::EditMilestonesDataAos,
+            InputMode::EditMilestonesWidth,
+            InputMode::EditMilestonesItemPercentage,
+            InputMode::EditMilestonesItemTitle,
+            InputMode::EditMilestonesItemSubtitle,
+            InputMode::EditMilestonesItemCopy,
+            InputMode::EditMilestonesItemLinkUrl,
+            InputMode::EditMilestonesItemLinkTarget,
+            InputMode::EditMilestonesItemLinkLabel,
         ]),
         InputMode::EditAccordionType
         | InputMode::EditAccordionClass
@@ -6999,9 +9054,9 @@ fn help_text() -> String {
         "  Up/Down or mouse wheel: Select row in Nodes tree",
         "  PageUp/PageDown: Scroll Details blueprint panel",
         "  Enter: Edit selected row",
-        "  Space: Expand/collapse selected section or accordion/alternating items",
-        "  /: Open insert fuzzy finder (hero/section/banner/blockquote/accordion/alternating/card)",
-        "  A / X: Add/remove dd-accordion, dd-alternating, or dd-card item",
+        "  Space: Expand/collapse selected section or accordion/alternating/card/filmstrip/milestones items",
+        "  /: Open insert fuzzy finder (hero/section/cta/banner/blockquote/accordion/alternating/card/filmstrip/milestones)",
+        "  A / X: Add/remove dd-accordion, dd-alternating, dd-card, dd-filmstrip, or dd-milestones item",
         "  d: Delete selected node",
         "  J / K: Move selected node down / up",
         "",
@@ -7015,8 +9070,8 @@ fn help_text() -> String {
         "Edit modal:",
         "  Any edit command opens a modal with editable fields",
         "  Tab / Shift+Tab: Next/previous editable field for selected row",
-        "  hero.copy / alternating_copy / accordion_copy / blockquote_copy / card_copy: Up/Down move line, wheel scroll, Enter newline, Ctrl+S save",
-        "  Left / Right: Cycle section/hero/banner/accordion/alternating/blockquote/card option fields when active",
+        "  hero.copy / alternating_copy / accordion_copy / blockquote_copy / card_copy / child_copy: Up/Down move line, wheel scroll, Enter newline, Ctrl+S save",
+        "  Left / Right: Cycle section/hero/cta/banner/accordion/alternating/blockquote/card/filmstrip/milestones option fields when active",
         "  Enter: Confirm edit",
         "  Esc: Cancel edit",
         "  Backspace: Delete character",
@@ -7029,11 +9084,14 @@ impl ComponentKind {
         &[
             Self::Hero,
             Self::Section,
+            Self::Cta,
             Self::Banner,
             Self::Blockquote,
             Self::Accordion,
             Self::Alternating,
             Self::Card,
+            Self::Filmstrip,
+            Self::Milestones,
         ]
     }
 
@@ -7041,11 +9099,14 @@ impl ComponentKind {
         match self {
             ComponentKind::Hero => "dd-hero",
             ComponentKind::Section => "dd-section",
+            ComponentKind::Cta => "dd-cta",
             ComponentKind::Banner => "dd-banner",
             ComponentKind::Blockquote => "dd-blockquote",
             ComponentKind::Accordion => "dd-accordion",
             ComponentKind::Alternating => "dd-alternating",
             ComponentKind::Card => "dd-card",
+            ComponentKind::Filmstrip => "dd-filmstrip",
+            ComponentKind::Milestones => "dd-milestones",
         }
     }
 
@@ -7054,6 +9115,18 @@ impl ComponentKind {
             ComponentKind::Hero | ComponentKind::Section => {
                 unreachable!("top-level kinds do not map to section components")
             }
+            ComponentKind::Cta => crate::model::SectionComponent::Cta(crate::model::DdCta {
+                cta_class: crate::model::CtaClass::TopLeft,
+                cta_image_url: "https://dummyimage.com/1920x1080/000000/fff".to_string(),
+                cta_image_alt: "Image alt".to_string(),
+                cta_data_aos: crate::model::HeroAos::FadeIn,
+                cta_title: "Title".to_string(),
+                cta_subtitle: "Subtitle".to_string(),
+                cta_copy: "Copy".to_string(),
+                cta_link_url: Some("/path".to_string()),
+                cta_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                cta_link_label: Some("Learn More".to_string()),
+            }),
             ComponentKind::Banner => {
                 crate::model::SectionComponent::Banner(crate::model::DdBanner {
                     banner_class: crate::model::BannerClass::BgCenterCenter,
@@ -7113,6 +9186,32 @@ impl ComponentKind {
                     card_link_label: Some("Learn More".to_string()),
                 }],
             }),
+            ComponentKind::Filmstrip => {
+                crate::model::SectionComponent::Filmstrip(crate::model::DdFilmstrip {
+                    filmstrip_type: crate::model::FilmstripType::Default,
+                    filmstrip_data_aos: crate::model::HeroAos::FadeIn,
+                    items: vec![crate::model::FilmstripItem {
+                        image_url: "https://dummyimage.com/256x256/000/fff".to_string(),
+                        image_alt: "Image alt text".to_string(),
+                        title: "Title".to_string(),
+                    }],
+                })
+            }
+            ComponentKind::Milestones => {
+                crate::model::SectionComponent::Milestones(crate::model::DdMilestones {
+                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    parent_width: "dd-u-1-1 dd-u-md-12-24".to_string(),
+                    items: vec![crate::model::MilestonesItem {
+                        child_percentage: "70".to_string(),
+                        child_title: "Title".to_string(),
+                        child_subtitle: "Subtitle".to_string(),
+                        child_copy: "Copy".to_string(),
+                        child_link_url: None,
+                        child_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                        child_link_label: None,
+                    }],
+                })
+            }
         }
     }
 }
@@ -7157,6 +9256,39 @@ mod tests {
         match component {
             crate::model::SectionComponent::Card(card) => card,
             _ => panic!("selected component is not dd-card"),
+        }
+    }
+
+    fn app_with_cta() -> App {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_page = 0;
+        app.selected_node = 1;
+        app.set_section_expanded(1, true);
+        if let PageNode::Section(section) = &mut app.site.pages[0].nodes[1] {
+            normalize_section_columns(section);
+            section.columns[0]
+                .components
+                .push(ComponentKind::Cta.default_component());
+        } else {
+            panic!("expected starter node 2 to be dd-section");
+        }
+        app.selected_column = 0;
+        app.selected_component = 0;
+        app.selected_nested_item = 0;
+        app.sync_tree_row_with_selection();
+        app
+    }
+
+    fn selected_cta(app: &App) -> &crate::model::DdCta {
+        let page = &app.site.pages[app.selected_page];
+        let section = match &page.nodes[app.selected_node] {
+            PageNode::Section(section) => section,
+            _ => panic!("selected node is not dd-section"),
+        };
+        let component = &section.columns[app.selected_column].components[app.selected_component];
+        match component {
+            crate::model::SectionComponent::Cta(cta) => cta,
+            _ => panic!("selected component is not dd-cta"),
         }
     }
 
@@ -7252,5 +9384,95 @@ mod tests {
         send_key(&mut app, KeyCode::Char('X'), KeyModifiers::SHIFT);
         assert_eq!(selected_card(&app).items.len(), 1);
         assert!(app.status.contains("must keep at least one item"));
+    }
+
+    #[test]
+    fn dd_cta_keyflow_enter_tab_backtab_and_left_right_cycle_fields() {
+        let mut app = app_with_cta();
+        let rows = app.build_node_tree_rows();
+        let row_idx = rows
+            .iter()
+            .position(|row| {
+                matches!(
+                    row.kind,
+                    NodeTreeKind::Component {
+                        node_idx: 1,
+                        column_idx: 0,
+                        component_idx: 0
+                    }
+                )
+            })
+            .expect("dd-cta component row should exist");
+        app.selected_tree_row = row_idx;
+        app.apply_tree_row_selection(rows[row_idx]);
+
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(app.input_mode, Some(InputMode::EditCtaClass)));
+        assert_eq!(app.input_buffer, "-top-left");
+
+        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        assert_eq!(app.input_buffer, "-top-center");
+        assert_eq!(
+            selected_cta(&app).cta_class,
+            crate::model::CtaClass::TopCenter
+        );
+
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // image_url
+        assert!(matches!(app.input_mode, Some(InputMode::EditCtaImageUrl)));
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // image_alt
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // data_aos
+        assert!(matches!(app.input_mode, Some(InputMode::EditCtaDataAos)));
+        let prev_aos = app.input_buffer.clone();
+        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        assert_ne!(app.input_buffer, prev_aos);
+
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // title
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // subtitle
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // copy
+        assert!(matches!(app.input_mode, Some(InputMode::EditCtaCopy)));
+
+        send_key(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT);
+        assert!(matches!(app.input_mode, Some(InputMode::EditCtaSubtitle)));
+    }
+
+    #[test]
+    fn dd_cta_keyflow_link_target_cycle_and_optional_fields() {
+        let mut app = app_with_cta();
+        let rows = app.build_node_tree_rows();
+        let row_idx = rows
+            .iter()
+            .position(|row| {
+                matches!(
+                    row.kind,
+                    NodeTreeKind::Component {
+                        node_idx: 1,
+                        column_idx: 0,
+                        component_idx: 0
+                    }
+                )
+            })
+            .expect("dd-cta component row should exist");
+        app.selected_tree_row = row_idx;
+        app.apply_tree_row_selection(rows[row_idx]);
+
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        for _ in 0..8 {
+            send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        }
+        assert!(matches!(app.input_mode, Some(InputMode::EditCtaLinkTarget)));
+        assert_eq!(app.input_buffer, "_self");
+
+        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        assert_eq!(app.input_buffer, "_blank");
+        assert_eq!(
+            selected_cta(&app).cta_link_target,
+            Some(crate::model::CardLinkTarget::Blank)
+        );
+
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert!(matches!(app.input_mode, Some(InputMode::EditCtaLinkLabel)));
+        let fields = app.current_modal_fields();
+        assert!(fields.contains("cta_title"));
+        assert!(!fields.contains("section.id"));
     }
 }

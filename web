@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "id": "site-1",
+  "name": "My Site",
+  "theme": {
+    "primary_color": "#88d9f7",
+    "secondary_color": "#ffca76",
+    "tertiary_color": "#f98971",
+    "support_color": "#46be8c"
+  },
+  "pages": [
+    {
+      "id": "page-home",
+      "slug": "index",
+      "title": "Home",
+      "meta_description": "Starter page",
+      "nodes": [
+        {
+          "node_type": "hero",
+          "image": "/assets/images/hero.jpg",
+          "hero_class": "-full-full",
+          "hero_aos": "fade-in",
+          "custom_css": null,
+          "title": "Build with dd-framework",
+          "subtitle": "Framework-native static page builder",
+          "copy": "Compose pages with typed component schemas.",
+          "cta_text": "Get Started",
+          "cta_link": "/start",
+          "cta_target": "_self",
+          "cta_text_2": "Learn More",
+          "cta_link_2": "/learn-more",
+          "cta_target_2": "_self",
+          "image_alt": "Decorative hero",
+          "image_mobile": null,
+          "image_tablet": null,
+          "image_desktop": null,
+          "image_class": "-full-full"
+        },
+        {
+          "node_type": "section",
+          "id": "section-1",
+          "section_title": "Ready to publish?",
+          "section_class": "-full-contained",
+          "item_box_class": "l-box",
+          "columns": [
+            {
+              "id": "column-1",
+              "width_class": "dd-u-1-1",
+              "components": []
+            }
+          ],
+          "components": []
+        }
+      ]
+    }
+  ]
+}

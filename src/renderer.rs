@@ -6,8 +6,8 @@ use handlebars::Handlebars;
 use serde_json::{Value, json};
 
 use crate::model::{
-    DdAccordion, DdAlternating, DdBanner, DdBlockquote, DdCard, DdHero, DdSection, Page, PageNode,
-    SectionColumn, SectionComponent, Site,
+    DdAccordion, DdAlternating, DdBanner, DdBlockquote, DdCard, DdCta, DdFilmstrip, DdHero,
+    DdMilestones, DdSection, Page, PageNode, SectionColumn, SectionComponent, Site,
 };
 
 const PAGE_TEMPLATE: &str = r#"<!DOCTYPE html>
@@ -124,6 +124,9 @@ fn render_section(section: &DdSection) -> anyhow::Result<String> {
             let html = match component {
                 SectionComponent::Alternating(v) => render_alternating(v)?,
                 SectionComponent::Card(v) => render_card(v)?,
+                SectionComponent::Cta(v) => render_cta(v)?,
+                SectionComponent::Filmstrip(v) => render_filmstrip(v)?,
+                SectionComponent::Milestones(v) => render_milestones(v)?,
                 SectionComponent::Banner(v) => render_banner(v)?,
                 SectionComponent::Accordion(v) => render_accordion(v)?,
                 SectionComponent::Blockquote(v) => render_blockquote(v)?,
@@ -320,6 +323,164 @@ fn render_banner(banner: &DdBanner) -> anyhow::Result<String> {
         );
     }
     render_inline(template, v)
+}
+
+fn render_cta(cta: &DdCta) -> anyhow::Result<String> {
+    let template = r#"<div class="dd-cta {{cta_class}}">
+  <div class="dd-cta__image" style="background-image: url({{cta_image_url}});">
+    <picture>
+      <img src="{{cta_image_url}}" class="dd-img" alt="{{cta_image_alt}}" />
+    </picture>
+  </div>
+  <div class="dd-cta__content dd-g" data-aos="{{cta_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-center" data-aos-delay="100">
+    <div class="dd-cta__copy dd-u-1-1 dd-u-md-12-24">
+      <div class="dd-cta__title">
+        <h2>{{cta_title}}</h2>
+      </div>
+      <div class="dd-cta__subtitle">
+        <strong>{{cta_subtitle}}</strong>
+      </div>
+      <p>{{cta_copy}}</p>
+      {{#if has_link}}
+      <div class="dd-cta__links dd-g -x-center">
+        <div class="dd-cta__link">
+          <a href="{{cta_link_url}}" class="dd-button -primary" target="{{cta_link_target}}">{{cta_link_label}}</a>
+        </div>
+      </div>
+      {{/if}}
+    </div>
+  </div>
+</div>"#;
+
+    let link_url = cta
+        .cta_link_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string);
+    let link_label = cta
+        .cta_link_label
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string);
+    let has_link = link_url.is_some() && link_label.is_some();
+    let link_target = cta
+        .cta_link_target
+        .as_ref()
+        .and_then(|v| serde_json::to_value(v).ok())
+        .map(|v| stringify_json(&v))
+        .unwrap_or_else(|| "_self".to_string());
+
+    let data = json!({
+        "cta_class": serde_json::to_value(cta.cta_class).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-top-left".to_string()),
+        "cta_image_url": cta.cta_image_url,
+        "cta_image_alt": cta.cta_image_alt,
+        "cta_data_aos": serde_json::to_value(cta.cta_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
+        "cta_title": cta.cta_title,
+        "cta_subtitle": cta.cta_subtitle,
+        "cta_copy": cta.cta_copy,
+        "cta_link_url": link_url.unwrap_or_default(),
+        "cta_link_target": link_target,
+        "cta_link_label": link_label.unwrap_or_default(),
+        "has_link": has_link
+    });
+    render_inline(template, data)
+}
+
+fn render_filmstrip(filmstrip: &DdFilmstrip) -> anyhow::Result<String> {
+    let template = r#"<div class="dd-filmstrip {{filmstrip_type}}" data-aos="{{filmstrip_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-center" data-aos-delay="100">
+  <ul class="dd-filmstrip__content">
+    {{#each items}}
+    <li>
+      <img src="{{image_url}}" alt="{{image_alt}}" class="dd-img" loading="lazy">
+      <figure class="dd-filmstrip__title">{{title}}</figure>
+    </li>
+    {{/each}}
+  </ul>
+
+  <ul aria-hidden="true" class="dd-filmstrip__content">
+    {{#each items}}
+    <li role="presentation">
+      <img src="{{image_url}}" alt="{{image_alt}}" class="dd-img" loading="lazy">
+      <figure class="dd-filmstrip__title">{{title}}</figure>
+    </li>
+    {{/each}}
+  </ul>
+</div>"#;
+
+    let data = json!({
+        "filmstrip_type": serde_json::to_value(filmstrip.filmstrip_type).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-default".to_string()),
+        "filmstrip_data_aos": serde_json::to_value(filmstrip.filmstrip_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
+        "items": filmstrip.items
+    });
+    render_inline(template, data)
+}
+
+fn render_milestones(milestones: &DdMilestones) -> anyhow::Result<String> {
+    let template = r#"<div class="dd-milestones">
+  <div class="dd-milestones__content">
+    <div class="dd-milestones__items dd-g">
+      {{#each items}}
+      <div class="dd-milestones__item l-box {{../parent_width}}" data-aos="{{../parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-center" data-aos-delay="100">
+        <div class="dd-milestones__body l-box">
+          <div class="dd-milestones__percentage" data-number="{{child_percentage}}"><span class="number">{{child_percentage}}</span>%</div>
+          <div>
+            <div class="dd-milestones__title"><h2>{{child_title}}</h2></div>
+            <div class="dd-milestones__subtitle"><strong>{{child_subtitle}}</strong></div>
+            <div class="dd-milestones__copy">{{child_copy}}</div>
+            {{#if has_link}}
+            <div class="dd-milestones__links">
+              <div class="dd-milestones__link">
+                <a href="{{child_link_url}}" target="{{child_link_target}}" class="dd-button -primary">{{child_link_label}}</a>
+              </div>
+            </div>
+            {{/if}}
+          </div>
+        </div>
+      </div>
+      {{/each}}
+    </div>
+  </div>
+</div>"#;
+    let mut items = Vec::new();
+    for item in &milestones.items {
+        let link_url = item
+            .child_link_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string);
+        let link_label = item
+            .child_link_label
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string);
+        let has_link = link_url.is_some() && link_label.is_some();
+        let link_target = item
+            .child_link_target
+            .as_ref()
+            .and_then(|v| serde_json::to_value(v).ok())
+            .map(|v| stringify_json(&v))
+            .unwrap_or_else(|| "_self".to_string());
+        items.push(json!({
+            "child_percentage": item.child_percentage,
+            "child_title": item.child_title,
+            "child_subtitle": item.child_subtitle,
+            "child_copy": item.child_copy,
+            "child_link_url": link_url.unwrap_or_default(),
+            "child_link_target": link_target,
+            "child_link_label": link_label.unwrap_or_default(),
+            "has_link": has_link
+        }));
+    }
+    let data = json!({
+        "parent_data_aos": serde_json::to_value(milestones.parent_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
+        "parent_width": milestones.parent_width,
+        "items": items
+    });
+    render_inline(template, data)
 }
 
 fn render_accordion(accordion: &DdAccordion) -> anyhow::Result<String> {
