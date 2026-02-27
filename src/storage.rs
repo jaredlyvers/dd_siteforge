@@ -146,6 +146,28 @@ mod tests {
                     }],
                 }));
 
+            section
+                .components
+                .push(SectionComponent::Modal(crate::model::DdModal {
+                    parent_title: "Title".to_string(),
+                    parent_copy: "Copy".to_string(),
+                }));
+
+            section
+                .components
+                .push(SectionComponent::Slider(crate::model::DdSlider {
+                    parent_title: "Slider".to_string(),
+                    items: vec![crate::model::SliderItem {
+                        child_title: "Title".to_string(),
+                        child_copy: "Copy".to_string(),
+                        child_link_url: Some("/path".to_string()),
+                        child_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                        child_link_label: Some("Learn More".to_string()),
+                        child_image_url: "/assets/images/slider.jpg".to_string(),
+                        child_image_alt: "Image alt text".to_string(),
+                    }],
+                }));
+
             section.components.swap(0, 2);
         } else {
             panic!("starter site expected section at node index 1");
@@ -161,7 +183,7 @@ mod tests {
             panic!("loaded page expected section at node index 1");
         };
 
-        assert_eq!(loaded_section.components.len(), 8);
+        assert_eq!(loaded_section.components.len(), 10);
 
         match &loaded_section.components[0] {
             SectionComponent::Alternating(alternating) => {
@@ -224,6 +246,23 @@ mod tests {
                 assert_eq!(milestones.items[0].child_title, "Title");
             }
             other => panic!("expected milestones at index 7, got {:?}", other),
+        }
+
+        match &loaded_section.components[8] {
+            SectionComponent::Modal(modal) => {
+                assert_eq!(modal.parent_title, "Title");
+                assert_eq!(modal.parent_copy, "Copy");
+            }
+            other => panic!("expected modal at index 8, got {:?}", other),
+        }
+
+        match &loaded_section.components[9] {
+            SectionComponent::Slider(slider) => {
+                assert_eq!(slider.parent_title, "Slider");
+                assert_eq!(slider.items.len(), 1);
+                assert_eq!(slider.items[0].child_title, "Title");
+            }
+            other => panic!("expected slider at index 9, got {:?}", other),
         }
     }
 

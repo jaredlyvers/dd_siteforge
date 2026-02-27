@@ -23,6 +23,8 @@ Only these components are supported:
 8. `dd-cta`
 9. `dd-filmstrip`
 10. `dd-milestones`
+11. `dd-modal`
+12. `dd-slider`
 
 ### Typed Model
 
@@ -36,6 +38,8 @@ enum SectionComponent {
     Cta(DdCta),
     Filmstrip(DdFilmstrip),
     Milestones(DdMilestones),
+    Modal(DdModal),
+    Slider(DdSlider),
     Banner(DdBanner),
     Card(DdCard),
     Accordion(DdAccordion),
@@ -55,6 +59,8 @@ enum SectionComponent {
 - `dd-cta` renders parent-only CTA content with optional link output when URL + label are present.
 - `dd-filmstrip` renders one item collection twice using identical source data; the second loop is aria-hidden.
 - `dd-milestones` renders an item grid using parent `data-aos` + width classes and optional per-item links.
+- `dd-modal` derives `parent_modal_id` from `parent_title` using a safe HTML id transform at render time.
+- `dd-slider` renders a repeating item list with optional per-item links and parent UID derived from `parent_title`; fallback UID is `uid-<random 6 digits>`.
 - `dd-hero` and component AOS/class options are rendered from typed enum/string fields.
 - `dd-hero.copy` accepts Markdown and HTML; it is converted to HTML at export.
 
@@ -72,6 +78,8 @@ Validation runs on create/update/export:
 - CTA: required class/image/aos/title/subtitle/copy; optional link fields must provide URL + label together.
 - Filmstrip: at least one item; each item needs image URL/alt/title; image URLs must be valid.
 - Milestones: non-empty `parent_width`; at least one item; each item needs percentage/title/subtitle/copy; optional links must provide URL + label together.
+- Modal: required `parent_title` and `parent_copy`.
+- Slider: at least one item; each item needs title/copy/image URL/image alt; optional links must provide URL + label together.
 
 ### TUI Editing Contract
 
@@ -79,7 +87,7 @@ Validation runs on create/update/export:
 - `Enter` starts editing selected node/row.
 - `Tab` / `Shift+Tab` moves between editable fields.
 - `Left` / `Right` cycles enum-style field options on active fields.
-- In multiline textarea fields (`hero.copy`, `alternating_copy`, `accordion_copy`, `blockquote_copy`, `cta_copy`, `card_copy`, `child_copy`), `Enter` inserts newline and `Ctrl+S` saves.
+- In multiline textarea fields (`hero.copy`, `alternating_copy`, `accordion_copy`, `blockquote_copy`, `cta_copy`, `card_copy`, `child_copy`, `parent_copy`), `Enter` inserts newline and `Ctrl+S` saves.
 - Editing is scoped to selected row type:
   - parent row edits parent fields
   - child row edits child fields

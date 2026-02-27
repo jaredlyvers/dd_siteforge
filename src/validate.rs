@@ -348,6 +348,71 @@ fn validate_section_component(
                 }
             }
         }
+        SectionComponent::Modal(modal) => {
+            if modal.parent_title.trim().is_empty() || modal.parent_copy.trim().is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-modal has missing required fields.",
+                    page_id, section_id
+                ));
+            }
+        }
+        SectionComponent::Slider(slider) => {
+            if slider.items.is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' has dd-slider with no items.",
+                    page_id, section_id
+                ));
+            }
+            for (idx, item) in slider.items.iter().enumerate() {
+                if item.child_title.trim().is_empty()
+                    || item.child_copy.trim().is_empty()
+                    || item.child_image_url.trim().is_empty()
+                    || item.child_image_alt.trim().is_empty()
+                {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-slider item {} has missing required fields.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+                if !is_valid_url(&item.child_image_url) {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-slider item {} child_image_url is invalid.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+                let has_link_url = item
+                    .child_link_url
+                    .as_deref()
+                    .is_some_and(|v| !v.trim().is_empty());
+                let has_link_label = item
+                    .child_link_label
+                    .as_deref()
+                    .is_some_and(|v| !v.trim().is_empty());
+                if has_link_url ^ has_link_label {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-slider item {} must provide both child_link_url and child_link_label together.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+                if let Some(url) = item.child_link_url.as_deref()
+                    && !url.trim().is_empty()
+                    && !is_valid_url(url)
+                {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-slider item {} child_link_url is invalid.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+            }
+        }
         SectionComponent::Accordion(accordion) => {
             if accordion.group_name.trim().is_empty() {
                 errors.push(format!(

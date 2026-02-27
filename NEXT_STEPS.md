@@ -1,48 +1,60 @@
 # NEXT_STEPS
 
 ## Current State (Implemented)
-- Nodes panel is now a tree/accordion:
-  - Section rows can expand/collapse.
-  - Expanded sections show columns and their components.
-- Details panel now renders page-level ASCII previews:
-  - `dd-hero` is rendered as full-width ASCII.
-  - `dd-section` columns/components are rendered responsively to panel width.
-- Editing is modal-based.
-- Enter key behavior:
-  - On section rows: expand/collapse.
-  - On hero/column/component rows: opens edit modal.
-- Component add workflow:
-  - `/` opens component picker modal.
-  - Picker supports fuzzy search (`card`, `dd_card`, etc.).
-  - `Enter` inserts selected component into active section column.
-- Save workflow:
-  - `s` opens Save modal.
-  - User enters path/filename and confirms with `Enter`.
-- Edit UX:
-  - Cursor is visible in active editable fields (edit/save/picker modals).
-  - `Tab` / `Shift+Tab` cycles between editable component fields.
-- Section ID and modifiers:
-  - Sections always get default IDs (`section-N`) and remain editable.
-  - Section modifier class options are surfaced in details/modal.
-- Theme:
-  - `theme.yml` updated with app-specific palette and key mapping comments.
+- `dd-hero` editing flow is in place:
+  - Enter to edit, Tab/Shift+Tab field traversal, Left/Right option cycling.
+  - Secondary link support added.
+  - `hero.copy` is multiline (3 rows), markdown/html export conversion.
+- `dd-section` editing flow is aligned to row-scoped editing:
+  - Enter edits selected row.
+  - Space toggles collapse/expand.
+  - Parent vs child field isolation is enforced.
+- Implemented section components:
+  - `dd-cta`
+  - `dd-banner`
+  - `dd-accordion` (with nested item collection and FAQ behavior)
+  - `dd-alternating`
+  - `dd-blockquote`
+  - `dd-card`
+  - `dd-filmstrip`
+  - `dd-milestones`
+  - `dd-modal` (derived `parent_modal_id` from title)
+  - `dd-slider` (derived `parent_uid` from title, random `uid-######` fallback)
+- Tree navigation supports nested item rows for collection components, with:
+  - Space expand/collapse
+  - A/X add/remove item
+  - Enter to begin row-appropriate editing
+- Insert flow:
+  - `/` opens fuzzy component finder including newly added components.
+- Save/load:
+  - `s` opens save prompt.
+  - Launch with file path to reopen saved site state.
+- Architecture docs were updated to include latest components/rules.
+- Current test baseline:
+  - `cargo test -q` passes (`11 passed`).
 
 ## Quick Resume
 ```bash
-cargo check
-cargo run -- tui
+cargo fmt
+cargo test -q
+cargo run -- site.json
 ```
 
-## Suggested Next Tasks
-1. Add mouse click support inside modals (field focus + picker selection).
-2. Add dedicated section modifier selector modal (instead of only cycle keys).
-3. Add “Save As existing file overwrite confirmation” modal.
-4. Add tests for:
-   - section id normalization on load
-   - fuzzy picker ranking
-   - tab/shift-tab field traversal behavior
-5. Add README usage section with updated keybindings and modal flows.
+## Next Session Checklist
+1. Run focused in-app keyflow checks for newest components:
+   - `dd-slider`
+   - `dd-modal`
+   - `dd-milestones`
+2. Confirm generated HTML against each component `.md` one-by-one.
+3. Add/extend TUI tests for slider and milestones edit traversal and A/X item actions.
+4. Decide whether `site.json` and `web` deletion are intentional before committing.
 
 ## Notes
-- Active branch includes substantial `src/tui.rs` changes.
-- Before merging, run a manual TUI pass on narrow and wide terminal sizes.
+- Working tree currently has many uncommitted edits across:
+  - `src/model.rs`
+  - `src/renderer.rs`
+  - `src/validate.rs`
+  - `src/storage.rs`
+  - `src/tui.rs`
+  - `Architecture.md`
+- `components/dd-slider.md` exists and is now aligned enough to build; implementation is in code.

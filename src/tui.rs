@@ -82,6 +82,7 @@ struct App {
     expanded_card_items: HashSet<(usize, usize, usize, usize)>,
     expanded_filmstrip_items: HashSet<(usize, usize, usize, usize)>,
     expanded_milestones_items: HashSet<(usize, usize, usize, usize)>,
+    expanded_slider_items: HashSet<(usize, usize, usize, usize)>,
 }
 
 struct ComponentPickerState {
@@ -167,6 +168,16 @@ enum InputMode {
     EditMilestonesItemLinkUrl,
     EditMilestonesItemLinkTarget,
     EditMilestonesItemLinkLabel,
+    EditModalTitle,
+    EditModalCopy,
+    EditSliderTitle,
+    EditSliderItemTitle,
+    EditSliderItemCopy,
+    EditSliderItemLinkUrl,
+    EditSliderItemLinkTarget,
+    EditSliderItemLinkLabel,
+    EditSliderItemImageUrl,
+    EditSliderItemImageAlt,
 }
 
 #[derive(Clone, Copy)]
@@ -181,6 +192,8 @@ enum ComponentKind {
     Card,
     Filmstrip,
     Milestones,
+    Modal,
+    Slider,
 }
 
 #[derive(Clone, Copy)]
@@ -266,6 +279,12 @@ enum NodeTreeKind {
         component_idx: usize,
         item_idx: usize,
     },
+    SliderItem {
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+        item_idx: usize,
+    },
 }
 
 impl App {
@@ -304,6 +323,7 @@ impl App {
             expanded_card_items: HashSet::new(),
             expanded_filmstrip_items: HashSet::new(),
             expanded_milestones_items: HashSet::new(),
+            expanded_slider_items: HashSet::new(),
         }
     }
 
@@ -602,7 +622,10 @@ impl App {
                 }
             }
             lines.push(String::new());
-            lines.push("Type to fuzzy search (e.g. hero, dd-cta, dd-milestones).".to_string());
+            lines.push(
+                "Type to fuzzy search (e.g. hero, dd-cta, dd-milestones, dd-modal, dd-slider)."
+                    .to_string(),
+            );
             lines.push("Up/Down to choose, Enter to add, Esc to cancel.".to_string());
             let picker_widget = Paragraph::new(lines.join("\n"))
                 .style(
@@ -1025,6 +1048,14 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
+                    Some(InputMode::EditSliderItemLinkTarget) => {
+                        self.cycle_slider_link_target(false);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditSliderItemLinkTarget)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
                     Some(InputMode::EditAlternatingType) => {
                         self.cycle_alternating_type(false);
                         if let Some(v) =
@@ -1191,6 +1222,14 @@ impl App {
                             self.input_buffer = v;
                         }
                     }
+                    Some(InputMode::EditSliderItemLinkTarget) => {
+                        self.cycle_slider_link_target(true);
+                        if let Some(v) =
+                            self.value_for_component_mode(InputMode::EditSliderItemLinkTarget)
+                        {
+                            self.input_buffer = v;
+                        }
+                    }
                     Some(InputMode::EditAlternatingType) => {
                         self.cycle_alternating_type(true);
                         if let Some(v) =
@@ -1265,6 +1304,8 @@ impl App {
                 | InputMode::EditBlockquoteCopy
                 | InputMode::EditCardItemCopy
                 | InputMode::EditMilestonesItemCopy
+                | InputMode::EditModalCopy
+                | InputMode::EditSliderItemCopy
                 | InputMode::EditAccordionFirstContent
         )
     }
@@ -1281,6 +1322,8 @@ impl App {
             | InputMode::EditBlockquoteCopy
             | InputMode::EditCardItemCopy
             | InputMode::EditMilestonesItemCopy
+            | InputMode::EditModalCopy
+            | InputMode::EditSliderItemCopy
             | InputMode::EditAccordionFirstContent => 5,
             _ => 1,
         }
@@ -1300,6 +1343,8 @@ impl App {
             | InputMode::EditBlockquoteCopy
             | InputMode::EditCardItemCopy
             | InputMode::EditMilestonesItemCopy
+            | InputMode::EditModalCopy
+            | InputMode::EditSliderItemCopy
             | InputMode::EditAccordionFirstContent => None,
             _ => None,
         }
@@ -1635,6 +1680,39 @@ impl App {
                 InputMode::EditMilestonesDataAos,
                 InputMode::EditMilestonesWidth,
             ]);
+        }
+        let modal_mode = matches!(mode, InputMode::EditModalTitle | InputMode::EditModalCopy);
+        if modal_mode {
+            return Some(vec![InputMode::EditModalTitle, InputMode::EditModalCopy]);
+        }
+        let slider_mode = matches!(
+            mode,
+            InputMode::EditSliderTitle
+                | InputMode::EditSliderItemTitle
+                | InputMode::EditSliderItemCopy
+                | InputMode::EditSliderItemLinkUrl
+                | InputMode::EditSliderItemLinkTarget
+                | InputMode::EditSliderItemLinkLabel
+                | InputMode::EditSliderItemImageUrl
+                | InputMode::EditSliderItemImageAlt
+        );
+        if slider_mode {
+            let rows = self.build_node_tree_rows();
+            let row_kind = rows
+                .get(self.selected_tree_row.min(rows.len().saturating_sub(1)))
+                .map(|r| r.kind);
+            if matches!(row_kind, Some(NodeTreeKind::SliderItem { .. })) {
+                return Some(vec![
+                    InputMode::EditSliderItemTitle,
+                    InputMode::EditSliderItemCopy,
+                    InputMode::EditSliderItemLinkUrl,
+                    InputMode::EditSliderItemLinkTarget,
+                    InputMode::EditSliderItemLinkLabel,
+                    InputMode::EditSliderItemImageUrl,
+                    InputMode::EditSliderItemImageAlt,
+                ]);
+            }
+            return Some(vec![InputMode::EditSliderTitle]);
         }
         component_edit_group_for_mode(mode).map(|modes| modes.to_vec())
     }
@@ -2013,6 +2091,39 @@ impl App {
             }
             InputMode::EditMilestonesItemLinkLabel => {
                 "Editing dd-milestones child_link_label. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditModalTitle => {
+                "Editing dd-modal parent_title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditModalCopy => {
+                "Editing dd-modal parent_copy. Enter: newline, Ctrl+S: save, esc: cancel."
+                    .to_string()
+            }
+            InputMode::EditSliderTitle => {
+                "Editing dd-slider parent_title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSliderItemTitle => {
+                "Editing dd-slider item child_title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSliderItemCopy => {
+                "Editing dd-slider item child_copy. Enter: newline, Ctrl+S: save, esc: cancel."
+                    .to_string()
+            }
+            InputMode::EditSliderItemLinkUrl => {
+                "Editing dd-slider item child_link_url. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSliderItemLinkTarget => {
+                "Editing dd-slider item child_link_target. Enter to save, esc to cancel."
+                    .to_string()
+            }
+            InputMode::EditSliderItemLinkLabel => {
+                "Editing dd-slider item child_link_label. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSliderItemImageUrl => {
+                "Editing dd-slider item child_image_url. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSliderItemImageAlt => {
+                "Editing dd-slider item child_image_alt. Enter to save, esc to cancel.".to_string()
             }
         };
     }
@@ -2879,6 +2990,175 @@ impl App {
                     "Section has no components.".to_string()
                 }
             }
+            (PageNode::Section(v), InputMode::EditModalTitle) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Modal(modal) = &mut v.components[ci] {
+                        modal.parent_title = value;
+                        applied = true;
+                        "Updated dd-modal parent_title.".to_string()
+                    } else {
+                        "Selected component is not dd-modal.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditModalCopy) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Modal(modal) = &mut v.components[ci] {
+                        modal.parent_copy = value;
+                        applied = true;
+                        "Updated dd-modal parent_copy.".to_string()
+                    } else {
+                        "Selected component is not dd-modal.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditSliderTitle) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                        slider.parent_title = value;
+                        applied = true;
+                        "Updated dd-slider parent_title.".to_string()
+                    } else {
+                        "Selected component is not dd-slider.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditSliderItemTitle) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(slider.items.len(), selected_nested_item) {
+                            slider.items[ni].child_title = value;
+                            applied = true;
+                            format!("Updated dd-slider item {} child_title.", ni + 1)
+                        } else {
+                            "dd-slider has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-slider.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditSliderItemCopy) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(slider.items.len(), selected_nested_item) {
+                            slider.items[ni].child_copy = value;
+                            applied = true;
+                            format!("Updated dd-slider item {} child_copy.", ni + 1)
+                        } else {
+                            "dd-slider has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-slider.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditSliderItemLinkUrl) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(slider.items.len(), selected_nested_item) {
+                            slider.items[ni].child_link_url =
+                                if value.is_empty() { None } else { Some(value) };
+                            applied = true;
+                            format!("Updated dd-slider item {} child_link_url.", ni + 1)
+                        } else {
+                            "dd-slider has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-slider.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditSliderItemLinkTarget) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(slider.items.len(), selected_nested_item) {
+                            if value.is_empty() {
+                                slider.items[ni].child_link_target = None;
+                                applied = true;
+                                format!("Updated dd-slider item {} child_link_target.", ni + 1)
+                            } else if let Some(vt) = parse_card_link_target(value.as_str()) {
+                                slider.items[ni].child_link_target = Some(vt);
+                                applied = true;
+                                format!("Updated dd-slider item {} child_link_target.", ni + 1)
+                            } else {
+                                clear_input = false;
+                                "Invalid dd-slider child_link_target option.".to_string()
+                            }
+                        } else {
+                            "dd-slider has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-slider.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditSliderItemLinkLabel) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(slider.items.len(), selected_nested_item) {
+                            slider.items[ni].child_link_label =
+                                if value.is_empty() { None } else { Some(value) };
+                            applied = true;
+                            format!("Updated dd-slider item {} child_link_label.", ni + 1)
+                        } else {
+                            "dd-slider has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-slider.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditSliderItemImageUrl) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(slider.items.len(), selected_nested_item) {
+                            slider.items[ni].child_image_url = value;
+                            applied = true;
+                            format!("Updated dd-slider item {} child_image_url.", ni + 1)
+                        } else {
+                            "dd-slider has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-slider.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            (PageNode::Section(v), InputMode::EditSliderItemImageAlt) => {
+                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                        if let Some(ni) = nested_index(slider.items.len(), selected_nested_item) {
+                            slider.items[ni].child_image_alt = value;
+                            applied = true;
+                            format!("Updated dd-slider item {} child_image_alt.", ni + 1)
+                        } else {
+                            "dd-slider has no items.".to_string()
+                        }
+                    } else {
+                        "Selected component is not dd-slider.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
             (PageNode::Section(v), InputMode::EditBlockquoteDataAos) => {
                 if let Some(ci) = component_index(v.components.len(), selected_component) {
                     if let crate::model::SectionComponent::Blockquote(blockquote) =
@@ -3456,6 +3736,26 @@ impl App {
                                         }
                                     }
                                 }
+                                if let Some(crate::model::SectionComponent::Slider(slider)) =
+                                    col.components.get(component_idx)
+                                {
+                                    if self.is_slider_items_expanded(
+                                        node_idx,
+                                        column_idx,
+                                        component_idx,
+                                    ) {
+                                        for (item_idx, _) in slider.items.iter().enumerate() {
+                                            rows.push(NodeTreeRow {
+                                                kind: NodeTreeKind::SliderItem {
+                                                    node_idx,
+                                                    column_idx,
+                                                    component_idx,
+                                                    item_idx,
+                                                },
+                                            });
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -3540,6 +3840,13 @@ impl App {
                     format!("       - {} {} {}", comp_i + 1, marker, label)
                 } else if matches!(component, crate::model::SectionComponent::Milestones(_)) {
                     let marker = if self.is_milestones_items_expanded(node_idx, col_i, comp_i) {
+                        "[-]"
+                    } else {
+                        "[+]"
+                    };
+                    format!("       - {} {} {}", comp_i + 1, marker, label)
+                } else if matches!(component, crate::model::SectionComponent::Slider(_)) {
+                    let marker = if self.is_slider_items_expanded(node_idx, col_i, comp_i) {
                         "[-]"
                     } else {
                         "[+]"
@@ -3741,6 +4048,45 @@ impl App {
                     truncate_ascii(title, 48)
                 )
             }
+            NodeTreeKind::SliderItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                    return format!("          - item {}", item_idx + 1);
+                };
+                let columns = section_columns_ref(section);
+                let col_i = column_idx.min(columns.len().saturating_sub(1));
+                let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
+                let title = if let Some(crate::model::SectionComponent::Slider(slider)) =
+                    columns[col_i].components.get(comp_i)
+                {
+                    slider
+                        .items
+                        .get(item_idx)
+                        .map(|i| i.child_title.as_str())
+                        .unwrap_or("(none)")
+                } else {
+                    "(none)"
+                };
+                let marker = if node_idx == self.selected_node
+                    && col_i == self.selected_column
+                    && comp_i == self.selected_component
+                    && item_idx == self.selected_nested_item
+                {
+                    "*"
+                } else {
+                    "-"
+                };
+                format!(
+                    "          {} item {}: {}",
+                    marker,
+                    item_idx + 1,
+                    truncate_ascii(title, 48)
+                )
+            }
         }
     }
 
@@ -3832,6 +4178,17 @@ impl App {
                 self.selected_component = component_idx;
                 self.selected_nested_item = item_idx;
             }
+            NodeTreeKind::SliderItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                self.selected_node = node_idx;
+                self.selected_column = column_idx;
+                self.selected_component = component_idx;
+                self.selected_nested_item = item_idx;
+            }
         }
     }
 
@@ -3903,6 +4260,17 @@ impl App {
                     && item_idx == self.selected_nested_item
             }
             NodeTreeKind::MilestonesItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => {
+                node_idx == self.selected_node
+                    && column_idx == self.selected_column
+                    && component_idx == self.selected_component
+                    && item_idx == self.selected_nested_item
+            }
+            NodeTreeKind::SliderItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4089,6 +4457,35 @@ impl App {
         }
     }
 
+    fn is_slider_items_expanded(
+        &self,
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+    ) -> bool {
+        !self.expanded_slider_items.contains(&(
+            self.selected_page,
+            node_idx,
+            column_idx,
+            component_idx,
+        ))
+    }
+
+    fn set_slider_items_expanded(
+        &mut self,
+        node_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+        expanded: bool,
+    ) {
+        let key = (self.selected_page, node_idx, column_idx, component_idx);
+        if expanded {
+            self.expanded_slider_items.remove(&key);
+        } else {
+            self.expanded_slider_items.insert(key);
+        }
+    }
+
     fn toggle_selected_tree_expanded(&mut self) {
         let rows = self.build_node_tree_rows();
         if rows.is_empty() {
@@ -4125,6 +4522,12 @@ impl App {
             ..
         }
         | NodeTreeKind::MilestonesItem {
+            node_idx,
+            column_idx,
+            component_idx,
+            ..
+        }
+        | NodeTreeKind::SliderItem {
             node_idx,
             column_idx,
             component_idx,
@@ -4229,6 +4632,24 @@ impl App {
                 self.sync_tree_row_with_selection();
                 return;
             }
+            if matches!(
+                columns[col_i].components.get(comp_i),
+                Some(crate::model::SectionComponent::Slider(_))
+            ) {
+                let expanded = self.is_slider_items_expanded(node_idx, col_i, comp_i);
+                self.set_slider_items_expanded(node_idx, col_i, comp_i, !expanded);
+                self.selected_node = node_idx;
+                self.selected_column = col_i;
+                self.selected_component = comp_i;
+                self.selected_nested_item = 0;
+                self.status = if expanded {
+                    "Collapsed slider items.".to_string()
+                } else {
+                    "Expanded slider items.".to_string()
+                };
+                self.sync_tree_row_with_selection();
+                return;
+            }
         }
         let node_idx = match row.kind {
             NodeTreeKind::Section { node_idx } => node_idx,
@@ -4239,6 +4660,7 @@ impl App {
             NodeTreeKind::CardItem { node_idx, .. } => node_idx,
             NodeTreeKind::FilmstripItem { node_idx, .. } => node_idx,
             NodeTreeKind::MilestonesItem { node_idx, .. } => node_idx,
+            NodeTreeKind::SliderItem { node_idx, .. } => node_idx,
             NodeTreeKind::Hero { .. } => {
                 self.status = "Selected row is not a section.".to_string();
                 return;
@@ -4300,6 +4722,12 @@ impl App {
             }
             NodeTreeKind::MilestonesItem { .. } => {
                 if self.set_component_input_mode(InputMode::EditMilestonesItemPercentage) {
+                    return;
+                }
+                self.begin_edit_selected_component_primary();
+            }
+            NodeTreeKind::SliderItem { .. } => {
+                if self.set_component_input_mode(InputMode::EditSliderItemTitle) {
                     return;
                 }
                 self.begin_edit_selected_component_primary();
@@ -4434,6 +4862,16 @@ impl App {
                 "dd-milestones.active.child_link_target"
             }
             Some(InputMode::EditMilestonesItemLinkLabel) => "dd-milestones.active.child_link_label",
+            Some(InputMode::EditModalTitle) => "dd-modal.parent_title",
+            Some(InputMode::EditModalCopy) => "dd-modal.parent_copy",
+            Some(InputMode::EditSliderTitle) => "dd-slider.parent_title",
+            Some(InputMode::EditSliderItemTitle) => "dd-slider.active.child_title",
+            Some(InputMode::EditSliderItemCopy) => "dd-slider.active.child_copy",
+            Some(InputMode::EditSliderItemLinkUrl) => "dd-slider.active.child_link_url",
+            Some(InputMode::EditSliderItemLinkTarget) => "dd-slider.active.child_link_target",
+            Some(InputMode::EditSliderItemLinkLabel) => "dd-slider.active.child_link_label",
+            Some(InputMode::EditSliderItemImageUrl) => "dd-slider.active.child_image_url",
+            Some(InputMode::EditSliderItemImageAlt) => "dd-slider.active.child_image_alt",
             Some(InputMode::EditBlockquoteDataAos) => "dd-blockquote.data_aos",
             Some(InputMode::EditBlockquoteImageUrl) => "blockquote_image_url",
             Some(InputMode::EditBlockquoteImageAlt) => "blockquote_image_alt",
@@ -4515,7 +4953,8 @@ impl App {
                     | Some(NodeTreeKind::AlternatingItem { .. })
                     | Some(NodeTreeKind::CardItem { .. })
                     | Some(NodeTreeKind::FilmstripItem { .. })
-                    | Some(NodeTreeKind::MilestonesItem { .. }) => {
+                    | Some(NodeTreeKind::MilestonesItem { .. })
+                    | Some(NodeTreeKind::SliderItem { .. }) => {
                         let columns = section_columns_ref(section);
                         if let Some(col) =
                             columns.get(self.selected_column.min(columns.len().saturating_sub(1)))
@@ -4708,6 +5147,70 @@ impl App {
                                                     item.and_then(|i| i
                                                         .child_link_label
                                                         .as_deref())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                            ]
+                                            .join("\n")
+                                        }
+                                        _ => component_form(component, self.selected_nested_item),
+                                    }
+                                } else if let crate::model::SectionComponent::Slider(slider) =
+                                    component
+                                {
+                                    match self.input_mode {
+                                        Some(InputMode::EditSliderTitle) => {
+                                            vec![format!("- parent_title: {}", slider.parent_title)]
+                                                .join("\n")
+                                        }
+                                        Some(InputMode::EditSliderItemTitle)
+                                        | Some(InputMode::EditSliderItemCopy)
+                                        | Some(InputMode::EditSliderItemLinkUrl)
+                                        | Some(InputMode::EditSliderItemLinkTarget)
+                                        | Some(InputMode::EditSliderItemLinkLabel)
+                                        | Some(InputMode::EditSliderItemImageUrl)
+                                        | Some(InputMode::EditSliderItemImageAlt) => {
+                                            let item = nested_index(
+                                                slider.items.len(),
+                                                self.selected_nested_item,
+                                            )
+                                            .and_then(|i| slider.items.get(i));
+                                            vec![
+                                                format!(
+                                                    "- child_title: {}",
+                                                    item.map(|i| i.child_title.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- child_copy: {}",
+                                                    item.map(|i| i.child_copy.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- child_link_url: {}",
+                                                    item.and_then(|i| i.child_link_url.as_deref())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- child_link_target: {}",
+                                                    item.and_then(|i| i.child_link_target)
+                                                        .map(card_link_target_to_str)
+                                                        .unwrap_or("_self")
+                                                ),
+                                                format!(
+                                                    "- child_link_label: {}",
+                                                    item.and_then(|i| i
+                                                        .child_link_label
+                                                        .as_deref())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- child_image_url: {}",
+                                                    item.map(|i| i.child_image_url.as_str())
+                                                        .unwrap_or("(none)")
+                                                ),
+                                                format!(
+                                                    "- child_image_alt: {}",
+                                                    item.map(|i| i.child_image_alt.as_str())
                                                         .unwrap_or("(none)")
                                                 ),
                                             ]
@@ -5021,6 +5524,39 @@ impl App {
             }
             InputMode::EditMilestonesItemLinkLabel => {
                 "Editing dd-milestones child_link_label. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditModalTitle => {
+                "Editing dd-modal parent_title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditModalCopy => {
+                "Editing dd-modal parent_copy. Enter: newline, Ctrl+S: save, esc: cancel."
+                    .to_string()
+            }
+            InputMode::EditSliderTitle => {
+                "Editing dd-slider parent_title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSliderItemTitle => {
+                "Editing dd-slider item child_title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSliderItemCopy => {
+                "Editing dd-slider item child_copy. Enter: newline, Ctrl+S: save, esc: cancel."
+                    .to_string()
+            }
+            InputMode::EditSliderItemLinkUrl => {
+                "Editing dd-slider item child_link_url. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSliderItemLinkTarget => {
+                "Editing dd-slider item child_link_target. Enter to save, esc to cancel."
+                    .to_string()
+            }
+            InputMode::EditSliderItemLinkLabel => {
+                "Editing dd-slider item child_link_label. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSliderItemImageUrl => {
+                "Editing dd-slider item child_image_url. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSliderItemImageAlt => {
+                "Editing dd-slider item child_image_alt. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditBlockquoteDataAos => {
                 "Editing dd-blockquote data-aos. Enter to save, esc to cancel.".to_string()
@@ -5352,6 +5888,71 @@ impl App {
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
                             Some(v.items[ni].child_link_label.clone().unwrap_or_default())
+                        }
+                        (InputMode::EditModalTitle, crate::model::SectionComponent::Modal(v)) => {
+                            Some(v.parent_title.clone())
+                        }
+                        (InputMode::EditModalCopy, crate::model::SectionComponent::Modal(v)) => {
+                            Some(v.parent_copy.clone())
+                        }
+                        (InputMode::EditSliderTitle, crate::model::SectionComponent::Slider(v)) => {
+                            Some(v.parent_title.clone())
+                        }
+                        (
+                            InputMode::EditSliderItemTitle,
+                            crate::model::SectionComponent::Slider(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].child_title.clone())
+                        }
+                        (
+                            InputMode::EditSliderItemCopy,
+                            crate::model::SectionComponent::Slider(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].child_copy.clone())
+                        }
+                        (
+                            InputMode::EditSliderItemLinkUrl,
+                            crate::model::SectionComponent::Slider(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].child_link_url.clone().unwrap_or_default())
+                        }
+                        (
+                            InputMode::EditSliderItemLinkTarget,
+                            crate::model::SectionComponent::Slider(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(
+                                card_link_target_to_str(
+                                    v.items[ni]
+                                        .child_link_target
+                                        .unwrap_or(crate::model::CardLinkTarget::SelfTarget),
+                                )
+                                .to_string(),
+                            )
+                        }
+                        (
+                            InputMode::EditSliderItemLinkLabel,
+                            crate::model::SectionComponent::Slider(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].child_link_label.clone().unwrap_or_default())
+                        }
+                        (
+                            InputMode::EditSliderItemImageUrl,
+                            crate::model::SectionComponent::Slider(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].child_image_url.clone())
+                        }
+                        (
+                            InputMode::EditSliderItemImageAlt,
+                            crate::model::SectionComponent::Slider(v),
+                        ) => {
+                            let ni = nested_index(v.items.len(), self.selected_nested_item)?;
+                            Some(v.items[ni].child_image_alt.clone())
                         }
                         (InputMode::EditCardType, crate::model::SectionComponent::Card(v)) => {
                             Some(card_type_to_str(v.card_type).to_string())
@@ -5994,6 +6595,21 @@ impl App {
         );
     }
 
+    fn cycle_slider_link_target(&mut self, forward: bool) {
+        let selected_nested_item = self.selected_nested_item;
+        self.mutate_selected_slider(
+            |s| {
+                if let Some(ni) = nested_index(s.items.len(), selected_nested_item) {
+                    let current = s.items[ni]
+                        .child_link_target
+                        .unwrap_or(crate::model::CardLinkTarget::SelfTarget);
+                    s.items[ni].child_link_target = Some(next_card_link_target(current, forward));
+                }
+            },
+            "Cycled dd-slider child_link_target.",
+        );
+    }
+
     fn cycle_alternating_type(&mut self, forward: bool) {
         self.mutate_selected_alternating(
             |a| {
@@ -6300,6 +6916,42 @@ impl App {
         self.status = result;
     }
 
+    fn mutate_selected_slider<F>(&mut self, mutator: F, success_message: &str)
+    where
+        F: FnOnce(&mut crate::model::DdSlider),
+    {
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut components[ci] {
+                        mutator(slider);
+                        success_message.to_string()
+                    } else {
+                        "Selected component is not dd-slider.".to_string()
+                    }
+                } else {
+                    "Section has no components.".to_string()
+                }
+            }
+            _ => "Selected node is not a section.".to_string(),
+        };
+        self.status = result;
+    }
+
     fn cycle_accordion_type(&mut self, forward: bool) {
         self.mutate_selected_accordion(
             |a| {
@@ -6381,6 +7033,7 @@ impl App {
             Some(crate::model::SectionComponent::Milestones(_)) => {
                 self.add_selected_milestones_item()
             }
+            Some(crate::model::SectionComponent::Slider(_)) => self.add_selected_slider_item(),
             Some(_) => {
                 self.status = "Selected component does not support collection items.".to_string();
             }
@@ -6406,6 +7059,7 @@ impl App {
             Some(crate::model::SectionComponent::Milestones(_)) => {
                 self.remove_selected_milestones_item()
             }
+            Some(crate::model::SectionComponent::Slider(_)) => self.remove_selected_slider_item(),
             Some(_) => {
                 self.status = "Selected component does not support collection items.".to_string();
             }
@@ -7045,6 +7699,133 @@ impl App {
         self.status = result.1;
     }
 
+    fn add_selected_slider_item(&mut self) {
+        let rows = self.build_node_tree_rows();
+        if rows.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let preferred_insert_after = match row.kind {
+            NodeTreeKind::SliderItem { item_idx, .. } => Some(item_idx),
+            _ => None,
+        };
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut components[ci] {
+                        let insert_idx = preferred_insert_after
+                            .map(|i| (i + 1).min(slider.items.len()))
+                            .unwrap_or(slider.items.len());
+                        let next_num = slider.items.len() + 1;
+                        slider.items.insert(
+                            insert_idx,
+                            crate::model::SliderItem {
+                                child_title: format!("Title {}", next_num),
+                                child_copy: "Copy".to_string(),
+                                child_link_url: Some("/path".to_string()),
+                                child_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                                child_link_label: Some("Learn More".to_string()),
+                                child_image_url: "https://dummyimage.com/720x720/000/fff"
+                                    .to_string(),
+                                child_image_alt: "Image alt text".to_string(),
+                            },
+                        );
+                        (
+                            Some(insert_idx),
+                            format!("Added dd-slider item {}.", insert_idx + 1),
+                        )
+                    } else {
+                        (None, "Selected component is not dd-slider.".to_string())
+                    }
+                } else {
+                    (None, "Section has no components.".to_string())
+                }
+            }
+            _ => (None, "Selected node is not a section.".to_string()),
+        };
+        if let Some(item_i) = result.0 {
+            self.selected_nested_item = item_i;
+            self.set_slider_items_expanded(ni, selected_column, selected_component, true);
+            self.sync_tree_row_with_selection();
+        }
+        self.status = result.1;
+    }
+
+    fn remove_selected_slider_item(&mut self) {
+        let rows = self.build_node_tree_rows();
+        if rows.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        let selected = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let selected_nested_item = self.selected_nested_item;
+        let preferred_remove = match row.kind {
+            NodeTreeKind::SliderItem { item_idx, .. } => Some(item_idx),
+            _ => None,
+        };
+        let Some(page) = self.current_page_mut() else {
+            return;
+        };
+        if page.nodes.is_empty() {
+            self.status = "No selected section.".to_string();
+            return;
+        }
+        let ni = selected.min(page.nodes.len() - 1);
+        let result = match &mut page.nodes[ni] {
+            PageNode::Section(section) => {
+                normalize_section_columns(section);
+                let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+                let components = &mut section.columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut components[ci] {
+                        if slider.items.len() <= 1 {
+                            (None, "dd-slider must keep at least one item.".to_string())
+                        } else {
+                            let remove_i = preferred_remove.unwrap_or_else(|| {
+                                selected_nested_item.min(slider.items.len().saturating_sub(1))
+                            });
+                            slider.items.remove(remove_i);
+                            let next_i = remove_i.min(slider.items.len().saturating_sub(1));
+                            (
+                                Some(next_i),
+                                format!("Removed dd-slider item {}.", remove_i + 1),
+                            )
+                        }
+                    } else {
+                        (None, "Selected component is not dd-slider.".to_string())
+                    }
+                } else {
+                    (None, "Section has no components.".to_string())
+                }
+            }
+            _ => (None, "Selected node is not a section.".to_string()),
+        };
+        if let Some(item_i) = result.0 {
+            self.selected_nested_item = item_i;
+            self.set_slider_items_expanded(ni, selected_column, selected_component, true);
+            self.sync_tree_row_with_selection();
+        }
+        self.status = result.1;
+    }
+
     fn mutate_selected_section<F>(&mut self, mutator: F, success_message: &str)
     where
         F: FnOnce(&mut crate::model::DdSection),
@@ -7274,6 +8055,12 @@ impl App {
                                     InputMode::EditMilestonesDataAos,
                                     hero_aos_to_str(milestones.parent_data_aos).to_string(),
                                 )),
+                                crate::model::SectionComponent::Modal(modal) => {
+                                    Some((InputMode::EditModalTitle, modal.parent_title.clone()))
+                                }
+                                crate::model::SectionComponent::Slider(slider) => {
+                                    Some((InputMode::EditSliderTitle, slider.parent_title.clone()))
+                                }
                                 crate::model::SectionComponent::Card(card) => Some((
                                     InputMode::EditCardType,
                                     card_type_to_str(card.card_type).to_string(),
@@ -7301,7 +8088,7 @@ impl App {
 
         let Some((mode, value)) = selected else {
             self.status =
-                "Primary edit supports cta/filmstrip/milestones/banner/card/blockquote/accordion/alternating."
+                "Primary edit supports cta/filmstrip/milestones/modal/slider/banner/card/blockquote/accordion/alternating."
                     .to_string();
             return;
         };
@@ -7320,6 +8107,12 @@ impl App {
             }
             InputMode::EditMilestonesDataAos => {
                 "Editing dd-milestones parent_data_aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditModalTitle => {
+                "Editing dd-modal parent_title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditSliderTitle => {
+                "Editing dd-slider parent_title. Enter to save, esc to cancel.".to_string()
             }
             InputMode::EditAccordionType => {
                 "Editing dd-accordion type. Enter to save, esc to cancel.".to_string()
@@ -8313,6 +9106,8 @@ fn component_label(component: &crate::model::SectionComponent) -> &'static str {
         crate::model::SectionComponent::Cta(_) => "dd-cta",
         crate::model::SectionComponent::Filmstrip(_) => "dd-filmstrip",
         crate::model::SectionComponent::Milestones(_) => "dd-milestones",
+        crate::model::SectionComponent::Slider(_) => "dd-slider",
+        crate::model::SectionComponent::Modal(_) => "dd-modal",
         crate::model::SectionComponent::Banner(_) => "dd-banner",
         crate::model::SectionComponent::Card(_) => "dd-card",
         crate::model::SectionComponent::Blockquote(_) => "dd-blockquote",
@@ -8340,6 +9135,16 @@ fn component_blueprint_label(component: &crate::model::SectionComponent) -> Stri
                 .map(|i| i.child_title.as_str())
                 .unwrap_or("(none)")
         ),
+        crate::model::SectionComponent::Slider(v) => format!(
+            "dd-slider | child_title: {}",
+            v.items
+                .first()
+                .map(|i| i.child_title.as_str())
+                .unwrap_or("(none)")
+        ),
+        crate::model::SectionComponent::Modal(v) => {
+            format!("dd-modal | parent_title: {}", v.parent_title)
+        }
         crate::model::SectionComponent::Accordion(v) => format!(
             "dd-accordion | accordion_title: {}",
             v.items
@@ -8430,6 +9235,33 @@ fn component_form(
                     .unwrap_or("(none)")
             )
         }
+        crate::model::SectionComponent::Slider(v) => {
+            let active = nested_index(v.items.len(), selected_nested_item)
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            let item =
+                nested_index(v.items.len(), selected_nested_item).and_then(|i| v.items.get(i));
+            format!(
+                "fields:\n  parent_title: {}\n  active_item: {}\n  child_title: {}\n  child_copy: {}\n  child_link_url: {}\n  child_link_target: {}\n  child_link_label: {}\n  child_image_url: {}\n  child_image_alt: {}",
+                v.parent_title,
+                active,
+                item.map(|i| i.child_title.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.child_copy.as_str()).unwrap_or("(none)"),
+                item.and_then(|i| i.child_link_url.as_deref())
+                    .unwrap_or("(none)"),
+                item.and_then(|i| i.child_link_target)
+                    .map(card_link_target_to_str)
+                    .unwrap_or("_self"),
+                item.and_then(|i| i.child_link_label.as_deref())
+                    .unwrap_or("(none)"),
+                item.map(|i| i.child_image_url.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.child_image_alt.as_str()).unwrap_or("(none)")
+            )
+        }
+        crate::model::SectionComponent::Modal(v) => format!(
+            "fields:\n  parent_title: {}\n  parent_copy: {}",
+            v.parent_title, v.parent_copy
+        ),
         crate::model::SectionComponent::Banner(v) => format!(
             "fields:\n  banner.class: {}\n  banner.data_aos: {}\n  banner_image_url: {}\n  banner_image_alt: {}",
             banner_class_to_str(v.banner_class),
@@ -9010,6 +9842,26 @@ fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]
             InputMode::EditMilestonesItemLinkTarget,
             InputMode::EditMilestonesItemLinkLabel,
         ]),
+        InputMode::EditSliderTitle
+        | InputMode::EditSliderItemTitle
+        | InputMode::EditSliderItemCopy
+        | InputMode::EditSliderItemLinkUrl
+        | InputMode::EditSliderItemLinkTarget
+        | InputMode::EditSliderItemLinkLabel
+        | InputMode::EditSliderItemImageUrl
+        | InputMode::EditSliderItemImageAlt => Some(&[
+            InputMode::EditSliderTitle,
+            InputMode::EditSliderItemTitle,
+            InputMode::EditSliderItemCopy,
+            InputMode::EditSliderItemLinkUrl,
+            InputMode::EditSliderItemLinkTarget,
+            InputMode::EditSliderItemLinkLabel,
+            InputMode::EditSliderItemImageUrl,
+            InputMode::EditSliderItemImageAlt,
+        ]),
+        InputMode::EditModalTitle | InputMode::EditModalCopy => {
+            Some(&[InputMode::EditModalTitle, InputMode::EditModalCopy])
+        }
         InputMode::EditAccordionType
         | InputMode::EditAccordionClass
         | InputMode::EditAccordionAos
@@ -9054,9 +9906,9 @@ fn help_text() -> String {
         "  Up/Down or mouse wheel: Select row in Nodes tree",
         "  PageUp/PageDown: Scroll Details blueprint panel",
         "  Enter: Edit selected row",
-        "  Space: Expand/collapse selected section or accordion/alternating/card/filmstrip/milestones items",
-        "  /: Open insert fuzzy finder (hero/section/cta/banner/blockquote/accordion/alternating/card/filmstrip/milestones)",
-        "  A / X: Add/remove dd-accordion, dd-alternating, dd-card, dd-filmstrip, or dd-milestones item",
+        "  Space: Expand/collapse selected section or accordion/alternating/card/filmstrip/milestones/slider items",
+        "  /: Open insert fuzzy finder (hero/section/cta/banner/blockquote/accordion/alternating/card/filmstrip/milestones/modal/slider)",
+        "  A / X: Add/remove dd-accordion, dd-alternating, dd-card, dd-filmstrip, dd-milestones, or dd-slider item",
         "  d: Delete selected node",
         "  J / K: Move selected node down / up",
         "",
@@ -9070,8 +9922,8 @@ fn help_text() -> String {
         "Edit modal:",
         "  Any edit command opens a modal with editable fields",
         "  Tab / Shift+Tab: Next/previous editable field for selected row",
-        "  hero.copy / alternating_copy / accordion_copy / blockquote_copy / card_copy / child_copy: Up/Down move line, wheel scroll, Enter newline, Ctrl+S save",
-        "  Left / Right: Cycle section/hero/cta/banner/accordion/alternating/blockquote/card/filmstrip/milestones option fields when active",
+        "  hero.copy / alternating_copy / accordion_copy / blockquote_copy / card_copy / child_copy / parent_copy: Up/Down move line, wheel scroll, Enter newline, Ctrl+S save",
+        "  Left / Right: Cycle section/hero/cta/banner/accordion/alternating/blockquote/card/filmstrip/milestones/slider option fields when active",
         "  Enter: Confirm edit",
         "  Esc: Cancel edit",
         "  Backspace: Delete character",
@@ -9092,6 +9944,8 @@ impl ComponentKind {
             Self::Card,
             Self::Filmstrip,
             Self::Milestones,
+            Self::Modal,
+            Self::Slider,
         ]
     }
 
@@ -9107,6 +9961,8 @@ impl ComponentKind {
             ComponentKind::Card => "dd-card",
             ComponentKind::Filmstrip => "dd-filmstrip",
             ComponentKind::Milestones => "dd-milestones",
+            ComponentKind::Modal => "dd-modal",
+            ComponentKind::Slider => "dd-slider",
         }
     }
 
@@ -9209,6 +10065,24 @@ impl ComponentKind {
                         child_link_url: None,
                         child_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
                         child_link_label: None,
+                    }],
+                })
+            }
+            ComponentKind::Modal => crate::model::SectionComponent::Modal(crate::model::DdModal {
+                parent_title: "Title".to_string(),
+                parent_copy: "Copy".to_string(),
+            }),
+            ComponentKind::Slider => {
+                crate::model::SectionComponent::Slider(crate::model::DdSlider {
+                    parent_title: String::new(),
+                    items: vec![crate::model::SliderItem {
+                        child_title: "Title".to_string(),
+                        child_copy: "Copy".to_string(),
+                        child_link_url: Some("/path".to_string()),
+                        child_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                        child_link_label: Some("Learn More".to_string()),
+                        child_image_url: "https://dummyimage.com/720x720/000/fff".to_string(),
+                        child_image_alt: "Image alt text".to_string(),
                     }],
                 })
             }

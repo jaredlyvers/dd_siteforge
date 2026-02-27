@@ -83,6 +83,8 @@ pub enum SectionComponent {
     Cta(DdCta),
     Filmstrip(DdFilmstrip),
     Milestones(DdMilestones),
+    Slider(DdSlider),
+    Modal(DdModal),
     Banner(DdBanner),
     Accordion(DdAccordion),
     Blockquote(DdBlockquote),
@@ -190,6 +192,30 @@ pub struct MilestonesItem {
     pub child_link_url: Option<String>,
     pub child_link_target: Option<CardLinkTarget>,
     pub child_link_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DdModal {
+    pub parent_title: String,
+    pub parent_copy: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DdSlider {
+    #[serde(default)]
+    pub parent_title: String,
+    pub items: Vec<SliderItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SliderItem {
+    pub child_title: String,
+    pub child_copy: String,
+    pub child_link_url: Option<String>,
+    pub child_link_target: Option<CardLinkTarget>,
+    pub child_link_label: Option<String>,
+    pub child_image_url: String,
+    pub child_image_alt: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
