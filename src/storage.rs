@@ -85,6 +85,89 @@ mod tests {
                     blockquote_copy: "Quote A".to_string(),
                 }));
 
+            section
+                .components
+                .push(SectionComponent::Card(crate::model::DdCard {
+                    card_type: crate::model::CardType::Default,
+                    card_data_aos: crate::model::HeroAos::FadeIn,
+                    card_width: "dd-u-1-1 dd-u-md-12-24 dd-u-lg-8-24".to_string(),
+                    items: vec![crate::model::CardItem {
+                        card_image_url: "/assets/images/card.jpg".to_string(),
+                        card_image_alt: "Card image".to_string(),
+                        card_title: "Card A".to_string(),
+                        card_subtitle: "Sub A".to_string(),
+                        card_copy: "Copy A".to_string(),
+                        card_link_url: Some("/front".to_string()),
+                        card_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                        card_link_label: Some("Learn More".to_string()),
+                    }],
+                }));
+
+            section
+                .components
+                .push(SectionComponent::Cta(crate::model::DdCta {
+                    cta_class: crate::model::CtaClass::TopLeft,
+                    cta_image_url: "/assets/images/cta.jpg".to_string(),
+                    cta_image_alt: "CTA image".to_string(),
+                    cta_data_aos: crate::model::HeroAos::FadeIn,
+                    cta_title: "CTA A".to_string(),
+                    cta_subtitle: "Sub CTA".to_string(),
+                    cta_copy: "Copy CTA".to_string(),
+                    cta_link_url: Some("/path".to_string()),
+                    cta_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                    cta_link_label: Some("Learn More".to_string()),
+                }));
+
+            section
+                .components
+                .push(SectionComponent::Filmstrip(crate::model::DdFilmstrip {
+                    filmstrip_type: crate::model::FilmstripType::Default,
+                    filmstrip_data_aos: crate::model::HeroAos::FadeIn,
+                    items: vec![crate::model::FilmstripItem {
+                        image_url: "/assets/images/filmstrip-1.jpg".to_string(),
+                        image_alt: "Filmstrip 1".to_string(),
+                        title: "Filmstrip Item 1".to_string(),
+                    }],
+                }));
+
+            section
+                .components
+                .push(SectionComponent::Milestones(crate::model::DdMilestones {
+                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    parent_width: "dd-u-1-1 dd-u-md-12-24".to_string(),
+                    items: vec![crate::model::MilestonesItem {
+                        child_percentage: "70".to_string(),
+                        child_title: "Title".to_string(),
+                        child_subtitle: "Subtitle".to_string(),
+                        child_copy: "Copy".to_string(),
+                        child_link_url: Some("/path".to_string()),
+                        child_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                        child_link_label: Some("Learn More".to_string()),
+                    }],
+                }));
+
+            section
+                .components
+                .push(SectionComponent::Modal(crate::model::DdModal {
+                    parent_title: "Title".to_string(),
+                    parent_copy: "Copy".to_string(),
+                }));
+
+            section
+                .components
+                .push(SectionComponent::Slider(crate::model::DdSlider {
+                    parent_title: "Slider".to_string(),
+                    items: vec![crate::model::SliderItem {
+                        child_title: "Title".to_string(),
+                        child_copy: "Copy".to_string(),
+                        child_link_url: Some("/path".to_string()),
+                        child_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                        child_link_label: Some("Learn More".to_string()),
+                        child_image_url: "/assets/images/slider.jpg".to_string(),
+                        child_image_alt: "Image alt text".to_string(),
+                    }],
+                }));
+
             section.components.swap(0, 2);
         } else {
             panic!("starter site expected section at node index 1");
@@ -100,7 +183,7 @@ mod tests {
             panic!("loaded page expected section at node index 1");
         };
 
-        assert_eq!(loaded_section.components.len(), 4);
+        assert_eq!(loaded_section.components.len(), 10);
 
         match &loaded_section.components[0] {
             SectionComponent::Alternating(alternating) => {
@@ -131,6 +214,55 @@ mod tests {
                 assert_eq!(blockquote.blockquote_copy, "Quote A");
             }
             other => panic!("expected blockquote at index 3, got {:?}", other),
+        }
+
+        match &loaded_section.components[4] {
+            SectionComponent::Card(card) => {
+                assert_eq!(card.items.len(), 1);
+                assert_eq!(card.items[0].card_title, "Card A");
+            }
+            other => panic!("expected card at index 4, got {:?}", other),
+        }
+
+        match &loaded_section.components[5] {
+            SectionComponent::Cta(cta) => {
+                assert_eq!(cta.cta_title, "CTA A");
+                assert_eq!(cta.cta_image_url, "/assets/images/cta.jpg");
+            }
+            other => panic!("expected cta at index 5, got {:?}", other),
+        }
+
+        match &loaded_section.components[6] {
+            SectionComponent::Filmstrip(filmstrip) => {
+                assert_eq!(filmstrip.items.len(), 1);
+                assert_eq!(filmstrip.items[0].title, "Filmstrip Item 1");
+            }
+            other => panic!("expected filmstrip at index 6, got {:?}", other),
+        }
+
+        match &loaded_section.components[7] {
+            SectionComponent::Milestones(milestones) => {
+                assert_eq!(milestones.items.len(), 1);
+                assert_eq!(milestones.items[0].child_title, "Title");
+            }
+            other => panic!("expected milestones at index 7, got {:?}", other),
+        }
+
+        match &loaded_section.components[8] {
+            SectionComponent::Modal(modal) => {
+                assert_eq!(modal.parent_title, "Title");
+                assert_eq!(modal.parent_copy, "Copy");
+            }
+            other => panic!("expected modal at index 8, got {:?}", other),
+        }
+
+        match &loaded_section.components[9] {
+            SectionComponent::Slider(slider) => {
+                assert_eq!(slider.parent_title, "Slider");
+                assert_eq!(slider.items.len(), 1);
+                assert_eq!(slider.items[0].child_title, "Title");
+            }
+            other => panic!("expected slider at index 9, got {:?}", other),
         }
     }
 

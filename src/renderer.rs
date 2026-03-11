@@ -1,13 +1,15 @@
 use std::fs;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use handlebars::Handlebars;
 use serde_json::{Value, json};
 
 use crate::model::{
-    DdAccordion, DdAlternating, DdBanner, DdBlockquote, DdHero, DdSection, Page, PageNode,
-    SectionColumn, SectionComponent, Site,
+    DdAccordion, DdAlternating, DdBanner, DdBlockquote, DdCard, DdCta, DdFilmstrip, DdHero,
+    DdMilestones, DdModal, DdSection, DdSlider, Page, PageNode, SectionColumn, SectionComponent,
+    Site,
 };
 
 const PAGE_TEMPLATE: &str = r#"<!DOCTYPE html>
@@ -123,6 +125,12 @@ fn render_section(section: &DdSection) -> anyhow::Result<String> {
         for component in &column.components {
             let html = match component {
                 SectionComponent::Alternating(v) => render_alternating(v)?,
+                SectionComponent::Card(v) => render_card(v)?,
+                SectionComponent::Cta(v) => render_cta(v)?,
+                SectionComponent::Filmstrip(v) => render_filmstrip(v)?,
+                SectionComponent::Milestones(v) => render_milestones(v)?,
+                SectionComponent::Slider(v) => render_slider(v)?,
+                SectionComponent::Modal(v) => render_modal(v)?,
                 SectionComponent::Banner(v) => render_banner(v)?,
                 SectionComponent::Accordion(v) => render_accordion(v)?,
                 SectionComponent::Blockquote(v) => render_blockquote(v)?,
@@ -219,6 +227,78 @@ fn render_alternating(alternating: &DdAlternating) -> anyhow::Result<String> {
     render_inline(template, v)
 }
 
+fn render_card(card: &DdCard) -> anyhow::Result<String> {
+    let template = r#"<div class="dd-card {{card_type}}">
+  <div class="dd-card__items dd-g">
+    {{#each items}}
+    <div class="dd-card__item l-box {{../card_width}}" data-aos="{{../card_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+      <div class="dd-card__body dd-g">
+        <div class="dd-card__image">
+          <img src="{{card_image_url}}" alt="{{card_image_alt}}" class="dd-img" loading="lazy">
+        </div>
+        <div class="dd-card__copy l-box">
+          <div class="dd-card__title">
+            <h3>{{card_title}}</h3>
+          </div>
+          <div class="dd-card__subtitle">
+            <strong>{{card_subtitle}}</strong>
+          </div>
+          <p>{{card_copy}}</p>
+          {{#if has_link}}
+          <div class="dd-card__links dd-g">
+            <div class="dd-card__link">
+              <a href="{{card_link_url}}" target="{{card_link_target}}" class="dd-button -primary">{{card_link_label}}</a>
+            </div>
+          </div>
+          {{/if}}
+        </div>
+      </div>
+    </div>
+    {{/each}}
+  </div>
+</div>"#;
+    let mut items = Vec::new();
+    for item in &card.items {
+        let link_url = item
+            .card_link_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string);
+        let link_label = item
+            .card_link_label
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string);
+        let has_link = link_url.is_some() && link_label.is_some();
+        let link_target = item
+            .card_link_target
+            .as_ref()
+            .and_then(|v| serde_json::to_value(v).ok())
+            .map(|v| stringify_json(&v))
+            .unwrap_or_else(|| "_self".to_string());
+        items.push(json!({
+            "card_image_url": item.card_image_url,
+            "card_image_alt": item.card_image_alt,
+            "card_title": item.card_title,
+            "card_subtitle": item.card_subtitle,
+            "card_copy": item.card_copy,
+            "card_link_url": link_url.unwrap_or_default(),
+            "card_link_target": link_target,
+            "card_link_label": link_label.unwrap_or_default(),
+            "has_link": has_link
+        }));
+    }
+    let data = json!({
+        "card_type": serde_json::to_value(card.card_type).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-default".to_string()),
+        "card_data_aos": serde_json::to_value(card.card_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
+        "card_width": card.card_width,
+        "items": items
+    });
+    render_inline(template, data)
+}
+
 fn render_banner(banner: &DdBanner) -> anyhow::Result<String> {
     let template = r#"<div class="dd-banner {{banner_class}}" data-aos="{{banner_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100" style="background-image: url({{banner_image_url}});">
   <div class="dd-banner__image">
@@ -247,6 +327,265 @@ fn render_banner(banner: &DdBanner) -> anyhow::Result<String> {
         );
     }
     render_inline(template, v)
+}
+
+fn render_cta(cta: &DdCta) -> anyhow::Result<String> {
+    let template = r#"<div class="dd-cta {{cta_class}}">
+  <div class="dd-cta__image" style="background-image: url({{cta_image_url}});">
+    <picture>
+      <img src="{{cta_image_url}}" class="dd-img" alt="{{cta_image_alt}}" />
+    </picture>
+  </div>
+  <div class="dd-cta__content dd-g" data-aos="{{cta_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-center" data-aos-delay="100">
+    <div class="dd-cta__copy dd-u-1-1 dd-u-md-12-24">
+      <div class="dd-cta__title">
+        <h2>{{cta_title}}</h2>
+      </div>
+      <div class="dd-cta__subtitle">
+        <strong>{{cta_subtitle}}</strong>
+      </div>
+      <p>{{cta_copy}}</p>
+      {{#if has_link}}
+      <div class="dd-cta__links dd-g -x-center">
+        <div class="dd-cta__link">
+          <a href="{{cta_link_url}}" class="dd-button -primary" target="{{cta_link_target}}">{{cta_link_label}}</a>
+        </div>
+      </div>
+      {{/if}}
+    </div>
+  </div>
+</div>"#;
+
+    let link_url = cta
+        .cta_link_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string);
+    let link_label = cta
+        .cta_link_label
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string);
+    let has_link = link_url.is_some() && link_label.is_some();
+    let link_target = cta
+        .cta_link_target
+        .as_ref()
+        .and_then(|v| serde_json::to_value(v).ok())
+        .map(|v| stringify_json(&v))
+        .unwrap_or_else(|| "_self".to_string());
+
+    let data = json!({
+        "cta_class": serde_json::to_value(cta.cta_class).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-top-left".to_string()),
+        "cta_image_url": cta.cta_image_url,
+        "cta_image_alt": cta.cta_image_alt,
+        "cta_data_aos": serde_json::to_value(cta.cta_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
+        "cta_title": cta.cta_title,
+        "cta_subtitle": cta.cta_subtitle,
+        "cta_copy": cta.cta_copy,
+        "cta_link_url": link_url.unwrap_or_default(),
+        "cta_link_target": link_target,
+        "cta_link_label": link_label.unwrap_or_default(),
+        "has_link": has_link
+    });
+    render_inline(template, data)
+}
+
+fn render_filmstrip(filmstrip: &DdFilmstrip) -> anyhow::Result<String> {
+    let template = r#"<div class="dd-filmstrip {{filmstrip_type}}" data-aos="{{filmstrip_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-center" data-aos-delay="100">
+  <ul class="dd-filmstrip__content">
+    {{#each items}}
+    <li>
+      <img src="{{image_url}}" alt="{{image_alt}}" class="dd-img" loading="lazy">
+      <figure class="dd-filmstrip__title">{{title}}</figure>
+    </li>
+    {{/each}}
+  </ul>
+
+  <ul aria-hidden="true" class="dd-filmstrip__content">
+    {{#each items}}
+    <li role="presentation">
+      <img src="{{image_url}}" alt="{{image_alt}}" class="dd-img" loading="lazy">
+      <figure class="dd-filmstrip__title">{{title}}</figure>
+    </li>
+    {{/each}}
+  </ul>
+</div>"#;
+
+    let data = json!({
+        "filmstrip_type": serde_json::to_value(filmstrip.filmstrip_type).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-default".to_string()),
+        "filmstrip_data_aos": serde_json::to_value(filmstrip.filmstrip_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
+        "items": filmstrip.items
+    });
+    render_inline(template, data)
+}
+
+fn render_milestones(milestones: &DdMilestones) -> anyhow::Result<String> {
+    let template = r#"<div class="dd-milestones">
+  <div class="dd-milestones__content">
+    <div class="dd-milestones__items dd-g">
+      {{#each items}}
+      <div class="dd-milestones__item l-box {{../parent_width}}" data-aos="{{../parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-center" data-aos-delay="100">
+        <div class="dd-milestones__body l-box">
+          <div class="dd-milestones__percentage" data-number="{{child_percentage}}"><span class="number">{{child_percentage}}</span>%</div>
+          <div>
+            <div class="dd-milestones__title"><h2>{{child_title}}</h2></div>
+            <div class="dd-milestones__subtitle"><strong>{{child_subtitle}}</strong></div>
+            <div class="dd-milestones__copy">{{child_copy}}</div>
+            {{#if has_link}}
+            <div class="dd-milestones__links">
+              <div class="dd-milestones__link">
+                <a href="{{child_link_url}}" target="{{child_link_target}}" class="dd-button -primary">{{child_link_label}}</a>
+              </div>
+            </div>
+            {{/if}}
+          </div>
+        </div>
+      </div>
+      {{/each}}
+    </div>
+  </div>
+</div>"#;
+    let mut items = Vec::new();
+    for item in &milestones.items {
+        let link_url = item
+            .child_link_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string);
+        let link_label = item
+            .child_link_label
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string);
+        let has_link = link_url.is_some() && link_label.is_some();
+        let link_target = item
+            .child_link_target
+            .as_ref()
+            .and_then(|v| serde_json::to_value(v).ok())
+            .map(|v| stringify_json(&v))
+            .unwrap_or_else(|| "_self".to_string());
+        items.push(json!({
+            "child_percentage": item.child_percentage,
+            "child_title": item.child_title,
+            "child_subtitle": item.child_subtitle,
+            "child_copy": item.child_copy,
+            "child_link_url": link_url.unwrap_or_default(),
+            "child_link_target": link_target,
+            "child_link_label": link_label.unwrap_or_default(),
+            "has_link": has_link
+        }));
+    }
+    let data = json!({
+        "parent_data_aos": serde_json::to_value(milestones.parent_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
+        "parent_width": milestones.parent_width,
+        "items": items
+    });
+    render_inline(template, data)
+}
+
+fn render_modal(modal: &DdModal) -> anyhow::Result<String> {
+    let template = r#"<button class="dd-modal__button-open" data-modal-open data-id="{{parent_modal_id}}">{{parent_title}}</button>
+<dialog data-modal id="{{parent_modal_id}}" class="dd-modal">
+  <button class="dd-modal__button-close" data-modal-close data-id="{{parent_modal_id}}" aria-label="close modal window">X</button>
+  <div class="dd-modal__copy">
+    <p>{{parent_copy}}</p>
+  </div>
+</dialog>"#;
+    let data = json!({
+        "parent_title": modal.parent_title,
+        "parent_copy": modal.parent_copy,
+        "parent_modal_id": html_id_safe_from_title(&modal.parent_title, "modal")
+    });
+    render_inline(template, data)
+}
+
+fn render_slider(slider: &DdSlider) -> anyhow::Result<String> {
+    let template = r#"<div class="dd-slider">
+  {{#if has_parent_title}}
+  <div class="dd-slider__title">
+    <h2>{{parent_title}}</h2>
+  </div>
+  {{/if}}
+  <ul class="dd-slider__items -nostyle">
+    {{#each items}}
+    <li class="dd-slider__item" data-id="{{../parent_uid}}">
+      <div class="dd-slider__content">
+        <div class="dd-g">
+          <div class="dd-slider__body dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24 l-box">
+            <div class="dd-slider__title">
+              {{child_title}}
+            </div>
+            <div class="dd-slider__copy">
+              {{child_copy}}
+              {{#if has_link}}
+              <div class="dd-slider__links">
+                <div class="dd-slider__link">
+                  <a href="{{child_link_url}}" target="{{child_link_target}}" class="dd-button -primary">{{child_link_label}}</a>
+                </div>
+              </div>
+              {{/if}}
+            </div>
+          </div>
+          <div class="dd-slider__image dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24">
+            <img src="{{child_image_url}}" alt="{{child_image_alt}}" />
+          </div>
+        </div>
+      </div>
+    </li>
+    {{/each}}
+  </ul>
+  <div class="dd-slider__navigation">
+    <button id="dd-slider__previous"><span class="-scrn-reader-only">Previous slide</span> &lt; </button>
+    <ul class="dd-slider__tabs -nostyle"></ul>
+    <button id="dd-slider__next"><span class="-scrn-reader-only">Next slide</span> &gt; </button>
+  </div>
+</div>"#;
+
+    let fallback_uid = random_uid_fallback();
+    let parent_uid = html_id_safe_from_title(&slider.parent_title, &fallback_uid);
+    let mut items = Vec::new();
+    for item in &slider.items {
+        let link_url = item
+            .child_link_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string);
+        let link_label = item
+            .child_link_label
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string);
+        let has_link = link_url.is_some() && link_label.is_some();
+        let link_target = item
+            .child_link_target
+            .as_ref()
+            .and_then(|v| serde_json::to_value(v).ok())
+            .map(|v| stringify_json(&v))
+            .unwrap_or_else(|| "_self".to_string());
+        items.push(json!({
+            "child_title": item.child_title,
+            "child_copy": item.child_copy,
+            "child_link_url": link_url.unwrap_or_default(),
+            "child_link_target": link_target,
+            "child_link_label": link_label.unwrap_or_default(),
+            "child_image_url": item.child_image_url,
+            "child_image_alt": item.child_image_alt,
+            "has_link": has_link
+        }));
+    }
+    let data = json!({
+        "parent_title": slider.parent_title,
+        "has_parent_title": !slider.parent_title.trim().is_empty(),
+        "parent_uid": parent_uid,
+        "items": items
+    });
+    render_inline(template, data)
 }
 
 fn render_accordion(accordion: &DdAccordion) -> anyhow::Result<String> {
@@ -565,6 +904,38 @@ fn stringify_json(value: &Value) -> String {
         Value::String(v) => v.clone(),
         _ => String::new(),
     }
+}
+
+fn html_id_safe_from_title(title: &str, fallback: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+    for ch in title.trim().to_lowercase().chars() {
+        let keep = ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_' || ch == '-';
+        if keep {
+            out.push(ch);
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    let mut out = out.trim_matches('-').to_string();
+    if out.is_empty() {
+        out = fallback.to_string();
+    }
+    if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        out = format!("modal-{out}");
+    }
+    out
+}
+
+fn random_uid_fallback() -> String {
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let n = seed % 1_000_000;
+    format!("uid-{n:06}")
 }
 
 #[cfg(test)]

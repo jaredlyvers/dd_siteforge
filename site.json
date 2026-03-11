@@ -48,76 +48,213 @@
               "width_class": "dd-u-1-1",
               "components": [
                 {
-                  "component_type": "blockquote",
-                  "blockquote_data_aos": "zoom-in",
-                  "blockquote_image_url": "https://dummyimage.com/512x512/000/fff",
-                  "blockquote_image_alt": "Jared Lyvers",
-                  "blockquote_persons_name": "Jared Lyvers",
-                  "blockquote_persons_title": "Director of Digital Experience",
-                  "blockquote_copy": "blockquote content  \nMore content goes here  \n[google](https://www.google.com)  \n## testing\n<h3>testing 3</h3>\n\n\n\nMore testing  "
-                },
-                {
-                  "component_type": "alternating",
-                  "alternating_type": "-default",
-                  "alternating_class": "-default",
-                  "alternating_data_aos": "fade-in",
+                  "component_type": "filmstrip",
+                  "filmstrip_type": "-default",
+                  "filmstrip_data_aos": "fade-in",
                   "items": [
                     {
-                      "image": "https://dummyimage.com/600x400/000/fff",
-                      "image_alt": "Alternating image",
-                      "title": "Alternating Item",
-                      "copy": "Alternating content"
+                      "image_url": "https://dummyimage.com/256x256/000/fff",
+                      "image_alt": "Image alt text",
+                      "title": "Title"
                     },
                     {
-                      "image": "https://dummyimage.com/600x400/000/fff",
-                      "image_alt": "Alternating image 2",
-                      "title": "Alternating Item 2",
-                      "copy": "Alternating content"
+                      "image_url": "https://dummyimage.com/256x256/000/fff",
+                      "image_alt": "Image alt text",
+                      "title": "Title 2"
                     },
                     {
-                      "image": "https://dummyimage.com/600x400/000/fff",
-                      "image_alt": "Alternating image 3",
-                      "title": "Alternating Item 3",
-                      "copy": "Alternating content"
+                      "image_url": "https://dummyimage.com/256x256/000/fff",
+                      "image_alt": "Image alt text",
+                      "title": "Title 3"
                     },
                     {
-                      "image": "https://dummyimage.com/600x400/000/fff",
-                      "image_alt": "Alternating image 4",
-                      "title": "Alternating Item 4",
-                      "copy": "Alternating content"
+                      "image_url": "https://dummyimage.com/256x256/000/fff",
+                      "image_alt": "Image alt text",
+                      "title": "Title 4"
                     },
                     {
-                      "image": "https://dummyimage.com/600x400/000/fff",
-                      "image_alt": "Alternating image 5",
-                      "title": "Alternating Item 5",
-                      "copy": "Alternating content"
+                      "image_url": "https://dummyimage.com/256x256/000/fff",
+                      "image_alt": "Image alt text",
+                      "title": "Title 5"
                     },
                     {
-                      "image": "https://dummyimage.com/600x400/000/fff",
-                      "image_alt": "Alternating image 6",
-                      "title": "Alternating Item 6",
-                      "copy": "Alternating content"
+                      "image_url": "https://dummyimage.com/256x256/000/fff",
+                      "image_alt": "Image alt text",
+                      "title": "Title 6"
+                    }
+                  ]
+                },
+                {
+                  "component_type": "milestones",
+                  "parent_data_aos": "fade-in",
+                  "parent_width": "dd-u-1-1 dd-u-md-12-24",
+                  "items": [
+                    {
+                      "child_percentage": "70",
+                      "child_title": "New title",
+                      "child_subtitle": "Subtitle",
+                      "child_copy": "Copy\n\na\nf\nasfd\n\ndsf\n\ndsaf\n",
+                      "child_link_url": "/home",
+                      "child_link_target": "_self",
+                      "child_link_label": "home"
                     },
                     {
-                      "image": "https://dummyimage.com/600x400/000/fff",
-                      "image_alt": "Alternating image 7",
-                      "title": "Alternating Item 7",
-                      "copy": "Alternating content"
+                      "child_percentage": "70",
+                      "child_title": "Title 2",
+                      "child_subtitle": "Subtitle",
+                      "child_copy": "Copy",
+                      "child_link_url": null,
+                      "child_link_target": "_self",
+                      "child_link_label": null
+                    },
+                    {
+                      "child_percentage": "70",
+                      "child_title": "Title 3",
+                      "child_subtitle": "Subtitle",
+                      "child_copy": "Copy",
+                      "child_link_url": null,
+                      "child_link_target": "_self",
+                      "child_link_label": null
+                    }
+                  ]
+                },
+                {
+                  "component_type": "modal",
+                  "parent_title": "Title",
+                  "parent_copy": "Copy\n\nsdafs\n\nacd\nsavc\ndsa\ncsd\n\nc\nasd\ncasd\na"
+                }
+              ]
+            },
+            {
+              "id": "column-2",
+              "width_class": "dd-u-1-1",
+              "components": [
+                {
+                  "component_type": "filmstrip",
+                  "filmstrip_type": "-reverse",
+                  "filmstrip_data_aos": "fade-in",
+                  "items": [
+                    {
+                      "image_url": "https://dummyimage.com/256x256/000/fff",
+                      "image_alt": "Image alt text",
+                      "title": "Title"
+                    },
+                    {
+                      "image_url": "https://dummyimage.com/256x256/000/fff",
+                      "image_alt": "Image alt text",
+                      "title": "Title 2"
+                    },
+                    {
+                      "image_url": "https://dummyimage.com/256x256/000/fff",
+                      "image_alt": "Image alt text",
+                      "title": "Title 3"
+                    },
+                    {
+                      "image_url": "https://dummyimage.com/256x256/000/fff",
+                      "image_alt": "Image alt text",
+                      "title": "Title 4"
+                    },
+                    {
+                      "image_url": "https://dummyimage.com/256x256/000/fff",
+                      "image_alt": "Image alt text",
+                      "title": "Title 5"
+                    },
+                    {
+                      "image_url": "https://dummyimage.com/256x256/000/fff",
+                      "image_alt": "Image alt text",
+                      "title": "Title 6"
                     }
                   ]
                 }
               ]
+            },
+            {
+              "id": "column-3",
+              "width_class": "dd-u-1-1 dd-u-md-12-24",
+              "components": []
+            },
+            {
+              "id": "column-4",
+              "width_class": "dd-u-1-1 dd-u-md-12-24",
+              "components": []
             }
           ],
           "components": [
             {
-              "component_type": "blockquote",
-              "blockquote_data_aos": "zoom-in",
-              "blockquote_image_url": "https://dummyimage.com/512x512/000/fff",
-              "blockquote_image_alt": "Jared Lyvers",
-              "blockquote_persons_name": "Jared Lyvers",
-              "blockquote_persons_title": "Director of Digital Experience",
-              "blockquote_copy": "blockquote content  \nMore content goes here  \n[google](https://www.google.com)  \n## testing\n<h3>testing 3</h3>\n\n\n\nMore testing  "
+              "component_type": "filmstrip",
+              "filmstrip_type": "-default",
+              "filmstrip_data_aos": "fade-in",
+              "items": [
+                {
+                  "image_url": "https://dummyimage.com/256x256/000/fff",
+                  "image_alt": "Image alt text",
+                  "title": "Title"
+                },
+                {
+                  "image_url": "https://dummyimage.com/256x256/000/fff",
+                  "image_alt": "Image alt text",
+                  "title": "Title 2"
+                },
+                {
+                  "image_url": "https://dummyimage.com/256x256/000/fff",
+                  "image_alt": "Image alt text",
+                  "title": "Title 3"
+                },
+                {
+                  "image_url": "https://dummyimage.com/256x256/000/fff",
+                  "image_alt": "Image alt text",
+                  "title": "Title 4"
+                },
+                {
+                  "image_url": "https://dummyimage.com/256x256/000/fff",
+                  "image_alt": "Image alt text",
+                  "title": "Title 5"
+                },
+                {
+                  "image_url": "https://dummyimage.com/256x256/000/fff",
+                  "image_alt": "Image alt text",
+                  "title": "Title 6"
+                }
+              ]
+            },
+            {
+              "component_type": "milestones",
+              "parent_data_aos": "fade-in",
+              "parent_width": "dd-u-1-1 dd-u-md-12-24",
+              "items": [
+                {
+                  "child_percentage": "70",
+                  "child_title": "New title",
+                  "child_subtitle": "Subtitle",
+                  "child_copy": "Copy\n\na\nf\nasfd\n\ndsf\n\ndsaf\n",
+                  "child_link_url": "/home",
+                  "child_link_target": "_self",
+                  "child_link_label": "home"
+                },
+                {
+                  "child_percentage": "70",
+                  "child_title": "Title 2",
+                  "child_subtitle": "Subtitle",
+                  "child_copy": "Copy",
+                  "child_link_url": null,
+                  "child_link_target": "_self",
+                  "child_link_label": null
+                },
+                {
+                  "child_percentage": "70",
+                  "child_title": "Title 3",
+                  "child_subtitle": "Subtitle",
+                  "child_copy": "Copy",
+                  "child_link_url": null,
+                  "child_link_target": "_self",
+                  "child_link_label": null
+                }
+              ]
+            },
+            {
+              "component_type": "modal",
+              "parent_title": "Title",
+              "parent_copy": "Copy\n\nsdafs\n\nacd\nsavc\ndsa\ncsd\n\nc\nasd\ncasd\na"
             }
           ]
         }

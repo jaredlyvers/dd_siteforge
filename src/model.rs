@@ -79,6 +79,12 @@ pub struct SectionColumn {
 #[serde(tag = "component_type", rename_all = "snake_case")]
 pub enum SectionComponent {
     Alternating(DdAlternating),
+    Card(DdCard),
+    Cta(DdCta),
+    Filmstrip(DdFilmstrip),
+    Milestones(DdMilestones),
+    Slider(DdSlider),
+    Modal(DdModal),
     Banner(DdBanner),
     Accordion(DdAccordion),
     Blockquote(DdBlockquote),
@@ -93,6 +99,29 @@ pub struct DdAlternating {
     #[serde(default = "default_alternating_data_aos")]
     pub alternating_data_aos: HeroAos,
     pub items: Vec<AlternatingItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DdCard {
+    #[serde(default = "default_card_type")]
+    pub card_type: CardType,
+    #[serde(default = "default_card_data_aos")]
+    pub card_data_aos: HeroAos,
+    #[serde(default = "default_card_width")]
+    pub card_width: String,
+    pub items: Vec<CardItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CardItem {
+    pub card_image_url: String,
+    pub card_image_alt: String,
+    pub card_title: String,
+    pub card_subtitle: String,
+    pub card_copy: String,
+    pub card_link_url: Option<String>,
+    pub card_link_target: Option<CardLinkTarget>,
+    pub card_link_label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,6 +140,82 @@ pub struct DdBanner {
     pub banner_data_aos: HeroAos,
     pub banner_image_url: String,
     pub banner_image_alt: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DdCta {
+    #[serde(default = "default_cta_class")]
+    pub cta_class: CtaClass,
+    pub cta_image_url: String,
+    pub cta_image_alt: String,
+    #[serde(default = "default_cta_data_aos")]
+    pub cta_data_aos: HeroAos,
+    pub cta_title: String,
+    pub cta_subtitle: String,
+    pub cta_copy: String,
+    pub cta_link_url: Option<String>,
+    pub cta_link_target: Option<CardLinkTarget>,
+    pub cta_link_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DdFilmstrip {
+    #[serde(default = "default_filmstrip_type")]
+    pub filmstrip_type: FilmstripType,
+    #[serde(default = "default_filmstrip_data_aos")]
+    pub filmstrip_data_aos: HeroAos,
+    pub items: Vec<FilmstripItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FilmstripItem {
+    pub image_url: String,
+    pub image_alt: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DdMilestones {
+    #[serde(default = "default_milestones_data_aos")]
+    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_milestones_width")]
+    pub parent_width: String,
+    pub items: Vec<MilestonesItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MilestonesItem {
+    pub child_percentage: String,
+    pub child_title: String,
+    pub child_subtitle: String,
+    pub child_copy: String,
+    pub child_link_url: Option<String>,
+    pub child_link_target: Option<CardLinkTarget>,
+    pub child_link_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DdModal {
+    pub parent_title: String,
+    pub parent_copy: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DdSlider {
+    #[serde(default)]
+    pub parent_title: String,
+    pub items: Vec<SliderItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SliderItem {
+    pub child_title: String,
+    pub child_copy: String,
+    pub child_link_url: Option<String>,
+    pub child_link_target: Option<CardLinkTarget>,
+    pub child_link_label: Option<String>,
+    pub child_image_url: String,
+    pub child_image_alt: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -172,12 +277,48 @@ fn default_alternating_data_aos() -> HeroAos {
     HeroAos::FadeIn
 }
 
+fn default_card_type() -> CardType {
+    CardType::Default
+}
+
+fn default_card_data_aos() -> HeroAos {
+    HeroAos::FadeIn
+}
+
+fn default_card_width() -> String {
+    "dd-u-1-1 dd-u-md-12-24 dd-u-lg-8-24".to_string()
+}
+
 fn default_banner_class() -> BannerClass {
     BannerClass::BgCenterCenter
 }
 
 fn default_banner_data_aos() -> HeroAos {
     HeroAos::FadeIn
+}
+
+fn default_cta_class() -> CtaClass {
+    CtaClass::TopLeft
+}
+
+fn default_cta_data_aos() -> HeroAos {
+    HeroAos::FadeIn
+}
+
+fn default_filmstrip_type() -> FilmstripType {
+    FilmstripType::Default
+}
+
+fn default_filmstrip_data_aos() -> HeroAos {
+    HeroAos::FadeIn
+}
+
+fn default_milestones_data_aos() -> HeroAos {
+    HeroAos::FadeIn
+}
+
+fn default_milestones_width() -> String {
+    "dd-u-1-1 dd-u-md-12-24".to_string()
 }
 
 fn default_blockquote_data_aos() -> HeroAos {
@@ -285,6 +426,22 @@ pub enum AlternatingType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CardType {
+    #[serde(rename = "-default")]
+    Default,
+    #[serde(rename = "-horizontal")]
+    Horizontal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CardLinkTarget {
+    #[serde(rename = "_self")]
+    SelfTarget,
+    #[serde(rename = "_blank")]
+    Blank,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BannerClass {
     #[serde(rename = "-bg-top-left")]
     BgTopLeft,
@@ -304,6 +461,36 @@ pub enum BannerClass {
     BgBottomCenter,
     #[serde(rename = "-bg-bottom-right")]
     BgBottomRight,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CtaClass {
+    #[serde(rename = "-top-left")]
+    TopLeft,
+    #[serde(rename = "-top-center")]
+    TopCenter,
+    #[serde(rename = "-top-right")]
+    TopRight,
+    #[serde(rename = "-center-left")]
+    CenterLeft,
+    #[serde(rename = "-center-center")]
+    CenterCenter,
+    #[serde(rename = "-center-right")]
+    CenterRight,
+    #[serde(rename = "-bottom-left")]
+    BottomLeft,
+    #[serde(rename = "-bottom-center")]
+    BottomCenter,
+    #[serde(rename = "-bottom-right")]
+    BottomRight,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FilmstripType {
+    #[serde(rename = "-default")]
+    Default,
+    #[serde(rename = "-reverse")]
+    Reverse,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

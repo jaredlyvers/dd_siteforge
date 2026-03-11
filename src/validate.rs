@@ -138,6 +138,70 @@ fn validate_section_component(
                 }
             }
         }
+        SectionComponent::Card(card) => {
+            if card.card_width.trim().is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' has dd-card with empty card_width.",
+                    page_id, section_id
+                ));
+            }
+            if card.items.is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' has dd-card with no items.",
+                    page_id, section_id
+                ));
+            }
+            for (idx, item) in card.items.iter().enumerate() {
+                if item.card_image_url.trim().is_empty()
+                    || item.card_image_alt.trim().is_empty()
+                    || item.card_title.trim().is_empty()
+                    || item.card_subtitle.trim().is_empty()
+                    || item.card_copy.trim().is_empty()
+                {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-card item {} has missing required fields.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+                if !is_valid_url(&item.card_image_url) {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-card item {} card_image_url is invalid.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+                let has_link_url = item
+                    .card_link_url
+                    .as_deref()
+                    .is_some_and(|v| !v.trim().is_empty());
+                let has_link_label = item
+                    .card_link_label
+                    .as_deref()
+                    .is_some_and(|v| !v.trim().is_empty());
+                if has_link_url ^ has_link_label {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-card item {} must provide both card_link_url and card_link_label together.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+                if let Some(url) = item.card_link_url.as_deref()
+                    && !url.trim().is_empty()
+                    && !is_valid_url(url)
+                {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-card item {} card_link_url is invalid.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+            }
+        }
         SectionComponent::Banner(banner) => {
             if banner.banner_image_url.trim().is_empty() {
                 errors.push(format!(
@@ -156,6 +220,197 @@ fn validate_section_component(
                     "Page '{}' section '{}' dd-banner banner_image_url is invalid.",
                     page_id, section_id
                 ));
+            }
+        }
+        SectionComponent::Cta(cta) => {
+            if cta.cta_image_url.trim().is_empty()
+                || cta.cta_image_alt.trim().is_empty()
+                || cta.cta_title.trim().is_empty()
+                || cta.cta_subtitle.trim().is_empty()
+                || cta.cta_copy.trim().is_empty()
+            {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-cta has missing required fields.",
+                    page_id, section_id
+                ));
+            }
+            if !is_valid_url(&cta.cta_image_url) {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-cta cta_image_url is invalid.",
+                    page_id, section_id
+                ));
+            }
+            let has_link_url = cta
+                .cta_link_url
+                .as_deref()
+                .is_some_and(|v| !v.trim().is_empty());
+            let has_link_label = cta
+                .cta_link_label
+                .as_deref()
+                .is_some_and(|v| !v.trim().is_empty());
+            if has_link_url ^ has_link_label {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-cta must provide both cta_link_url and cta_link_label together.",
+                    page_id, section_id
+                ));
+            }
+            if let Some(url) = cta.cta_link_url.as_deref()
+                && !url.trim().is_empty()
+                && !is_valid_url(url)
+            {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-cta cta_link_url is invalid.",
+                    page_id, section_id
+                ));
+            }
+        }
+        SectionComponent::Filmstrip(filmstrip) => {
+            if filmstrip.items.is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' has dd-filmstrip with no items.",
+                    page_id, section_id
+                ));
+            }
+            for (idx, item) in filmstrip.items.iter().enumerate() {
+                if item.image_url.trim().is_empty()
+                    || item.image_alt.trim().is_empty()
+                    || item.title.trim().is_empty()
+                {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-filmstrip item {} has missing required fields.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+                if !is_valid_url(&item.image_url) {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-filmstrip item {} image_url is invalid.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+            }
+        }
+        SectionComponent::Milestones(milestones) => {
+            if milestones.parent_width.trim().is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' has dd-milestones with empty parent_width.",
+                    page_id, section_id
+                ));
+            }
+            if milestones.items.is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' has dd-milestones with no items.",
+                    page_id, section_id
+                ));
+            }
+            for (idx, item) in milestones.items.iter().enumerate() {
+                if item.child_percentage.trim().is_empty()
+                    || item.child_title.trim().is_empty()
+                    || item.child_subtitle.trim().is_empty()
+                    || item.child_copy.trim().is_empty()
+                {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-milestones item {} has missing required fields.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+                let has_link_url = item
+                    .child_link_url
+                    .as_deref()
+                    .is_some_and(|v| !v.trim().is_empty());
+                let has_link_label = item
+                    .child_link_label
+                    .as_deref()
+                    .is_some_and(|v| !v.trim().is_empty());
+                if has_link_url ^ has_link_label {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-milestones item {} must provide both child_link_url and child_link_label together.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+                if let Some(url) = item.child_link_url.as_deref()
+                    && !url.trim().is_empty()
+                    && !is_valid_url(url)
+                {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-milestones item {} child_link_url is invalid.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+            }
+        }
+        SectionComponent::Modal(modal) => {
+            if modal.parent_title.trim().is_empty() || modal.parent_copy.trim().is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-modal has missing required fields.",
+                    page_id, section_id
+                ));
+            }
+        }
+        SectionComponent::Slider(slider) => {
+            if slider.items.is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' has dd-slider with no items.",
+                    page_id, section_id
+                ));
+            }
+            for (idx, item) in slider.items.iter().enumerate() {
+                if item.child_title.trim().is_empty()
+                    || item.child_copy.trim().is_empty()
+                    || item.child_image_url.trim().is_empty()
+                    || item.child_image_alt.trim().is_empty()
+                {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-slider item {} has missing required fields.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+                if !is_valid_url(&item.child_image_url) {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-slider item {} child_image_url is invalid.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+                let has_link_url = item
+                    .child_link_url
+                    .as_deref()
+                    .is_some_and(|v| !v.trim().is_empty());
+                let has_link_label = item
+                    .child_link_label
+                    .as_deref()
+                    .is_some_and(|v| !v.trim().is_empty());
+                if has_link_url ^ has_link_label {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-slider item {} must provide both child_link_url and child_link_label together.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
+                if let Some(url) = item.child_link_url.as_deref()
+                    && !url.trim().is_empty()
+                    && !is_valid_url(url)
+                {
+                    errors.push(format!(
+                        "Page '{}' section '{}' dd-slider item {} child_link_url is invalid.",
+                        page_id,
+                        section_id,
+                        idx + 1
+                    ));
+                }
             }
         }
         SectionComponent::Accordion(accordion) => {

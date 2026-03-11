@@ -49,6 +49,7 @@ fields:
       - id: alternating_copy
         required: true
         type: string
+        maps_to: ".dd-alternating__copy"
         ui:
           control: textarea
           rows: 5
