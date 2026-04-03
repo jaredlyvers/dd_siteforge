@@ -23,7 +23,7 @@
           "custom_css": null,
           "title": "Build with dd-framework",
           "subtitle": "Framework-native static page builder",
-          "copy": "Compose pages with typed component schemas.",
+          "copy": "Compose pages with typed component schemas.dd\n\nddddddd",
           "cta_text": "Get Started",
           "cta_link": "/start",
           "cta_target": "_self",
@@ -45,218 +45,61 @@
           "columns": [
             {
               "id": "column-1",
-              "width_class": "dd-u-1-1",
+              "width_class": "dd-u-1-1 dd-u-sm-1-1 dd-u-md-12-24",
               "components": [
                 {
-                  "component_type": "filmstrip",
-                  "filmstrip_type": "-default",
-                  "filmstrip_data_aos": "fade-in",
-                  "items": [
-                    {
-                      "image_url": "https://dummyimage.com/256x256/000/fff",
-                      "image_alt": "Image alt text",
-                      "title": "Title"
-                    },
-                    {
-                      "image_url": "https://dummyimage.com/256x256/000/fff",
-                      "image_alt": "Image alt text",
-                      "title": "Title 2"
-                    },
-                    {
-                      "image_url": "https://dummyimage.com/256x256/000/fff",
-                      "image_alt": "Image alt text",
-                      "title": "Title 3"
-                    },
-                    {
-                      "image_url": "https://dummyimage.com/256x256/000/fff",
-                      "image_alt": "Image alt text",
-                      "title": "Title 4"
-                    },
-                    {
-                      "image_url": "https://dummyimage.com/256x256/000/fff",
-                      "image_alt": "Image alt text",
-                      "title": "Title 5"
-                    },
-                    {
-                      "image_url": "https://dummyimage.com/256x256/000/fff",
-                      "image_alt": "Image alt text",
-                      "title": "Title 6"
-                    }
-                  ]
-                },
-                {
-                  "component_type": "milestones",
-                  "parent_data_aos": "fade-in",
-                  "parent_width": "dd-u-1-1 dd-u-md-12-24",
-                  "items": [
-                    {
-                      "child_percentage": "70",
-                      "child_title": "New title",
-                      "child_subtitle": "Subtitle",
-                      "child_copy": "Copy\n\na\nf\nasfd\n\ndsf\n\ndsaf\n",
-                      "child_link_url": "/home",
-                      "child_link_target": "_self",
-                      "child_link_label": "home"
-                    },
-                    {
-                      "child_percentage": "70",
-                      "child_title": "Title 2",
-                      "child_subtitle": "Subtitle",
-                      "child_copy": "Copy",
-                      "child_link_url": null,
-                      "child_link_target": "_self",
-                      "child_link_label": null
-                    },
-                    {
-                      "child_percentage": "70",
-                      "child_title": "Title 3",
-                      "child_subtitle": "Subtitle",
-                      "child_copy": "Copy",
-                      "child_link_url": null,
-                      "child_link_target": "_self",
-                      "child_link_label": null
-                    }
-                  ]
-                },
-                {
-                  "component_type": "modal",
-                  "parent_title": "Title",
-                  "parent_copy": "Copy\n\nsdafs\n\nacd\nsavc\ndsa\ncsd\n\nc\nasd\ncasd\na"
+                  "component_type": "blockquote",
+                  "blockquote_data_aos": "fade-in",
+                  "blockquote_image_url": "https://dummyimage.com/512x512/000/fff",
+                  "blockquote_image_alt": "blockquote Persons Name",
+                  "blockquote_persons_name": "blockquote Persons Name",
+                  "blockquote_persons_title": "blockquote Persons Title",
+                  "blockquote_copy": "blockquote content\nasdf\nasdf\nasdf\n\n\nsadf\nasdf\nasdfsadf\n\n\nasdfasdf\nasdsfasd\n\n\n\nasdfsafasd\n\n\n\nasdfsdf"
                 }
               ]
             },
             {
               "id": "column-2",
-              "width_class": "dd-u-1-1",
+              "width_class": "dd-u-1-1 dd-u-sm-101 dd-u-md-12-24",
               "components": [
                 {
-                  "component_type": "filmstrip",
-                  "filmstrip_type": "-reverse",
-                  "filmstrip_data_aos": "fade-in",
-                  "items": [
-                    {
-                      "image_url": "https://dummyimage.com/256x256/000/fff",
-                      "image_alt": "Image alt text",
-                      "title": "Title"
-                    },
-                    {
-                      "image_url": "https://dummyimage.com/256x256/000/fff",
-                      "image_alt": "Image alt text",
-                      "title": "Title 2"
-                    },
-                    {
-                      "image_url": "https://dummyimage.com/256x256/000/fff",
-                      "image_alt": "Image alt text",
-                      "title": "Title 3"
-                    },
-                    {
-                      "image_url": "https://dummyimage.com/256x256/000/fff",
-                      "image_alt": "Image alt text",
-                      "title": "Title 4"
-                    },
-                    {
-                      "image_url": "https://dummyimage.com/256x256/000/fff",
-                      "image_alt": "Image alt text",
-                      "title": "Title 5"
-                    },
-                    {
-                      "image_url": "https://dummyimage.com/256x256/000/fff",
-                      "image_alt": "Image alt text",
-                      "title": "Title 6"
-                    }
-                  ]
+                  "component_type": "blockquote",
+                  "blockquote_data_aos": "fade-in",
+                  "blockquote_image_url": "https://dummyimage.com/512x512/000/fff",
+                  "blockquote_image_alt": "blockquote Persons Name",
+                  "blockquote_persons_name": "blockquote Persons Name",
+                  "blockquote_persons_title": "blockquote Persons Title",
+                  "blockquote_copy": "blockquote content\n\ntesting"
                 }
               ]
-            },
-            {
-              "id": "column-3",
-              "width_class": "dd-u-1-1 dd-u-md-12-24",
-              "components": []
-            },
-            {
-              "id": "column-4",
-              "width_class": "dd-u-1-1 dd-u-md-12-24",
-              "components": []
             }
           ],
           "components": [
             {
-              "component_type": "filmstrip",
-              "filmstrip_type": "-default",
-              "filmstrip_data_aos": "fade-in",
-              "items": [
-                {
-                  "image_url": "https://dummyimage.com/256x256/000/fff",
-                  "image_alt": "Image alt text",
-                  "title": "Title"
-                },
-                {
-                  "image_url": "https://dummyimage.com/256x256/000/fff",
-                  "image_alt": "Image alt text",
-                  "title": "Title 2"
-                },
-                {
-                  "image_url": "https://dummyimage.com/256x256/000/fff",
-                  "image_alt": "Image alt text",
-                  "title": "Title 3"
-                },
-                {
-                  "image_url": "https://dummyimage.com/256x256/000/fff",
-                  "image_alt": "Image alt text",
-                  "title": "Title 4"
-                },
-                {
-                  "image_url": "https://dummyimage.com/256x256/000/fff",
-                  "image_alt": "Image alt text",
-                  "title": "Title 5"
-                },
-                {
-                  "image_url": "https://dummyimage.com/256x256/000/fff",
-                  "image_alt": "Image alt text",
-                  "title": "Title 6"
-                }
-              ]
-            },
-            {
-              "component_type": "milestones",
-              "parent_data_aos": "fade-in",
-              "parent_width": "dd-u-1-1 dd-u-md-12-24",
-              "items": [
-                {
-                  "child_percentage": "70",
-                  "child_title": "New title",
-                  "child_subtitle": "Subtitle",
-                  "child_copy": "Copy\n\na\nf\nasfd\n\ndsf\n\ndsaf\n",
-                  "child_link_url": "/home",
-                  "child_link_target": "_self",
-                  "child_link_label": "home"
-                },
-                {
-                  "child_percentage": "70",
-                  "child_title": "Title 2",
-                  "child_subtitle": "Subtitle",
-                  "child_copy": "Copy",
-                  "child_link_url": null,
-                  "child_link_target": "_self",
-                  "child_link_label": null
-                },
-                {
-                  "child_percentage": "70",
-                  "child_title": "Title 3",
-                  "child_subtitle": "Subtitle",
-                  "child_copy": "Copy",
-                  "child_link_url": null,
-                  "child_link_target": "_self",
-                  "child_link_label": null
-                }
-              ]
-            },
-            {
-              "component_type": "modal",
-              "parent_title": "Title",
-              "parent_copy": "Copy\n\nsdafs\n\nacd\nsavc\ndsa\ncsd\n\nc\nasd\ncasd\na"
+              "component_type": "blockquote",
+              "blockquote_data_aos": "fade-in",
+              "blockquote_image_url": "https://dummyimage.com/512x512/000/fff",
+              "blockquote_image_alt": "blockquote Persons Name",
+              "blockquote_persons_name": "blockquote Persons Name",
+              "blockquote_persons_title": "blockquote Persons Title",
+              "blockquote_copy": "blockquote content\n\ntesting"
             }
           ]
+        },
+        {
+          "node_type": "section",
+          "id": "section-2",
+          "section_title": null,
+          "section_class": "-full-contained",
+          "item_box_class": "l-box",
+          "columns": [
+            {
+              "id": "column-1",
+              "width_class": "dd-u-1-1",
+              "components": []
+            }
+          ],
+          "components": []
         }
       ]
     }

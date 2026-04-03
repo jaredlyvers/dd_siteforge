@@ -51,6 +51,13 @@ pub fn run_tui(site: Site, path: Option<PathBuf>) -> anyhow::Result<()> {
     run_res
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SidebarSection {
+    Regions,
+    Pages,
+    Layouts,
+}
+
 struct App {
     site: Site,
     theme: AppTheme,
@@ -60,6 +67,7 @@ struct App {
     selected_column: usize,
     selected_component: usize,
     selected_nested_item: usize,
+    selected_sidebar_section: SidebarSection,
     list_area: Rect,
     details_area: Rect,
     details_scroll_row: usize,
@@ -198,15 +206,32 @@ enum ComponentKind {
 
 #[derive(Clone, Copy)]
 struct AppTheme {
+    // Core UI backgrounds
     background: Color,
     panel_background: Color,
     popup_background: Color,
+    // Text colors (from dd_framework text roles)
     foreground: Color,
     muted: Color,
-    border: Color,
+    disabled: Color,
+    text_inverse: Color,
+    // Accent colors (from dd_framework primary action)
     title: Color,
+    active: Color,
+    // Border colors
+    border: Color,
+    border_active: Color,
+    // Input field colors
+    input_default: Color,
+    input_focus: Color,
+    // Selection colors
     selected_background: Color,
     selected_foreground: Color,
+    // Semantic colors (from dd_framework)
+    success: Color,
+    warning: Color,
+    error: Color,
+    info: Color,
 }
 
 #[derive(Debug, Deserialize)]
@@ -216,15 +241,30 @@ struct ThemeFile {
 
 #[derive(Debug, Deserialize)]
 struct PaletteFile {
-    base: String,
-    mantle: Option<String>,
-    crust: Option<String>,
+    // Core backgrounds
+    base_background: String,
+    body_background: Option<String>,
+    modal_background: Option<String>,
+    // Text colors (dd_framework: $c_text_primary, $c_text_secondary, $c_text_disabled, $c_text_inverse)
     text: String,
     subtext0: Option<String>,
-    surface0: String,
-    overlay0: String,
-    lavender: Option<String>,
-    blue: Option<String>,
+    text_disabled: Option<String>,
+    text_inverse: Option<String>,
+    // Selection
+    selected_background: String,
+    // Borders (dd_framework: $c_support_border, active state)
+    border_default: String,
+    border_active: Option<String>,
+    // Input field colors
+    input_default: Option<String>,
+    input_focus: Option<String>,
+    // Active accent
+    active: Option<String>,
+    // Semantic colors (dd_framework: $c_success_text, $c_warning_text, $c_error_text, $c_info_text)
+    success: Option<String>,
+    warning: Option<String>,
+    error: Option<String>,
+    info: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -301,6 +341,7 @@ impl App {
             selected_column: 0,
             selected_component: 0,
             selected_nested_item: 0,
+            selected_sidebar_section: SidebarSection::Layouts,
             list_area: Rect::default(),
             details_area: Rect::default(),
             details_scroll_row: 0,
@@ -356,39 +397,61 @@ impl App {
             .split(frame.area());
         let main = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+            .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
             .split(root[1]);
 
-        let header = Paragraph::new(format!(
-            "Page: {} ({}/{})",
-            page.title,
-            self.selected_page + 1,
-            self.site.pages.len()
-        ))
-        .style(
+        // Header with "dd | Page: {name}" format
+        let header_text = format!("dd | Page: {}", page.title);
+        let header = Paragraph::new(header_text).style(
             Style::default()
                 .fg(self.theme.foreground)
                 .bg(self.theme.background),
         );
         frame.render_widget(header, root[0]);
 
-        let tree_rows = self.build_node_tree_rows();
-        let node_lines = tree_rows
-            .iter()
-            .enumerate()
-            .map(|(_, row)| ListItem::new(self.tree_row_label(row)))
-            .collect::<Vec<_>>();
-        let list = List::new(node_lines)
+        // Split sidebar into three sections: Regions, Pages, Layouts
+        let sidebar = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(6), // Regions (Header, Footer)
+                Constraint::Length(8), // Pages (numbered list, scrollable)
+                Constraint::Min(1),    // Layouts (component tree)
+            ])
+            .split(main[0]);
+
+        // Determine border colors based on active section
+        let regions_border = if self.selected_sidebar_section == SidebarSection::Regions {
+            self.theme.active
+        } else {
+            self.theme.border
+        };
+        let pages_border = if self.selected_sidebar_section == SidebarSection::Pages {
+            self.theme.active
+        } else {
+            self.theme.border
+        };
+        let layouts_border = if self.selected_sidebar_section == SidebarSection::Layouts {
+            self.theme.active
+        } else {
+            self.theme.border
+        };
+
+        // Regions section (Header, Footer)
+        let regions_items = vec![
+            ListItem::new("  Header").style(Style::default().fg(self.theme.foreground)),
+            ListItem::new("  Footer").style(Style::default().fg(self.theme.foreground)),
+        ];
+        let regions_list = List::new(regions_items)
             .block(
                 Block::default()
-                    .title("Nodes")
+                    .title("[1] Regions")
                     .borders(Borders::ALL)
                     .style(
                         Style::default()
                             .fg(self.theme.foreground)
                             .bg(self.theme.panel_background),
                     )
-                    .border_style(Style::default().fg(self.theme.border))
+                    .border_style(Style::default().fg(regions_border))
                     .title_style(
                         Style::default()
                             .fg(self.theme.title)
@@ -407,12 +470,114 @@ impl App {
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol("> ");
-        let mut state = ListState::default();
-        if !tree_rows.is_empty() {
-            state.select(Some(self.selected_tree_row.min(tree_rows.len() - 1)));
+        frame.render_widget(regions_list, sidebar[0]);
+
+        // Pages section (numbered list)
+        let page_items: Vec<ListItem> = self
+            .site
+            .pages
+            .iter()
+            .enumerate()
+            .map(|(idx, page)| {
+                let num = format!("{:02}", idx + 1);
+                let label = format!("{} {}", num, page.slug);
+                let style = if idx == self.selected_page {
+                    Style::default()
+                        .fg(self.theme.selected_foreground)
+                        .bg(self.theme.selected_background)
+                } else {
+                    Style::default().fg(self.theme.foreground)
+                };
+                ListItem::new(label).style(style)
+            })
+            .collect();
+        let pages_list = List::new(page_items)
+            .block(
+                Block::default()
+                    .title("[2] Nodes")
+                    .borders(Borders::ALL)
+                    .style(
+                        Style::default()
+                            .fg(self.theme.foreground)
+                            .bg(self.theme.panel_background),
+                    )
+                    .border_style(Style::default().fg(pages_border))
+                    .title_style(
+                        Style::default()
+                            .fg(self.theme.title)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+            )
+            .style(
+                Style::default()
+                    .fg(self.theme.foreground)
+                    .bg(self.theme.panel_background),
+            )
+            .highlight_style(
+                Style::default()
+                    .fg(self.theme.selected_foreground)
+                    .bg(self.theme.selected_background)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("> ");
+        let mut pages_state = ListState::default();
+        if !self.site.pages.is_empty() {
+            pages_state.select(Some(self.selected_page));
         }
-        frame.render_stateful_widget(list, main[0], &mut state);
-        self.list_area = main[0];
+        frame.render_widget(pages_list, sidebar[1]);
+
+        // Layouts section (component tree)
+        let tree_rows = self.build_node_tree_rows();
+        let layout_items: Vec<ListItem> = tree_rows
+            .iter()
+            .enumerate()
+            .map(|(idx, row)| {
+                let label = self.tree_row_label(row);
+                let style = if idx == self.selected_tree_row {
+                    Style::default()
+                        .fg(self.theme.selected_foreground)
+                        .bg(self.theme.selected_background)
+                } else {
+                    Style::default().fg(self.theme.foreground)
+                };
+                ListItem::new(label).style(style)
+            })
+            .collect();
+        let layouts_list = List::new(layout_items)
+            .block(
+                Block::default()
+                    .title("[3] Layout")
+                    .borders(Borders::ALL)
+                    .style(
+                        Style::default()
+                            .fg(self.theme.foreground)
+                            .bg(self.theme.panel_background),
+                    )
+                    .border_style(Style::default().fg(layouts_border))
+                    .title_style(
+                        Style::default()
+                            .fg(self.theme.title)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+            )
+            .style(
+                Style::default()
+                    .fg(self.theme.foreground)
+                    .bg(self.theme.panel_background),
+            )
+            .highlight_style(
+                Style::default()
+                    .fg(self.theme.selected_foreground)
+                    .bg(self.theme.selected_background)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("> ");
+        let mut layouts_state = ListState::default();
+        if !tree_rows.is_empty() {
+            layouts_state.select(Some(self.selected_tree_row.min(tree_rows.len() - 1)));
+        }
+        frame.render_stateful_widget(layouts_list, sidebar[2], &mut layouts_state);
+        self.list_area = sidebar[2];
 
         self.details_area = main[1];
         let details_width = main[1].width.saturating_sub(2) as usize;
@@ -573,37 +738,71 @@ impl App {
                     "-".repeat(box_inner)
                 )
             } else {
-                format!("Value:\n{}", self.input_buffer)
+                // Single-line input - will be rendered separately with styled border
+                self.input_buffer.clone()
             };
-            let modal = Paragraph::new(format!(
-                "Editing: {}\n\n{}\n\nEditable fields:\n{}\n\nEnter: save | Esc: cancel",
-                self.current_input_mode_label(),
-                value_block,
-                edit_help
-            ))
-            .style(
-                Style::default()
-                    .fg(self.theme.foreground)
-                    .bg(self.theme.popup_background),
-            )
-            .block(
-                Block::default()
-                    .title("Edit Item")
-                    .borders(Borders::ALL)
+
+            // Render modal content - simplified, no editable fields list
+            let modal_content = if self.is_multiline_input_mode() {
+                format!(
+                    "Editing: {}\n\n{}\n\nEnter: save | Esc: cancel",
+                    self.current_input_mode_label(),
+                    value_block
+                )
+            } else {
+                format!(
+                    "Editing: {}\n\nEnter: save | Esc: cancel",
+                    self.current_input_mode_label()
+                )
+            };
+
+            let modal = Paragraph::new(modal_content)
+                .style(
+                    Style::default()
+                        .fg(self.theme.foreground)
+                        .bg(self.theme.popup_background),
+                )
+                .block(
+                    Block::default()
+                        .title("Edit Item")
+                        .borders(Borders::ALL)
+                        .style(
+                            Style::default()
+                                .fg(self.theme.foreground)
+                                .bg(self.theme.popup_background),
+                        )
+                        .border_style(Style::default().fg(self.theme.input_focus))
+                        .title_style(
+                            Style::default()
+                                .fg(self.theme.title)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                )
+                .wrap(Wrap { trim: true });
+            frame.render_widget(modal, area);
+
+            // Render single-line input box with input_default border
+            if !self.is_multiline_input_mode() {
+                let input_area = Rect {
+                    x: area.x + 2,
+                    y: area.y + 3,
+                    width: area.width.saturating_sub(4),
+                    height: 3,
+                };
+                let input_block = Paragraph::new(value_block.as_str())
                     .style(
                         Style::default()
                             .fg(self.theme.foreground)
                             .bg(self.theme.popup_background),
                     )
-                    .border_style(Style::default().fg(self.theme.border))
-                    .title_style(
-                        Style::default()
-                            .fg(self.theme.title)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-            )
-            .wrap(Wrap { trim: true });
-            frame.render_widget(modal, area);
+                    .block(
+                        Block::default()
+                            .title("Value")
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(self.theme.input_default)),
+                    );
+                frame.render_widget(input_block, input_area);
+            }
         }
 
         if let Some(picker) = &self.component_picker {
@@ -725,8 +924,11 @@ impl App {
                     value_area.y.saturating_add(visible_row.min(max_row) as u16),
                 )
             } else {
+                // Cursor is inside the single-line input box
+                // Input box is at: x=area.x+2, y=area.y+3
+                // Text starts inside the border at: x+3 (2 for box margin + 1 for border), y+4 (3 for box + 1 for title/border)
                 (
-                    area.x.saturating_add(1).saturating_add(
+                    area.x.saturating_add(3).saturating_add(
                         self.input_cursor
                             .min(inner_width.saturating_sub(1)) as u16,
                     ),
@@ -813,8 +1015,8 @@ impl App {
                 KeyCode::Char('q') if k.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.should_quit = true
                 }
-                KeyCode::Up => self.select_prev(),
-                KeyCode::Down => self.select_next(),
+                KeyCode::Up => self.handle_up(),
+                KeyCode::Down => self.handle_down(),
                 KeyCode::PageUp => self.scroll_details_by(-5),
                 KeyCode::PageDown => self.scroll_details_by(5),
                 KeyCode::Char(' ') => self.toggle_selected_tree_expanded(),
@@ -836,6 +1038,21 @@ impl App {
                 KeyCode::Char('f') => self.begin_edit_selected_column_width_class(),
                 KeyCode::Char('A') => self.add_selected_collection_item(),
                 KeyCode::Char('X') => self.remove_selected_collection_item(),
+                KeyCode::Char('1') => {
+                    self.selected_sidebar_section = SidebarSection::Regions;
+                    self.status = "Switched to Regions section.".to_string();
+                }
+                KeyCode::Char('2') => {
+                    self.selected_sidebar_section = SidebarSection::Pages;
+                    self.status = "Switched to Pages section.".to_string();
+                }
+                KeyCode::Char('3') => {
+                    self.selected_sidebar_section = SidebarSection::Layouts;
+                    self.status = "Switched to Layout section.".to_string();
+                }
+                KeyCode::Char('4') => {
+                    self.status = "Details panel active.".to_string();
+                }
                 _ => {}
             },
             Event::Mouse(m) => match m.kind {
@@ -6121,6 +6338,62 @@ impl App {
         }
     }
 
+    fn handle_up(&mut self) {
+        match self.selected_sidebar_section {
+            SidebarSection::Regions => {
+                // Regions has only 2 items: Header, Footer
+                // For now, just show status
+                self.status = "Regions: Navigate with Up/Down".to_string();
+            }
+            SidebarSection::Pages => {
+                if self.site.pages.is_empty() {
+                    return;
+                }
+                if self.selected_page == 0 {
+                    self.selected_page = self.site.pages.len() - 1;
+                } else {
+                    self.selected_page -= 1;
+                }
+                self.selected_node = 0;
+                self.selected_tree_row = 0;
+                self.selected_column = 0;
+                self.selected_component = 0;
+                self.selected_nested_item = 0;
+                self.details_scroll_row = 0;
+                self.sync_tree_row_with_selection();
+            }
+            SidebarSection::Layouts => {
+                self.select_prev();
+            }
+        }
+    }
+
+    fn handle_down(&mut self) {
+        match self.selected_sidebar_section {
+            SidebarSection::Regions => {
+                // Regions has only 2 items: Header, Footer
+                // For now, just show status
+                self.status = "Regions: Navigate with Up/Down".to_string();
+            }
+            SidebarSection::Pages => {
+                if self.site.pages.is_empty() {
+                    return;
+                }
+                self.selected_page = (self.selected_page + 1) % self.site.pages.len();
+                self.selected_node = 0;
+                self.selected_tree_row = 0;
+                self.selected_column = 0;
+                self.selected_component = 0;
+                self.selected_nested_item = 0;
+                self.details_scroll_row = 0;
+                self.sync_tree_row_with_selection();
+            }
+            SidebarSection::Layouts => {
+                self.select_next();
+            }
+        }
+    }
+
     fn select_next_page(&mut self) {
         if self.site.pages.is_empty() {
             return;
@@ -9526,47 +9799,105 @@ impl AppTheme {
     }
 
     fn from_palette(p: PaletteFile) -> anyhow::Result<Self> {
-        let background = parse_hex_color(p.base.as_str())?;
-        let panel_background = parse_hex_color(p.mantle.as_deref().unwrap_or(p.base.as_str()))?;
-        let popup_background = parse_hex_color(p.crust.as_deref().unwrap_or(p.base.as_str()))?;
+        // Core backgrounds
+        let background = parse_hex_color(p.base_background.as_str())?;
+        let panel_background = parse_hex_color(
+            p.body_background
+                .as_deref()
+                .unwrap_or(p.base_background.as_str()),
+        )?;
+        let popup_background = parse_hex_color(
+            p.modal_background
+                .as_deref()
+                .unwrap_or(p.base_background.as_str()),
+        )?;
+
+        // Text colors (dd_framework text roles)
         let foreground = parse_hex_color(p.text.as_str())?;
-        let muted = parse_hex_color(p.subtext0.as_deref().unwrap_or(p.text.as_str()))?;
-        let border = parse_hex_color(p.overlay0.as_str())?;
+        let muted = parse_hex_color(p.subtext0.as_deref().unwrap_or("#9ea3aa"))?;
+        let disabled = parse_hex_color(p.text_disabled.as_deref().unwrap_or("#a0a4a8"))?;
+        let text_inverse = parse_hex_color(p.text_inverse.as_deref().unwrap_or("#f9fafb"))?;
+
+        // Selection
+        let selected_background = parse_hex_color(p.selected_background.as_str())?;
+
+        // Borders (dd_framework support)
+        let border = parse_hex_color(p.border_default.as_str())?;
+        let border_active = parse_hex_color(p.border_active.as_deref().unwrap_or("#6ec8ff"))?;
+
+        // Input field colors (default: lavender for focus, blue for default)
+        let input_focus = parse_hex_color(p.input_focus.as_deref().unwrap_or("#8cc8ff"))?;
+        let input_default = parse_hex_color(p.input_default.as_deref().unwrap_or("#5ab4f5"))?;
+
+        // Accents (dd_framework primary action)
         let title_seed = p
-            .lavender
+            .input_focus
             .as_deref()
-            .or(p.blue.as_deref())
+            .or(p.input_default.as_deref())
             .unwrap_or(p.text.as_str());
         let title = parse_hex_color(title_seed)?;
-        let selected_background = parse_hex_color(p.surface0.as_str())?;
-        let selected_foreground = foreground;
+        let active = parse_hex_color(p.active.as_deref().unwrap_or("#6ec8ff"))?;
+
+        // Semantic colors (dd_framework)
+        let success = parse_hex_color(p.success.as_deref().unwrap_or("#1e8449"))?;
+        let warning = parse_hex_color(p.warning.as_deref().unwrap_or("#b9770e"))?;
+        let error = parse_hex_color(p.error.as_deref().unwrap_or("#a93226"))?;
+        let info = parse_hex_color(p.info.as_deref().unwrap_or("#21618c"))?;
+
         Ok(Self {
             background,
             panel_background,
             popup_background,
             foreground,
             muted,
+            disabled,
+            text_inverse,
             border,
+            border_active,
+            input_default,
+            input_focus,
             title,
+            active,
             selected_background,
-            selected_foreground,
+            selected_foreground: foreground,
+            success,
+            warning,
+            error,
+            info,
         })
     }
 }
 
 impl Default for AppTheme {
     fn default() -> Self {
-        // Catppuccin Mocha defaults.
+        // dd_framework-inspired dark theme defaults
         Self {
-            background: Color::Rgb(30, 30, 46),
-            panel_background: Color::Rgb(24, 24, 37),
-            popup_background: Color::Rgb(17, 17, 27),
-            foreground: Color::Rgb(205, 214, 244),
-            muted: Color::Rgb(166, 173, 200),
-            border: Color::Rgb(108, 112, 134),
-            title: Color::Rgb(180, 190, 254),
-            selected_background: Color::Rgb(49, 50, 68),
-            selected_foreground: Color::Rgb(205, 214, 244),
+            // Core backgrounds (from $c_ui_neutral_* dark variants)
+            background: Color::Rgb(15, 17, 20), // $c_ui_neutral_100--dark
+            panel_background: Color::Rgb(26, 28, 31), // $c_ui_neutral_200--dark
+            popup_background: Color::Rgb(42, 45, 49), // $c_ui_neutral_300--dark
+            // Text colors (from $c_text_* dark variants)
+            foreground: Color::Rgb(245, 246, 247), // $c_text_primary--dark
+            muted: Color::Rgb(158, 163, 170),      // $c_text_secondary--dark
+            disabled: Color::Rgb(90, 95, 102),     // $c_text_disabled--dark
+            text_inverse: Color::Rgb(15, 17, 20),  // $c_text_inverse--dark
+            // Borders (from $c_support_*)
+            border: Color::Rgb(42, 45, 49), // $c_support_border--dark
+            border_active: Color::Rgb(110, 200, 255), // Active state highlight
+            // Input field colors (lavender for focus, blue for default)
+            input_default: Color::Rgb(90, 180, 245), // $c_primary_action_default_surface--dark (blue family)
+            input_focus: Color::Rgb(140, 200, 255),  // $c_primary_strong--dark (lavender)
+            // Accents (from $c_primary_action_*)
+            title: Color::Rgb(140, 200, 255), // $c_primary_strong--dark
+            active: Color::Rgb(110, 200, 255), // $c_primary_action_default_surface--dark
+            // Selection
+            selected_background: Color::Rgb(42, 45, 49),
+            selected_foreground: Color::Rgb(245, 246, 247),
+            // Semantic (from $c_*_text dark variants)
+            success: Color::Rgb(130, 224, 170), // $c_success_text--dark
+            warning: Color::Rgb(245, 196, 105), // $c_warning_text--dark
+            error: Color::Rgb(229, 115, 115),   // $c_error_text--dark
+            info: Color::Rgb(93, 173, 226),     // $c_info_surface--dark
         }
     }
 }
