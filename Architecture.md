@@ -15,16 +15,17 @@ Primary content hierarchy:
 Only these components are supported:
 1. `dd-hero`
 2. `dd-section`
-3. `dd-banner`
-4. `dd-accordion`
-5. `dd-alternating`
-6. `dd-blockquote`
-7. `dd-card`
-8. `dd-cta`
-9. `dd-filmstrip`
-10. `dd-milestones`
-11. `dd-modal`
-12. `dd-slider`
+3. `dd-alert`
+4. `dd-banner`
+5. `dd-accordion`
+6. `dd-alternating`
+7. `dd-blockquote`
+8. `dd-card`
+9. `dd-cta`
+10. `dd-filmstrip`
+11. `dd-milestones`
+12. `dd-modal`
+13. `dd-slider`
 
 ### Typed Model
 
@@ -35,6 +36,7 @@ enum PageNode {
 }
 
 enum SectionComponent {
+    Alert(DdAlert),
     Cta(DdCta),
     Filmstrip(DdFilmstrip),
     Milestones(DdMilestones),
@@ -70,6 +72,7 @@ Validation runs on create/update/export:
 - Site/page basics: non-empty pages, unique slugs.
 - Hero: required `title`, paired CTA fields, valid URLs, `image_alt` when image is present.
 - Section: unique section and column ids, non-empty `width_class`.
+- Alert: required `parent_copy`.
 - Banner: required `banner_image_url` and `banner_image_alt`; valid image URL format.
 - Accordion: non-empty `group_name`; at least one item; each item needs title/content.
 - Alternating: at least one item; each item needs image, alt, title, and copy.

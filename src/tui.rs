@@ -10,13 +10,13 @@ use crossterm::event::{
 };
 use crossterm::execute;
 use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::Terminal;
 use serde::Deserialize;
 
 use crate::model::{PageNode, SectionColumn, Site};
@@ -58,6 +58,13 @@ enum SidebarSection {
     Layouts,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SelectedRegion {
+    Page,
+    Header,
+    Footer,
+}
+
 struct App {
     site: Site,
     theme: AppTheme,
@@ -68,6 +75,10 @@ struct App {
     selected_component: usize,
     selected_nested_item: usize,
     selected_sidebar_section: SidebarSection,
+    selected_region: SelectedRegion,
+    selected_header_section: usize,
+    selected_header_column: usize,
+    selected_header_component: usize,
     list_area: Rect,
     details_area: Rect,
     details_scroll_row: usize,
@@ -82,6 +93,9 @@ struct App {
     multiline_value_area: Option<Rect>,
     multiline_scroll_row: usize,
     component_picker: Option<ComponentPickerState>,
+    edit_modal: Option<EditModalState>,
+    /// New unified modal system - will replace the above during migration
+    modal: Option<Modal>,
     component_kind: ComponentKind,
     show_help: bool,
     expanded_sections: HashSet<(usize, usize)>,
@@ -91,11 +105,90 @@ struct App {
     expanded_filmstrip_items: HashSet<(usize, usize, usize, usize)>,
     expanded_milestones_items: HashSet<(usize, usize, usize, usize)>,
     expanded_slider_items: HashSet<(usize, usize, usize, usize)>,
+    header_column_expanded: bool,
+    header_components_expanded: HashSet<usize>,
 }
 
+// ============================================================================
+// UNIFIED MODAL SYSTEM
+// ============================================================================
+
+/// All modal types in the application
+enum Modal {
+    /// Multi-field edit modal (Hero, Section, etc.)
+    Edit {
+        title: String,
+        fields: Vec<EditField>,
+        selected_field: usize,
+        scroll_offset: usize,
+        visible_fields: usize,
+        on_save: Box<dyn FnOnce(&mut App, &[EditField])>,
+    },
+    /// Component picker for inserting components
+    ComponentPicker { query: String, selected: usize },
+    /// Save file dialog
+    SavePrompt { path: String },
+    /// Single field edit (legacy, will be migrated to Edit)
+    SingleField {
+        mode: InputMode,
+        buffer: String,
+        cursor: usize,
+        multiline: bool,
+    },
+}
+
+/// Common modal result returned from event handling
+enum ModalResult {
+    /// Stay open, continue handling events
+    Continue,
+    /// Close modal with success
+    CloseSuccess,
+    /// Close modal with cancel
+    CloseCancel,
+}
+
+/// Unified modal configuration
+struct ModalConfig {
+    width_percent: u16,
+    height_percent: u16,
+    show_scrollbar: bool,
+    footer_text: String,
+}
+
+impl Default for ModalConfig {
+    fn default() -> Self {
+        Self {
+            width_percent: 80,
+            height_percent: 80,
+            show_scrollbar: true,
+            footer_text: "Tab/Up/Down: navigate | Ctrl+S: save | Esc: cancel".to_string(),
+        }
+    }
+}
+
+// Legacy structs kept for backward compatibility during migration
 struct ComponentPickerState {
     query: String,
     selected: usize,
+}
+
+#[derive(Clone)]
+struct EditField {
+    label: String,
+    value: String,
+    buffer: String,
+    cursor: usize,
+    is_multiline: bool,
+    rows: u16, // Height of the input field (1 for single-line, 3/5/etc for textarea)
+}
+
+// Deprecated: will be removed once fully migrated to Modal enum
+struct EditModalState {
+    title: String,
+    fields: Vec<EditField>,
+    selected_field: usize,
+    scroll_offset: usize,
+    visible_fields: usize,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -151,6 +244,11 @@ enum InputMode {
     EditAlternatingItemImageAlt,
     EditAlternatingItemTitle,
     EditAlternatingItemCopy,
+    EditAlertType,
+    EditAlertClass,
+    EditAlertDataAos,
+    EditAlertTitle,
+    EditAlertCopy,
     EditCardType,
     EditCardDataAos,
     EditCardWidth,
@@ -186,6 +284,12 @@ enum InputMode {
     EditSliderItemLinkLabel,
     EditSliderItemImageUrl,
     EditSliderItemImageAlt,
+    EditHeaderId,
+    EditHeaderClass,
+    EditHeaderCustomCss,
+    EditHeaderColumnId,
+    EditHeaderColumnWidthClass,
+    EditHeaderPlaceholderContent,
 }
 
 #[derive(Clone, Copy)]
@@ -202,6 +306,7 @@ enum ComponentKind {
     Milestones,
     Modal,
     Slider,
+    Alert,
 }
 
 #[derive(Clone, Copy)]
@@ -268,12 +373,25 @@ struct PaletteFile {
 }
 
 #[derive(Clone, Copy)]
-struct NodeTreeRow {
-    kind: NodeTreeKind,
+struct TreeRow {
+    kind: TreeRowKind,
 }
 
 #[derive(Clone, Copy)]
-enum NodeTreeKind {
+enum TreeRowKind {
+    HeaderRoot,
+    HeaderSection {
+        section_idx: usize,
+    },
+    HeaderColumn {
+        section_idx: usize,
+        column_idx: usize,
+    },
+    HeaderComponent {
+        section_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+    },
     Hero {
         node_idx: usize,
     },
@@ -327,6 +445,1055 @@ enum NodeTreeKind {
     },
 }
 
+// ============================================================================
+// UNIFIED MODAL RENDERING AND EVENT HANDLING
+// ============================================================================
+
+impl App {
+    /// Check if any modal is currently open
+    fn is_modal_open(&self) -> bool {
+        self.modal.is_some()
+            || self.edit_modal.is_some()
+            || self.component_picker.is_some()
+            || self.input_mode.is_some()
+            || self.save_prompt_open
+    }
+
+    /// Main modal rendering entry point
+    fn render_modal(&self, frame: &mut ratatui::Frame) {
+        // During migration, check legacy modals first
+        if let Some(modal) = &self.modal {
+            self.render_unified_modal(frame, modal);
+        } else if let Some(edit_modal) = &self.edit_modal {
+            // Legacy edit modal - will be migrated
+            self.render_edit_modal_legacy(frame, edit_modal);
+        } else if let Some(picker) = &self.component_picker {
+            self.render_component_picker_legacy(frame, picker);
+        } else if self.save_prompt_open {
+            self.render_save_prompt_legacy(frame);
+        } else if self.input_mode.is_some() {
+            self.render_input_mode_legacy(frame);
+        }
+    }
+
+    /// Render the new unified modal
+    fn render_unified_modal(&self, frame: &mut ratatui::Frame, modal: &Modal) {
+        match modal {
+            Modal::Edit {
+                title,
+                fields,
+                selected_field,
+                scroll_offset,
+                visible_fields,
+                ..
+            } => {
+                self.render_edit_modal_unified(
+                    frame,
+                    title,
+                    fields,
+                    *selected_field,
+                    *scroll_offset,
+                    *visible_fields,
+                );
+            }
+            Modal::ComponentPicker { query, selected } => {
+                self.render_component_picker_unified(frame, query, *selected);
+            }
+            Modal::SavePrompt { path } => {
+                self.render_save_prompt_unified(frame, path);
+            }
+            Modal::SingleField {
+                mode,
+                buffer,
+                cursor,
+                multiline,
+            } => {
+                self.render_single_field_unified(frame, *mode, buffer, *cursor, *multiline);
+            }
+        }
+    }
+
+    /// Unified edit modal renderer with variable-height textarea support
+    fn render_edit_modal_unified(
+        &self,
+        frame: &mut ratatui::Frame,
+        title: &str,
+        fields: &[EditField],
+        selected_field: usize,
+        scroll_offset: usize,
+        _visible_fields: usize,
+    ) {
+        let area = centered_rect(95, 90, frame.area());
+        frame.render_widget(Clear, area);
+
+        // Draw modal frame
+        let modal_block = Block::default()
+            .title(format!("Edit - {}", title))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(self.theme.border))
+            .title_style(
+                Style::default()
+                    .fg(self.theme.title)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        frame.render_widget(modal_block.clone(), area);
+        let inner = modal_block.inner(area);
+
+        // Calculate layout
+        let header_height = 1u16;
+        let footer_height = 1u16;
+        let scrollbar_width = 2u16;
+
+        // Header
+        let header =
+            Paragraph::new("Edit fields below:").style(Style::default().fg(self.theme.muted));
+        frame.render_widget(
+            header,
+            Rect {
+                x: inner.x,
+                y: inner.y,
+                width: inner.width,
+                height: header_height,
+            },
+        );
+
+        // Calculate content area
+        let content_height = inner.height.saturating_sub(header_height + footer_height);
+        let content_width = inner.width.saturating_sub(scrollbar_width + 2);
+
+        // Calculate field heights and determine visible range based on pixel rows
+        // Field height = label (1) + input rows + padding (1)
+        let field_heights: Vec<u16> = fields
+            .iter()
+            .map(|f| 1 + f.rows + 1) // label + rows + bottom padding
+            .collect();
+
+        let total_content_height: u16 = field_heights.iter().sum();
+        let show_scrollbar = total_content_height > content_height;
+
+        // Find which fields to render based on scroll offset (in rows)
+        let mut current_y = 0u16;
+        let mut visible_start = 0usize;
+        let mut visible_end = fields.len();
+        let mut y_offsets = Vec::new();
+
+        // Convert scroll_offset (field index) to pixel offset
+        let scroll_y: u16 = field_heights.iter().take(scroll_offset).sum();
+
+        for (idx, height) in field_heights.iter().enumerate() {
+            let field_bottom = current_y + height;
+            let is_visible =
+                field_bottom > scroll_y && current_y < scroll_y.saturating_add(content_height);
+
+            if is_visible {
+                if y_offsets.is_empty() {
+                    visible_start = idx;
+                }
+                y_offsets.push((idx, current_y.saturating_sub(scroll_y)));
+                visible_end = idx + 1;
+            }
+            current_y += height;
+        }
+
+        // Render visible fields
+        let mut cursor_pos: Option<(u16, u16)> = None;
+
+        for (idx, rel_y) in y_offsets {
+            let field = &fields[idx];
+            let is_selected = idx == selected_field;
+            let y_offset = header_height + rel_y;
+
+            // Label
+            let label = Paragraph::new(format!("{}:", field.label))
+                .style(Style::default().fg(self.theme.foreground));
+            frame.render_widget(
+                label,
+                Rect {
+                    x: inner.x + 1,
+                    y: inner.y + y_offset,
+                    width: content_width,
+                    height: 1,
+                },
+            );
+
+            // Input box with border (height = rows + 2 for borders)
+            let border_color = if is_selected {
+                self.theme.input_focus
+            } else {
+                self.theme.input_default
+            };
+
+            let input_height = field.rows + 2; // rows inside + top/bottom border
+
+            // For multiline textareas, show scrolling content
+            let lines: Vec<&str> = field.buffer.lines().collect();
+            let visible_lines: Vec<String> =
+                if field.is_multiline && lines.len() > field.rows as usize {
+                    // Show last N lines that fit, or calculate scroll based on cursor position
+                    let cursor_line = field.buffer[..field.buffer.len().min(field.cursor)]
+                        .lines()
+                        .count()
+                        .saturating_sub(1);
+                    let start_line = cursor_line.saturating_sub(field.rows as usize - 1);
+                    lines
+                        .iter()
+                        .skip(start_line)
+                        .take(field.rows as usize)
+                        .map(|s| s.to_string())
+                        .collect()
+                } else {
+                    lines.iter().map(|s| s.to_string()).collect()
+                };
+
+            let display_text = if visible_lines.is_empty() {
+                " ".to_string()
+            } else {
+                visible_lines.join("\n")
+            };
+
+            let input_box = Paragraph::new(display_text)
+                .style(
+                    Style::default()
+                        .fg(self.theme.foreground)
+                        .bg(self.theme.popup_background),
+                )
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(border_color)),
+                )
+                .wrap(ratatui::widgets::Wrap { trim: false });
+
+            let input_area = Rect {
+                x: inner.x + 1,
+                y: inner.y + y_offset + 1,
+                width: content_width,
+                height: input_height,
+            };
+            frame.render_widget(input_box, input_area);
+
+            // Position cursor for selected field
+            if is_selected {
+                // Calculate cursor position within the visible text
+                let text_before_cursor = &field.buffer[..field.buffer.len().min(field.cursor)];
+                let cursor_line = text_before_cursor.lines().count().saturating_sub(1);
+                let line_start_pos = text_before_cursor
+                    .rfind('\n')
+                    .map(|pos| pos + 1)
+                    .unwrap_or(0);
+                let col_in_line = field.cursor.saturating_sub(line_start_pos);
+
+                // Adjust for scrolling
+                let visible_start_line = if field.is_multiline && lines.len() > field.rows as usize
+                {
+                    cursor_line.saturating_sub(field.rows as usize - 1)
+                } else {
+                    0
+                };
+                let visible_line = cursor_line.saturating_sub(visible_start_line);
+
+                let cursor_x =
+                    input_area.x + 1 + (col_in_line as u16).min(input_area.width.saturating_sub(3));
+                let cursor_y = input_area.y + 1 + visible_line as u16;
+
+                if cursor_y < input_area.y + input_height - 1 {
+                    cursor_pos = Some((cursor_x, cursor_y));
+                }
+            }
+        }
+
+        // Scrollbar
+        if show_scrollbar {
+            let scrollbar_x = inner.x + inner.width.saturating_sub(2);
+            let scrollbar_top = header_height + 1;
+            let scrollbar_height = inner
+                .height
+                .saturating_sub(header_height + footer_height + 2);
+
+            // Track
+            for y_offset in 0..scrollbar_height {
+                frame.render_widget(
+                    Paragraph::new("│").style(Style::default().fg(self.theme.border)),
+                    Rect {
+                        x: scrollbar_x,
+                        y: inner.y + scrollbar_top + y_offset,
+                        width: 1,
+                        height: 1,
+                    },
+                );
+            }
+
+            // Thumb
+            let scrollbar_height_usize = scrollbar_height as usize;
+            let thumb_size = ((content_height as usize * scrollbar_height_usize)
+                / total_content_height as usize)
+                .max(1);
+            let thumb_pos: u16 = if total_content_height > content_height {
+                ((scroll_y as usize * (scrollbar_height_usize.saturating_sub(thumb_size)))
+                    / (total_content_height as usize - content_height as usize))
+                    as u16
+            } else {
+                0
+            };
+
+            for i in 0..(thumb_size as u16) {
+                let y = scrollbar_top + thumb_pos + i;
+                if y < scrollbar_top + scrollbar_height {
+                    frame.render_widget(
+                        Paragraph::new("█").style(Style::default().fg(self.theme.active)),
+                        Rect {
+                            x: scrollbar_x,
+                            y: inner.y + y,
+                            width: 1,
+                            height: 1,
+                        },
+                    );
+                }
+            }
+        }
+
+        // Footer
+        let visible_count = visible_end.saturating_sub(visible_start);
+        let footer_text = format!(
+            "{}-{} of {} fields | Tab/Up/Down: navigate | Ctrl+S: save | Esc: cancel",
+            visible_start + 1,
+            visible_end,
+            fields.len()
+        );
+        let footer = Paragraph::new(footer_text).style(Style::default().fg(self.theme.muted));
+        frame.render_widget(
+            footer,
+            Rect {
+                x: inner.x + 1,
+                y: inner.y + inner.height.saturating_sub(footer_height),
+                width: inner.width.saturating_sub(2),
+                height: footer_height,
+            },
+        );
+
+        if let Some((x, y)) = cursor_pos {
+            frame.set_cursor_position((x, y));
+        }
+    }
+
+    /// Render scrollbar
+    fn render_scrollbar(
+        &self,
+        frame: &mut ratatui::Frame,
+        inner: Rect,
+        scroll_offset: usize,
+        visible_count: usize,
+        total_count: usize,
+        header_height: u16,
+        footer_height: u16,
+    ) {
+        let scrollbar_x = inner.x + inner.width.saturating_sub(2);
+        let scrollbar_top = header_height + 1;
+        let scrollbar_height = inner
+            .height
+            .saturating_sub(header_height + footer_height + 2);
+
+        // Track
+        for y_offset in 0..scrollbar_height {
+            frame.render_widget(
+                Paragraph::new("│").style(Style::default().fg(self.theme.border)),
+                Rect {
+                    x: scrollbar_x,
+                    y: inner.y + scrollbar_top + y_offset,
+                    width: 1,
+                    height: 1,
+                },
+            );
+        }
+
+        // Thumb
+        let thumb_size = ((visible_count * scrollbar_height as usize) / total_count).max(1);
+        let thumb_pos = if total_count > visible_count {
+            ((scroll_offset * (scrollbar_height as usize - thumb_size))
+                / (total_count - visible_count)) as u16
+        } else {
+            0
+        };
+
+        for i in 0..(thumb_size as u16) {
+            let y = scrollbar_top + thumb_pos + i;
+            if y < scrollbar_top + scrollbar_height {
+                frame.render_widget(
+                    Paragraph::new("█").style(Style::default().fg(self.theme.active)),
+                    Rect {
+                        x: scrollbar_x,
+                        y: inner.y + y,
+                        width: 1,
+                        height: 1,
+                    },
+                );
+            }
+        }
+    }
+
+    /// Unified component picker renderer
+    fn render_component_picker_unified(
+        &self,
+        frame: &mut ratatui::Frame,
+        query: &str,
+        selected: usize,
+    ) {
+        let config = ModalConfig {
+            width_percent: 70,
+            height_percent: 70,
+            show_scrollbar: false,
+            footer_text: "Type to filter | Up/Down: select | Enter: insert | Esc: cancel"
+                .to_string(),
+        };
+
+        let area = centered_rect(config.width_percent, config.height_percent, frame.area());
+        frame.render_widget(Clear, area);
+
+        let modal_block = Block::default()
+            .title("Insert Component")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(self.theme.border))
+            .title_style(
+                Style::default()
+                    .fg(self.theme.title)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        frame.render_widget(modal_block.clone(), area);
+        let inner = modal_block.inner(area);
+
+        // Search box
+        let search_text = format!("Search: {}", query);
+        let search = Paragraph::new(search_text).style(Style::default().fg(self.theme.foreground));
+        frame.render_widget(
+            search,
+            Rect {
+                x: inner.x,
+                y: inner.y,
+                width: inner.width,
+                height: 1,
+            },
+        );
+
+        // Filtered list
+        let filtered = self.filtered_component_kinds(query);
+        let items: Vec<ListItem> = filtered
+            .iter()
+            .enumerate()
+            .map(|(idx, kind)| {
+                let style = if idx == selected {
+                    Style::default()
+                        .fg(self.theme.selected_foreground)
+                        .bg(self.theme.selected_background)
+                } else {
+                    Style::default().fg(self.theme.foreground)
+                };
+                ListItem::new(kind.label()).style(style)
+            })
+            .collect();
+
+        let list = List::new(items)
+            .block(Block::default())
+            .highlight_symbol("> ");
+
+        frame.render_widget(
+            list,
+            Rect {
+                x: inner.x,
+                y: inner.y + 2,
+                width: inner.width,
+                height: inner.height.saturating_sub(3),
+            },
+        );
+
+        // Footer
+        let footer =
+            Paragraph::new(&config.footer_text[..]).style(Style::default().fg(self.theme.muted));
+        frame.render_widget(
+            footer,
+            Rect {
+                x: inner.x,
+                y: inner.y + inner.height.saturating_sub(1),
+                width: inner.width,
+                height: 1,
+            },
+        );
+    }
+
+    /// Unified save prompt renderer
+    fn render_save_prompt_unified(&self, frame: &mut ratatui::Frame, path: &str) {
+        let config = ModalConfig {
+            width_percent: 70,
+            height_percent: 35,
+            show_scrollbar: false,
+            footer_text: "Enter: save | Esc: cancel".to_string(),
+        };
+
+        let area = centered_rect(config.width_percent, config.height_percent, frame.area());
+        frame.render_widget(Clear, area);
+
+        let modal_block = Block::default()
+            .title("Save Page")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(self.theme.border))
+            .title_style(
+                Style::default()
+                    .fg(self.theme.title)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        frame.render_widget(modal_block.clone(), area);
+        let inner = modal_block.inner(area);
+
+        let content = format!("Save file path:\n{}\n\n{}", path, config.footer_text);
+        let prompt = Paragraph::new(content).style(
+            Style::default()
+                .fg(self.theme.foreground)
+                .bg(self.theme.popup_background),
+        );
+
+        frame.render_widget(prompt, inner);
+    }
+
+    /// Unified single field renderer (legacy mode)
+    fn render_single_field_unified(
+        &self,
+        frame: &mut ratatui::Frame,
+        mode: InputMode,
+        buffer: &str,
+        cursor: usize,
+        multiline: bool,
+    ) {
+        // This will be simplified once we migrate all single fields to the Edit modal
+        let area = centered_rect(72, 60, frame.area());
+        frame.render_widget(Clear, area);
+
+        let label = self.input_mode_label(mode);
+        let content = if multiline {
+            format!(
+                "Editing: {}\n\n{}\n\nEnter: newline | Ctrl+S: save | Esc: cancel",
+                label, buffer
+            )
+        } else {
+            format!(
+                "Editing: {}\n\n{}\n\nEnter: save | Esc: cancel",
+                label, buffer
+            )
+        };
+
+        let modal = Paragraph::new(content)
+            .style(
+                Style::default()
+                    .fg(self.theme.foreground)
+                    .bg(self.theme.popup_background),
+            )
+            .block(
+                Block::default()
+                    .title("Edit Item")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(self.theme.input_focus)),
+            );
+
+        frame.render_widget(modal, area);
+
+        // Set cursor
+        let inner_width = area.width.saturating_sub(2) as usize;
+        let cursor_x = area
+            .x
+            .saturating_add(3)
+            .saturating_add(cursor.min(inner_width.saturating_sub(1)) as u16);
+        let cursor_y = area.y.saturating_add(4);
+        frame.set_cursor_position((cursor_x, cursor_y));
+    }
+
+    fn input_mode_label(&self, mode: InputMode) -> &'static str {
+        match mode {
+            InputMode::EditHeroImage => "hero.image",
+            InputMode::EditHeroClass => "hero.class",
+            InputMode::EditSectionId => "section.id",
+            // ... add more as needed
+            _ => "field",
+        }
+    }
+
+    /// Unified modal event handling
+    fn handle_modal_event(&mut self, evt: Event) -> Option<ModalResult> {
+        let modal = self.modal.as_ref()?;
+
+        if let Event::Key(key) = evt {
+            match modal {
+                Modal::Edit { .. } => return self.handle_edit_modal_event_unified(key),
+                Modal::ComponentPicker { .. } => {
+                    return self.handle_component_picker_event_unified(key)
+                }
+                Modal::SavePrompt { .. } => return self.handle_save_prompt_event_unified(key),
+                Modal::SingleField { .. } => return self.handle_single_field_event_unified(key),
+            }
+        }
+
+        Some(ModalResult::Continue)
+    }
+
+    fn handle_edit_modal_event_unified(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
+        use crossterm::event::KeyCode;
+
+        // Extract current state
+        let (title, fields, selected_field, scroll_offset, visible_fields, on_save) =
+            if let Some(Modal::Edit {
+                title,
+                fields,
+                selected_field,
+                scroll_offset,
+                visible_fields,
+                on_save,
+            }) = self.modal.take()
+            {
+                (
+                    title,
+                    fields,
+                    selected_field,
+                    scroll_offset,
+                    visible_fields,
+                    on_save,
+                )
+            } else {
+                return Some(ModalResult::CloseCancel);
+            };
+
+        let total_fields = fields.len();
+        let mut new_selected = selected_field;
+        let mut new_scroll = scroll_offset;
+        let mut should_close = false;
+        let mut result = ModalResult::Continue;
+
+        match key.code {
+            KeyCode::Esc => {
+                should_close = true;
+                result = ModalResult::CloseCancel;
+            }
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Save and close immediately - call on_save now before it gets moved
+                on_save(self, &fields);
+                self.status = format!("Saved {} changes.", title);
+                return Some(ModalResult::CloseSuccess);
+            }
+            KeyCode::Up => {
+                new_selected = selected_field.saturating_sub(1);
+                if new_selected < new_scroll {
+                    new_scroll = new_selected;
+                }
+            }
+            KeyCode::Down => {
+                new_selected = (selected_field + 1).min(total_fields.saturating_sub(1));
+                if new_selected >= new_scroll + visible_fields {
+                    new_scroll = new_selected.saturating_sub(visible_fields - 1);
+                }
+            }
+            KeyCode::Tab => {
+                new_selected = (selected_field + 1) % total_fields;
+                if new_selected < new_scroll {
+                    new_scroll = new_selected;
+                } else if new_selected >= new_scroll + visible_fields {
+                    new_scroll = new_selected.saturating_sub(visible_fields - 1);
+                }
+            }
+            KeyCode::BackTab => {
+                new_selected = selected_field.saturating_sub(1);
+                if new_selected >= total_fields {
+                    new_selected = total_fields.saturating_sub(1);
+                }
+                if new_selected < new_scroll {
+                    new_scroll = new_selected;
+                }
+            }
+            KeyCode::Backspace => {
+                let mut new_fields = fields;
+                if let Some(field) = new_fields.get_mut(selected_field) {
+                    if field.cursor > 0 {
+                        field.cursor -= 1;
+                        if field.cursor < field.buffer.chars().count() {
+                            let mut chars: Vec<char> = field.buffer.chars().collect();
+                            chars.remove(field.cursor);
+                            field.buffer = chars.into_iter().collect();
+                        }
+                    }
+                }
+                // Restore modal with modified fields
+                self.modal = Some(Modal::Edit {
+                    title,
+                    fields: new_fields,
+                    selected_field,
+                    scroll_offset,
+                    visible_fields,
+                    on_save,
+                });
+                return Some(ModalResult::Continue);
+            }
+            KeyCode::Left => {
+                let mut new_fields = fields;
+                if let Some(field) = new_fields.get_mut(selected_field) {
+                    field.cursor = field.cursor.saturating_sub(1);
+                }
+                self.modal = Some(Modal::Edit {
+                    title,
+                    fields: new_fields,
+                    selected_field,
+                    scroll_offset,
+                    visible_fields,
+                    on_save,
+                });
+                return Some(ModalResult::Continue);
+            }
+            KeyCode::Right => {
+                let mut new_fields = fields;
+                if let Some(field) = new_fields.get_mut(selected_field) {
+                    let max = field.buffer.chars().count();
+                    field.cursor = (field.cursor + 1).min(max);
+                }
+                self.modal = Some(Modal::Edit {
+                    title,
+                    fields: new_fields,
+                    selected_field,
+                    scroll_offset,
+                    visible_fields,
+                    on_save,
+                });
+                return Some(ModalResult::Continue);
+            }
+            KeyCode::Char(c) => {
+                let mut new_fields = fields;
+                if let Some(field) = new_fields.get_mut(selected_field) {
+                    let mut chars: Vec<char> = field.buffer.chars().collect();
+                    if field.cursor <= chars.len() {
+                        chars.insert(field.cursor, c);
+                        field.buffer = chars.into_iter().collect();
+                        field.cursor += 1;
+                    }
+                }
+                self.modal = Some(Modal::Edit {
+                    title,
+                    fields: new_fields,
+                    selected_field,
+                    scroll_offset,
+                    visible_fields,
+                    on_save,
+                });
+                return Some(ModalResult::Continue);
+            }
+            _ => {}
+        }
+
+        if !should_close {
+            // Restore modal with updated state
+            self.modal = Some(Modal::Edit {
+                title,
+                fields,
+                selected_field: new_selected,
+                scroll_offset: new_scroll,
+                visible_fields,
+                on_save,
+            });
+        }
+
+        Some(result)
+    }
+
+    fn handle_component_picker_event_unified(
+        &mut self,
+        key: event::KeyEvent,
+    ) -> Option<ModalResult> {
+        use crossterm::event::KeyCode;
+
+        let (query, selected) =
+            if let Some(Modal::ComponentPicker { query, selected }) = self.modal.take() {
+                (query, selected)
+            } else {
+                return Some(ModalResult::CloseCancel);
+            };
+
+        match key.code {
+            KeyCode::Esc => {
+                self.status = "Component picker cancelled.".to_string();
+                return Some(ModalResult::CloseCancel);
+            }
+            KeyCode::Up => {
+                let new_selected = selected.saturating_sub(1);
+                self.modal = Some(Modal::ComponentPicker {
+                    query,
+                    selected: new_selected,
+                });
+            }
+            KeyCode::Down => {
+                let filtered = self.filtered_component_kinds(&query);
+                let total = filtered.len();
+                let new_selected = if total == 0 {
+                    0
+                } else {
+                    (selected + 1).min(total - 1)
+                };
+                self.modal = Some(Modal::ComponentPicker {
+                    query,
+                    selected: new_selected,
+                });
+            }
+            KeyCode::Backspace => {
+                let mut new_query = query;
+                new_query.pop();
+                self.modal = Some(Modal::ComponentPicker {
+                    query: new_query,
+                    selected,
+                });
+                self.normalize_component_picker_selection();
+            }
+            KeyCode::Enter => {
+                let filtered = self.filtered_component_kinds(&query);
+                if let Some(kind) = filtered.get(selected.min(filtered.len().saturating_sub(1))) {
+                    self.component_kind = *kind;
+                    self.insert_selected_component_kind();
+                    return Some(ModalResult::CloseSuccess);
+                }
+                self.status = "No component selected.".to_string();
+                return Some(ModalResult::CloseCancel);
+            }
+            KeyCode::Char(c) => {
+                let mut new_query = query;
+                new_query.push(c);
+                self.modal = Some(Modal::ComponentPicker {
+                    query: new_query,
+                    selected,
+                });
+                self.normalize_component_picker_selection();
+            }
+            _ => {
+                // Restore modal if we didn't handle the key
+                self.modal = Some(Modal::ComponentPicker { query, selected });
+            }
+        }
+
+        self.sync_tree_row_with_selection();
+        Some(ModalResult::Continue)
+    }
+
+    fn handle_save_prompt_event_unified(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
+        use crossterm::event::KeyCode;
+
+        let path = if let Some(Modal::SavePrompt { path }) = self.modal.take() {
+            path
+        } else {
+            return Some(ModalResult::CloseCancel);
+        };
+
+        match key.code {
+            KeyCode::Esc => {
+                self.status = "Save cancelled.".to_string();
+                Some(ModalResult::CloseCancel)
+            }
+            KeyCode::Enter => {
+                let raw = path.trim();
+                if raw.is_empty() {
+                    self.status = "Save path cannot be empty.".to_string();
+                    self.modal = Some(Modal::SavePrompt { path });
+                    Some(ModalResult::Continue)
+                } else {
+                    let path_buf = std::path::PathBuf::from(raw);
+                    if let Err(e) = crate::storage::save_site(&path_buf, &self.site) {
+                        self.status = format!("Failed to save: {}", e);
+                        self.modal = Some(Modal::SavePrompt { path });
+                        Some(ModalResult::Continue)
+                    } else {
+                        self.path = Some(path_buf.clone());
+                        self.status = format!("Saved {}", path_buf.display());
+                        Some(ModalResult::CloseSuccess)
+                    }
+                }
+            }
+            KeyCode::Backspace => {
+                let mut new_path = path;
+                new_path.pop();
+                self.modal = Some(Modal::SavePrompt { path: new_path });
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Char(c) => {
+                let mut new_path = path;
+                new_path.push(c);
+                self.modal = Some(Modal::SavePrompt { path: new_path });
+                Some(ModalResult::Continue)
+            }
+            _ => {
+                self.modal = Some(Modal::SavePrompt { path });
+                Some(ModalResult::Continue)
+            }
+        }
+    }
+
+    fn handle_single_field_event_unified(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
+        use crossterm::event::KeyCode;
+
+        let (mode, buffer, cursor, multiline) = if let Some(Modal::SingleField {
+            mode,
+            buffer,
+            cursor,
+            multiline,
+        }) = self.modal.take()
+        {
+            (mode, buffer, cursor, multiline)
+        } else {
+            return Some(ModalResult::CloseCancel);
+        };
+
+        match key.code {
+            KeyCode::Esc => {
+                self.input_mode = None;
+                Some(ModalResult::CloseCancel)
+            }
+            KeyCode::Enter => {
+                if multiline {
+                    // In multiline mode, Enter adds a newline
+                    let mut new_buffer = buffer;
+                    let mut new_cursor = cursor;
+                    let mut chars: Vec<char> = new_buffer.chars().collect();
+                    if new_cursor <= chars.len() {
+                        chars.insert(new_cursor, '\n');
+                        new_buffer = chars.into_iter().collect();
+                        new_cursor += 1;
+                    }
+                    self.modal = Some(Modal::SingleField {
+                        mode,
+                        buffer: new_buffer,
+                        cursor: new_cursor,
+                        multiline,
+                    });
+                    Some(ModalResult::Continue)
+                } else {
+                    // Single line mode - save and close
+                    self.input_buffer = buffer;
+                    self.save_input_value(mode);
+                    self.input_mode = None;
+                    Some(ModalResult::CloseSuccess)
+                }
+            }
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.input_buffer = buffer;
+                self.save_input_value(mode);
+                self.input_mode = None;
+                Some(ModalResult::CloseSuccess)
+            }
+            KeyCode::Backspace => {
+                let mut new_buffer = buffer;
+                let mut new_cursor = cursor;
+                if new_cursor > 0 {
+                    new_cursor -= 1;
+                    if new_cursor < new_buffer.chars().count() {
+                        let mut chars: Vec<char> = new_buffer.chars().collect();
+                        chars.remove(new_cursor);
+                        new_buffer = chars.into_iter().collect();
+                    }
+                }
+                self.modal = Some(Modal::SingleField {
+                    mode,
+                    buffer: new_buffer,
+                    cursor: new_cursor,
+                    multiline,
+                });
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Left => {
+                self.modal = Some(Modal::SingleField {
+                    mode,
+                    buffer,
+                    cursor: cursor.saturating_sub(1),
+                    multiline,
+                });
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Right => {
+                let max = buffer.chars().count();
+                self.modal = Some(Modal::SingleField {
+                    mode,
+                    buffer,
+                    cursor: (cursor + 1).min(max),
+                    multiline,
+                });
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Char(c) => {
+                let mut new_buffer = buffer;
+                let mut new_cursor = cursor;
+                let mut chars: Vec<char> = new_buffer.chars().collect();
+                if new_cursor <= chars.len() {
+                    chars.insert(new_cursor, c);
+                    new_buffer = chars.into_iter().collect();
+                    new_cursor += 1;
+                }
+                self.modal = Some(Modal::SingleField {
+                    mode,
+                    buffer: new_buffer,
+                    cursor: new_cursor,
+                    multiline,
+                });
+                Some(ModalResult::Continue)
+            }
+            _ => {
+                self.modal = Some(Modal::SingleField {
+                    mode,
+                    buffer,
+                    cursor,
+                    multiline,
+                });
+                Some(ModalResult::Continue)
+            }
+        }
+    }
+
+    fn save_input_value(&mut self, mode: InputMode) {
+        // Legacy save logic - will be migrated to unified system
+        // This is a placeholder that delegates to existing save logic
+        let _ = mode;
+        // TODO: Implement actual save logic based on mode
+    }
+
+    /// Legacy renderers - will be removed after migration
+    fn render_edit_modal_legacy(&self, frame: &mut ratatui::Frame, modal: &EditModalState) {
+        self.render_edit_modal_unified(
+            frame,
+            &modal.title,
+            &modal.fields,
+            modal.selected_field,
+            modal.scroll_offset,
+            modal.visible_fields,
+        );
+    }
+
+    fn render_component_picker_legacy(
+        &self,
+        frame: &mut ratatui::Frame,
+        picker: &ComponentPickerState,
+    ) {
+        self.render_component_picker_unified(frame, &picker.query, picker.selected);
+    }
+
+    fn render_save_prompt_legacy(&self, frame: &mut ratatui::Frame) {
+        self.render_save_prompt_unified(frame, &self.save_input);
+    }
+
+    fn render_input_mode_legacy(&self, frame: &mut ratatui::Frame) {
+        if let Some(mode) = self.input_mode {
+            self.render_single_field_unified(
+                frame,
+                mode,
+                &self.input_buffer,
+                self.input_cursor,
+                self.is_multiline_input_mode(),
+            );
+        }
+    }
+}
+
+// ============================================================================
+// MAIN APP IMPLEMENTATION
+// ============================================================================
+
 impl App {
     fn new(mut site: Site, path: Option<PathBuf>, theme: AppTheme) -> Self {
         for page in &mut site.pages {
@@ -342,6 +1509,10 @@ impl App {
             selected_component: 0,
             selected_nested_item: 0,
             selected_sidebar_section: SidebarSection::Layouts,
+            selected_region: SelectedRegion::Page,
+            selected_header_section: 0,
+            selected_header_column: 0,
+            selected_header_component: 0,
             list_area: Rect::default(),
             details_area: Rect::default(),
             details_scroll_row: 0,
@@ -356,6 +1527,8 @@ impl App {
             multiline_value_area: None,
             multiline_scroll_row: 0,
             component_picker: None,
+            edit_modal: None,
+            modal: None,
             component_kind: ComponentKind::Banner,
             show_help: false,
             expanded_sections: HashSet::new(),
@@ -365,6 +1538,8 @@ impl App {
             expanded_filmstrip_items: HashSet::new(),
             expanded_milestones_items: HashSet::new(),
             expanded_slider_items: HashSet::new(),
+            header_column_expanded: true,
+            header_components_expanded: HashSet::new(),
         }
     }
 
@@ -401,7 +1576,7 @@ impl App {
             .split(root[1]);
 
         // Header with "dd | Page: {name}" format
-        let header_text = format!("dd | Page: {}", page.title);
+        let header_text = format!("dd | Page: {}", page.head.title);
         let header = Paragraph::new(header_text).style(
             Style::default()
                 .fg(self.theme.foreground)
@@ -437,10 +1612,25 @@ impl App {
         };
 
         // Regions section (Header, Footer)
-        let regions_items = vec![
-            ListItem::new("  Header").style(Style::default().fg(self.theme.foreground)),
-            ListItem::new("  Footer").style(Style::default().fg(self.theme.foreground)),
-        ];
+        let regions_items: Vec<ListItem> = vec!["  Header", "  Footer"]
+            .iter()
+            .enumerate()
+            .map(|(idx, label)| {
+                let is_selected = match self.selected_region {
+                    SelectedRegion::Header => idx == 0,
+                    SelectedRegion::Footer => idx == 1,
+                    SelectedRegion::Page => false,
+                };
+                let style = if is_selected {
+                    Style::default()
+                        .fg(self.theme.selected_foreground)
+                        .bg(self.theme.selected_background)
+                } else {
+                    Style::default().fg(self.theme.foreground)
+                };
+                ListItem::new(*label).style(style)
+            })
+            .collect();
         let regions_list = List::new(regions_items)
             .block(
                 Block::default()
@@ -470,7 +1660,14 @@ impl App {
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol("> ");
-        frame.render_widget(regions_list, sidebar[0]);
+        let mut regions_state = ListState::default();
+        let regions_selected = match self.selected_region {
+            SelectedRegion::Header => Some(0),
+            SelectedRegion::Footer => Some(1),
+            SelectedRegion::Page => None,
+        };
+        regions_state.select(regions_selected);
+        frame.render_stateful_widget(regions_list, sidebar[0], &mut regions_state);
 
         // Pages section (numbered list)
         let page_items: Vec<ListItem> = self
@@ -527,7 +1724,7 @@ impl App {
         frame.render_widget(pages_list, sidebar[1]);
 
         // Layouts section (component tree)
-        let tree_rows = self.build_node_tree_rows();
+        let tree_rows = self.build_tree_rows();
         let layout_items: Vec<ListItem> = tree_rows
             .iter()
             .enumerate()
@@ -669,10 +1866,215 @@ impl App {
             frame.render_widget(help, area);
         }
 
+        // Render edit modal if open
+        if let Some(modal) = &self.edit_modal {
+            // Use most of the available space, with minimum dimensions
+            let area = centered_rect(95, 90, frame.area());
+            frame.render_widget(Clear, area);
+
+            // Draw modal background and border
+            let modal_block = Block::default()
+                .title(format!("Edit Item - {}", modal.title))
+                .borders(Borders::ALL)
+                .style(
+                    Style::default()
+                        .fg(self.theme.foreground)
+                        .bg(self.theme.popup_background),
+                )
+                .border_style(Style::default().fg(self.theme.border))
+                .title_style(
+                    Style::default()
+                        .fg(self.theme.title)
+                        .add_modifier(Modifier::BOLD),
+                );
+            frame.render_widget(modal_block.clone(), area);
+
+            let inner = modal_block.inner(area);
+            let field_height = 4u16; // Label (1) + input box (3)
+            let header_height = 2u16; // Header text + spacing
+            let scroll_indicator_height = 1u16;
+            let available_height = inner
+                .height
+                .saturating_sub(header_height + scroll_indicator_height);
+            let visible_fields = (available_height / field_height).max(1) as usize;
+            let total_fields = modal.fields.len();
+
+            // Clone all data we need from modal before any mutable borrows
+            let scroll_offset = modal.scroll_offset;
+            let selected_field = modal.selected_field;
+
+            let start = scroll_offset.min(total_fields.saturating_sub(1));
+            let end = (start + visible_fields).min(total_fields);
+
+            // Clone the fields we need to display to avoid borrow issues
+            let fields_to_render: Vec<EditField> =
+                modal.fields[start..end].iter().cloned().collect();
+
+            // Update visible_fields on modal for event handler to use
+            if let Some(modal_mut) = &mut self.edit_modal {
+                modal_mut.visible_fields = visible_fields;
+            }
+
+            // Header text
+            let header_text = "Tab/Up/Down: navigate | Ctrl+S: save | Esc: cancel";
+            let header = Paragraph::new(header_text).style(Style::default().fg(self.theme.muted));
+            let header_area = Rect {
+                x: inner.x,
+                y: inner.y,
+                width: inner.width,
+                height: 1,
+            };
+            frame.render_widget(header, header_area);
+
+            // Render each field as an input box
+            let mut cursor_pos: Option<(u16, u16)> = None;
+            let has_scrollbar = total_fields > visible_fields;
+            let scrollbar_width = if has_scrollbar { 3 } else { 0 };
+
+            for (rel_idx, field) in fields_to_render.iter().enumerate() {
+                let abs_idx = start + rel_idx;
+                let is_selected = abs_idx == selected_field;
+                let y_offset = header_height + (rel_idx as u16 * field_height);
+
+                if y_offset + field_height > inner.height.saturating_sub(scroll_indicator_height) {
+                    break;
+                }
+
+                let field_area = Rect {
+                    x: inner.x + 1,
+                    y: inner.y + y_offset,
+                    width: inner.width.saturating_sub(2 + scrollbar_width),
+                    height: field_height,
+                };
+
+                // Label
+                let label = Paragraph::new(format!("{}:", field.label))
+                    .style(Style::default().fg(self.theme.foreground));
+                let label_area = Rect {
+                    x: field_area.x,
+                    y: field_area.y,
+                    width: field_area.width,
+                    height: 1,
+                };
+                frame.render_widget(label, label_area);
+
+                // Input box with border
+                let input_border_color = if is_selected {
+                    self.theme.input_focus
+                } else {
+                    self.theme.input_default
+                };
+
+                let display_value = if field.buffer.is_empty() {
+                    " ".to_string() // Space to ensure border renders
+                } else {
+                    field.buffer.clone()
+                };
+
+                // Input box with border - need height 3 to show border + text
+                let input_box = Paragraph::new(display_value)
+                    .style(
+                        Style::default()
+                            .fg(self.theme.foreground)
+                            .bg(self.theme.popup_background),
+                    )
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(input_border_color)),
+                    );
+
+                let input_area = Rect {
+                    x: field_area.x,
+                    y: field_area.y + 1,
+                    width: field_area.width,
+                    height: 3,
+                };
+                frame.render_widget(input_box, input_area);
+
+                // Track cursor position for focused field
+                if is_selected {
+                    let cursor_x = input_area.x
+                        + 1
+                        + (field.cursor as u16).min(input_area.width.saturating_sub(3));
+                    let cursor_y = input_area.y + 1; // Inside the box (middle row)
+                    cursor_pos = Some((cursor_x, cursor_y));
+                }
+            }
+
+            // Scroll indicator at bottom
+            if total_fields > visible_fields {
+                let scroll_text = format!("{}-{} of {}", start + 1, end, total_fields);
+                let scroll_indicator =
+                    Paragraph::new(scroll_text).style(Style::default().fg(self.theme.muted));
+                let scroll_area = Rect {
+                    x: inner.x + 1,
+                    y: inner.y + inner.height.saturating_sub(1),
+                    width: inner.width.saturating_sub(3), // Leave room for scrollbar
+                    height: 1,
+                };
+                frame.render_widget(scroll_indicator, scroll_area);
+
+                // Draw scrollbar on the right side
+                let scrollbar_x = inner.x + inner.width.saturating_sub(2);
+                let scrollbar_top: u16 = header_height + 1;
+                let scrollbar_height: u16 = inner
+                    .height
+                    .saturating_sub(header_height + scroll_indicator_height + 1);
+
+                // Draw track
+                for y_offset in 0..scrollbar_height {
+                    let y = scrollbar_top + y_offset;
+                    frame.render_widget(
+                        Paragraph::new("│").style(Style::default().fg(self.theme.border)),
+                        Rect {
+                            x: scrollbar_x,
+                            y: inner.y + y,
+                            width: 1,
+                            height: 1,
+                        },
+                    );
+                }
+
+                // Calculate thumb position
+                let scrollbar_height_usize = scrollbar_height as usize;
+                let thumb_size = ((visible_fields * scrollbar_height_usize) / total_fields).max(1);
+                let thumb_pos: u16 = if total_fields > visible_fields {
+                    ((scroll_offset * (scrollbar_height_usize - thumb_size))
+                        / (total_fields - visible_fields)) as u16
+                } else {
+                    0
+                };
+
+                // Draw thumb
+                for i in 0..(thumb_size as u16) {
+                    let y = scrollbar_top + thumb_pos + i;
+                    if y < scrollbar_top + scrollbar_height {
+                        frame.render_widget(
+                            Paragraph::new("█").style(Style::default().fg(self.theme.active)),
+                            Rect {
+                                x: scrollbar_x,
+                                y: inner.y + y,
+                                width: 1,
+                                height: 1,
+                            },
+                        );
+                    }
+                }
+            }
+
+            // Set cursor position for typing
+            if let Some((x, y)) = cursor_pos {
+                frame.set_cursor_position((x, y));
+            }
+
+            return;
+        }
+
         if self.input_mode.is_some() {
             let area = centered_rect(72, 60, frame.area());
             frame.render_widget(Clear, area);
-            let edit_help = self.current_modal_fields();
+            let _edit_help = self.current_modal_fields();
             let value_block = if self.is_multiline_input_mode() {
                 self.ensure_multiline_cursor_visible();
                 let inner_width = area.width.saturating_sub(2) as usize;
@@ -884,6 +2286,9 @@ impl App {
             frame.render_widget(prompt, area);
         }
 
+        // Render unified modal if open (handles all modal types)
+        self.render_modal(frame);
+
         let cursor_overlay = self.set_cursor_for_active_input(frame);
         if let Some((x, y, ch)) = cursor_overlay {
             let cursor_cell = Paragraph::new(ch.to_string()).style(
@@ -905,6 +2310,11 @@ impl App {
     }
 
     fn set_cursor_for_active_input(&self, frame: &mut ratatui::Frame) -> Option<(u16, u16, char)> {
+        // Unified modal cursor is set directly in render function, skip here
+        if self.modal.is_some() || self.edit_modal.is_some() {
+            return None;
+        }
+
         if self.input_mode.is_some() {
             let area = centered_rect(72, 60, frame.area());
             let inner_width = area.width.saturating_sub(2) as usize;
@@ -984,10 +2394,23 @@ impl App {
             .chars()
             .nth(self.input_cursor)
             .unwrap_or(' ');
-        if ch == '\n' { ' ' } else { ch }
+        if ch == '\n' {
+            ' '
+        } else {
+            ch
+        }
     }
 
     fn handle_event(&mut self, evt: Event) -> anyhow::Result<()> {
+        // Unified modal handling - takes priority over legacy modals
+        if let Some(modal_result) = self.handle_modal_event(evt.clone()) {
+            match modal_result {
+                ModalResult::Continue => return Ok(()),
+                ModalResult::CloseSuccess => return Ok(()),
+                ModalResult::CloseCancel => return Ok(()),
+            }
+        }
+
         if self.show_help {
             if let Event::Key(k) = evt {
                 match k.code {
@@ -1004,6 +2427,10 @@ impl App {
 
         if self.component_picker.is_some() {
             return self.handle_component_picker_event(evt);
+        }
+
+        if self.edit_modal.is_some() {
+            return self.handle_edit_modal_event(evt);
         }
 
         if self.input_mode.is_some() {
@@ -1044,6 +2471,9 @@ impl App {
                 }
                 KeyCode::Char('2') => {
                     self.selected_sidebar_section = SidebarSection::Pages;
+                    self.selected_region = SelectedRegion::Page;
+                    self.selected_tree_row = 0;
+                    self.sync_tree_row_with_selection();
                     self.status = "Switched to Pages section.".to_string();
                 }
                 KeyCode::Char('3') => {
@@ -1141,26 +2571,26 @@ impl App {
                 }
                 KeyCode::Left => match self.input_mode {
                     Some(InputMode::EditHeroClass) => {
-                        self.cycle_hero_class(false);
+                        self.cycle_hero_parent_class(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditHeroClass) {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditHeroAos) => {
-                        self.cycle_hero_aos(false);
+                        self.cycle_hero_parent_data_aos(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditHeroAos) {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditHeroCtaTarget) => {
-                        self.cycle_hero_cta_target(false, false);
+                        self.cycle_hero_link_1_target(false, false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditHeroCtaTarget)
                         {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditHeroCtaTarget2) => {
-                        self.cycle_hero_cta_target(true, false);
+                        self.cycle_hero_link_1_target(true, false);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditHeroCtaTarget2)
                         {
@@ -1175,39 +2605,39 @@ impl App {
                         }
                     }
                     Some(InputMode::EditBannerClass) => {
-                        self.cycle_banner_class(false);
+                        self.cycle_banner_parent_class(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditBannerClass) {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditBannerDataAos) => {
-                        self.cycle_banner_data_aos(false);
+                        self.cycle_banner_parent_data_aos(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditBannerDataAos)
                         {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditCtaClass) => {
-                        self.cycle_cta_class(false);
+                        self.cycle_cta_parent_class(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditCtaClass) {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditCtaDataAos) => {
-                        self.cycle_cta_data_aos(false);
+                        self.cycle_cta_parent_data_aos(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditCtaDataAos) {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditCtaLinkTarget) => {
-                        self.cycle_cta_link_target(false);
+                        self.cycle_parent_link_target(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditCtaLinkTarget)
                         {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditBlockquoteDataAos) => {
-                        self.cycle_blockquote_data_aos(false);
+                        self.cycle_blockquote_parent_data_aos(false);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditBlockquoteDataAos)
                         {
@@ -1215,19 +2645,19 @@ impl App {
                         }
                     }
                     Some(InputMode::EditCardType) => {
-                        self.cycle_card_type(false);
+                        self.cycle_card_parent_type(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditCardType) {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditCardDataAos) => {
-                        self.cycle_card_data_aos(false);
+                        self.cycle_card_parent_data_aos(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditCardDataAos) {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditCardItemLinkTarget) => {
-                        self.cycle_card_link_target(false);
+                        self.cycle_child_link_target(false);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditCardItemLinkTarget)
                         {
@@ -1235,14 +2665,14 @@ impl App {
                         }
                     }
                     Some(InputMode::EditFilmstripType) => {
-                        self.cycle_filmstrip_type(false);
+                        self.cycle_filmstrip_parent_type(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditFilmstripType)
                         {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditFilmstripDataAos) => {
-                        self.cycle_filmstrip_data_aos(false);
+                        self.cycle_filmstrip_parent_data_aos(false);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditFilmstripDataAos)
                         {
@@ -1274,7 +2704,7 @@ impl App {
                         }
                     }
                     Some(InputMode::EditAlternatingType) => {
-                        self.cycle_alternating_type(false);
+                        self.cycle_alternating_parent_type(false);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditAlternatingType)
                         {
@@ -1282,7 +2712,7 @@ impl App {
                         }
                     }
                     Some(InputMode::EditAlternatingDataAos) => {
-                        self.cycle_alternating_data_aos(false);
+                        self.cycle_alternating_parent_data_aos(false);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditAlternatingDataAos)
                         {
@@ -1290,14 +2720,14 @@ impl App {
                         }
                     }
                     Some(InputMode::EditAccordionType) => {
-                        self.cycle_accordion_type(false);
+                        self.cycle_accordion_parent_type(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditAccordionType)
                         {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditAccordionClass) => {
-                        self.cycle_accordion_class(false);
+                        self.cycle_accordion_parent_class(false);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditAccordionClass)
                         {
@@ -1305,7 +2735,7 @@ impl App {
                         }
                     }
                     Some(InputMode::EditAccordionAos) => {
-                        self.cycle_accordion_aos(false);
+                        self.cycle_accordion_parent_data_aos(false);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditAccordionAos)
                         {
                             self.input_buffer = v;
@@ -1315,26 +2745,26 @@ impl App {
                 },
                 KeyCode::Right => match self.input_mode {
                     Some(InputMode::EditHeroClass) => {
-                        self.cycle_hero_class(true);
+                        self.cycle_hero_parent_class(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditHeroClass) {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditHeroAos) => {
-                        self.cycle_hero_aos(true);
+                        self.cycle_hero_parent_data_aos(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditHeroAos) {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditHeroCtaTarget) => {
-                        self.cycle_hero_cta_target(false, true);
+                        self.cycle_hero_link_1_target(false, true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditHeroCtaTarget)
                         {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditHeroCtaTarget2) => {
-                        self.cycle_hero_cta_target(true, true);
+                        self.cycle_hero_link_1_target(true, true);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditHeroCtaTarget2)
                         {
@@ -1349,39 +2779,39 @@ impl App {
                         }
                     }
                     Some(InputMode::EditBannerClass) => {
-                        self.cycle_banner_class(true);
+                        self.cycle_banner_parent_class(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditBannerClass) {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditBannerDataAos) => {
-                        self.cycle_banner_data_aos(true);
+                        self.cycle_banner_parent_data_aos(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditBannerDataAos)
                         {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditCtaClass) => {
-                        self.cycle_cta_class(true);
+                        self.cycle_cta_parent_class(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditCtaClass) {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditCtaDataAos) => {
-                        self.cycle_cta_data_aos(true);
+                        self.cycle_cta_parent_data_aos(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditCtaDataAos) {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditCtaLinkTarget) => {
-                        self.cycle_cta_link_target(true);
+                        self.cycle_parent_link_target(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditCtaLinkTarget)
                         {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditBlockquoteDataAos) => {
-                        self.cycle_blockquote_data_aos(true);
+                        self.cycle_blockquote_parent_data_aos(true);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditBlockquoteDataAos)
                         {
@@ -1389,19 +2819,19 @@ impl App {
                         }
                     }
                     Some(InputMode::EditCardType) => {
-                        self.cycle_card_type(true);
+                        self.cycle_card_parent_type(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditCardType) {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditCardDataAos) => {
-                        self.cycle_card_data_aos(true);
+                        self.cycle_card_parent_data_aos(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditCardDataAos) {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditCardItemLinkTarget) => {
-                        self.cycle_card_link_target(true);
+                        self.cycle_child_link_target(true);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditCardItemLinkTarget)
                         {
@@ -1409,14 +2839,14 @@ impl App {
                         }
                     }
                     Some(InputMode::EditFilmstripType) => {
-                        self.cycle_filmstrip_type(true);
+                        self.cycle_filmstrip_parent_type(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditFilmstripType)
                         {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditFilmstripDataAos) => {
-                        self.cycle_filmstrip_data_aos(true);
+                        self.cycle_filmstrip_parent_data_aos(true);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditFilmstripDataAos)
                         {
@@ -1448,7 +2878,7 @@ impl App {
                         }
                     }
                     Some(InputMode::EditAlternatingType) => {
-                        self.cycle_alternating_type(true);
+                        self.cycle_alternating_parent_type(true);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditAlternatingType)
                         {
@@ -1456,7 +2886,7 @@ impl App {
                         }
                     }
                     Some(InputMode::EditAlternatingDataAos) => {
-                        self.cycle_alternating_data_aos(true);
+                        self.cycle_alternating_parent_data_aos(true);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditAlternatingDataAos)
                         {
@@ -1464,14 +2894,14 @@ impl App {
                         }
                     }
                     Some(InputMode::EditAccordionType) => {
-                        self.cycle_accordion_type(true);
+                        self.cycle_accordion_parent_type(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditAccordionType)
                         {
                             self.input_buffer = v;
                         }
                     }
                     Some(InputMode::EditAccordionClass) => {
-                        self.cycle_accordion_class(true);
+                        self.cycle_accordion_parent_class(true);
                         if let Some(v) =
                             self.value_for_component_mode(InputMode::EditAccordionClass)
                         {
@@ -1479,7 +2909,7 @@ impl App {
                         }
                     }
                     Some(InputMode::EditAccordionAos) => {
-                        self.cycle_accordion_aos(true);
+                        self.cycle_accordion_parent_data_aos(true);
                         if let Some(v) = self.value_for_component_mode(InputMode::EditAccordionAos)
                         {
                             self.input_buffer = v;
@@ -1757,11 +3187,11 @@ impl App {
                 | InputMode::EditAccordionFirstContent
         );
         if accordion_mode {
-            let rows = self.build_node_tree_rows();
+            let rows = self.build_page_tree_rows();
             let row_kind = rows
                 .get(self.selected_tree_row.min(rows.len().saturating_sub(1)))
                 .map(|r| r.kind);
-            if matches!(row_kind, Some(NodeTreeKind::AccordionItem { .. })) {
+            if matches!(row_kind, Some(TreeRowKind::AccordionItem { .. })) {
                 return Some(vec![
                     InputMode::EditAccordionFirstTitle,
                     InputMode::EditAccordionFirstContent,
@@ -1785,11 +3215,11 @@ impl App {
                 | InputMode::EditAlternatingItemCopy
         );
         if alternating_mode {
-            let rows = self.build_node_tree_rows();
+            let rows = self.build_page_tree_rows();
             let row_kind = rows
                 .get(self.selected_tree_row.min(rows.len().saturating_sub(1)))
                 .map(|r| r.kind);
-            if matches!(row_kind, Some(NodeTreeKind::AlternatingItem { .. })) {
+            if matches!(row_kind, Some(TreeRowKind::AlternatingItem { .. })) {
                 return Some(vec![
                     InputMode::EditAlternatingItemImage,
                     InputMode::EditAlternatingItemImageAlt,
@@ -1818,11 +3248,11 @@ impl App {
                 | InputMode::EditCardItemLinkLabel
         );
         if card_mode {
-            let rows = self.build_node_tree_rows();
+            let rows = self.build_page_tree_rows();
             let row_kind = rows
                 .get(self.selected_tree_row.min(rows.len().saturating_sub(1)))
                 .map(|r| r.kind);
-            if matches!(row_kind, Some(NodeTreeKind::CardItem { .. })) {
+            if matches!(row_kind, Some(TreeRowKind::CardItem { .. })) {
                 return Some(vec![
                     InputMode::EditCardItemImageUrl,
                     InputMode::EditCardItemImageAlt,
@@ -1849,11 +3279,11 @@ impl App {
                 | InputMode::EditFilmstripItemTitle
         );
         if filmstrip_mode {
-            let rows = self.build_node_tree_rows();
+            let rows = self.build_page_tree_rows();
             let row_kind = rows
                 .get(self.selected_tree_row.min(rows.len().saturating_sub(1)))
                 .map(|r| r.kind);
-            if matches!(row_kind, Some(NodeTreeKind::FilmstripItem { .. })) {
+            if matches!(row_kind, Some(TreeRowKind::FilmstripItem { .. })) {
                 return Some(vec![
                     InputMode::EditFilmstripItemImageUrl,
                     InputMode::EditFilmstripItemImageAlt,
@@ -1878,11 +3308,11 @@ impl App {
                 | InputMode::EditMilestonesItemLinkLabel
         );
         if milestones_mode {
-            let rows = self.build_node_tree_rows();
+            let rows = self.build_page_tree_rows();
             let row_kind = rows
                 .get(self.selected_tree_row.min(rows.len().saturating_sub(1)))
                 .map(|r| r.kind);
-            if matches!(row_kind, Some(NodeTreeKind::MilestonesItem { .. })) {
+            if matches!(row_kind, Some(TreeRowKind::MilestonesItem { .. })) {
                 return Some(vec![
                     InputMode::EditMilestonesItemPercentage,
                     InputMode::EditMilestonesItemTitle,
@@ -1914,11 +3344,11 @@ impl App {
                 | InputMode::EditSliderItemImageAlt
         );
         if slider_mode {
-            let rows = self.build_node_tree_rows();
+            let rows = self.build_page_tree_rows();
             let row_kind = rows
                 .get(self.selected_tree_row.min(rows.len().saturating_sub(1)))
                 .map(|r| r.kind);
-            if matches!(row_kind, Some(NodeTreeKind::SliderItem { .. })) {
+            if matches!(row_kind, Some(TreeRowKind::SliderItem { .. })) {
                 return Some(vec![
                     InputMode::EditSliderItemTitle,
                     InputMode::EditSliderItemCopy,
@@ -2004,6 +3434,577 @@ impl App {
         Ok(())
     }
 
+    fn handle_edit_modal_event(&mut self, evt: Event) -> anyhow::Result<()> {
+        if let Event::Key(key) = evt {
+            match key.code {
+                KeyCode::Esc => {
+                    self.edit_modal = None;
+                    self.status = "Edit cancelled.".to_string();
+                }
+                KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.save_edit_modal_changes();
+                }
+                KeyCode::Up => {
+                    if let Some(modal) = &mut self.edit_modal {
+                        modal.selected_field = modal.selected_field.saturating_sub(1);
+                        modal.scroll_offset = modal.scroll_offset.min(modal.selected_field);
+                    }
+                }
+                KeyCode::Down => {
+                    if let Some(modal) = &mut self.edit_modal {
+                        let total = modal.fields.len();
+                        if total > 0 {
+                            modal.selected_field = (modal.selected_field + 1).min(total - 1);
+                            // Adjust scroll if needed
+                            let visible = modal.visible_fields.max(1);
+                            if modal.selected_field >= modal.scroll_offset + visible {
+                                modal.scroll_offset =
+                                    modal.selected_field.saturating_sub(visible - 1);
+                            }
+                        }
+                    }
+                }
+                KeyCode::Tab => {
+                    if let Some(modal) = &mut self.edit_modal {
+                        let total = modal.fields.len();
+                        if total > 0 {
+                            modal.selected_field = (modal.selected_field + 1) % total;
+                            let visible = modal.visible_fields.max(1);
+                            if modal.selected_field < modal.scroll_offset {
+                                modal.scroll_offset = modal.selected_field;
+                            } else if modal.selected_field >= modal.scroll_offset + visible {
+                                modal.scroll_offset =
+                                    modal.selected_field.saturating_sub(visible - 1);
+                            }
+                        }
+                    }
+                }
+                KeyCode::BackTab => {
+                    if let Some(modal) = &mut self.edit_modal {
+                        let total = modal.fields.len();
+                        if total > 0 {
+                            modal.selected_field = modal.selected_field.saturating_sub(1);
+                            if modal.selected_field >= total {
+                                modal.selected_field = total - 1;
+                            }
+                            if modal.selected_field < modal.scroll_offset {
+                                modal.scroll_offset = modal.selected_field;
+                            }
+                        }
+                    }
+                }
+                KeyCode::Enter => {
+                    self.commit_edit_modal_field();
+                }
+                KeyCode::Backspace => {
+                    if let Some(modal) = &mut self.edit_modal {
+                        let idx = modal.selected_field;
+                        if let Some(field) = modal.fields.get_mut(idx) {
+                            if field.cursor > 0 {
+                                field.cursor -= 1;
+                                if field.cursor < field.buffer.chars().count() {
+                                    let mut chars: Vec<char> = field.buffer.chars().collect();
+                                    chars.remove(field.cursor);
+                                    field.buffer = chars.into_iter().collect();
+                                }
+                            }
+                        }
+                    }
+                }
+                KeyCode::Left => {
+                    if let Some(modal) = &mut self.edit_modal {
+                        let idx = modal.selected_field;
+                        if let Some(field) = modal.fields.get_mut(idx) {
+                            field.cursor = field.cursor.saturating_sub(1);
+                        }
+                    }
+                }
+                KeyCode::Right => {
+                    if let Some(modal) = &mut self.edit_modal {
+                        let idx = modal.selected_field;
+                        if let Some(field) = modal.fields.get_mut(idx) {
+                            let max = field.buffer.chars().count();
+                            field.cursor = (field.cursor + 1).min(max);
+                        }
+                    }
+                }
+                KeyCode::Char(c) => {
+                    if let Some(modal) = &mut self.edit_modal {
+                        let idx = modal.selected_field;
+                        if let Some(field) = modal.fields.get_mut(idx) {
+                            let mut chars: Vec<char> = field.buffer.chars().collect();
+                            if field.cursor <= chars.len() {
+                                chars.insert(field.cursor, c);
+                                field.buffer = chars.into_iter().collect();
+                                field.cursor += 1;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn commit_edit_modal_field(&mut self) {
+        // This will be overridden by specific implementations per field type
+        // For now, just save the buffer back to value
+        if let Some(modal) = &mut self.edit_modal {
+            let idx = modal.selected_field;
+            if let Some(field) = modal.fields.get_mut(idx) {
+                field.value = field.buffer.clone();
+            }
+        }
+    }
+
+    fn save_edit_modal_changes(&mut self) {
+        let Some(modal) = self.edit_modal.take() else {
+            return;
+        };
+
+        // Determine what we're editing based on the modal title
+        let saved = if modal.title == "dd-hero" {
+            let idx = self.selected_node;
+            let Some(page) = self.current_page_mut() else {
+                self.status = "Failed to save: no page.".to_string();
+                return;
+            };
+            let idx = idx.min(page.nodes.len().saturating_sub(1));
+            let hero = match &mut page.nodes[idx] {
+                PageNode::Hero(h) => h,
+                _ => {
+                    self.status = "Failed to save: selected node is not a hero.".to_string();
+                    return;
+                }
+            };
+
+            // Apply changes from fields to hero
+            for field in &modal.fields {
+                match field.label.as_str() {
+                    "Image URL" => hero.parent_image_url = field.value.clone(),
+                    "Title" => hero.parent_title = field.value.clone(),
+                    "Subtitle" => hero.parent_subtitle = field.value.clone(),
+                    "Copy" => {
+                        hero.parent_copy = if field.value.is_empty() {
+                            None
+                        } else {
+                            Some(field.value.clone())
+                        }
+                    }
+                    "CTA Text" => {
+                        hero.link_1_label = if field.value.is_empty() {
+                            None
+                        } else {
+                            Some(field.value.clone())
+                        }
+                    }
+                    "CTA Link" => {
+                        hero.link_1_url = if field.value.is_empty() {
+                            None
+                        } else {
+                            Some(field.value.clone())
+                        }
+                    }
+                    "Custom CSS" => {
+                        hero.parent_custom_css = if field.value.is_empty() {
+                            None
+                        } else {
+                            Some(field.value.clone())
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            true
+        } else if modal.title == "dd-section" {
+            let idx = self.selected_node;
+            let Some(page) = self.current_page_mut() else {
+                self.status = "Failed to save: no page.".to_string();
+                return;
+            };
+            let idx = idx.min(page.nodes.len().saturating_sub(1));
+            let section = match &mut page.nodes[idx] {
+                PageNode::Section(s) => s,
+                _ => {
+                    self.status = "Failed to save: selected node is not a section.".to_string();
+                    return;
+                }
+            };
+
+            // Apply changes from fields to section
+            for field in &modal.fields {
+                match field.label.as_str() {
+                    "Section ID" => section.id = field.value.clone(),
+                    "Section Title" => {
+                        section.section_title = if field.value.is_empty() {
+                            None
+                        } else {
+                            Some(field.value.clone())
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            true
+        } else if modal.title == "dd-banner" {
+            let selected_node = self.selected_node;
+            let selected_column = self.selected_column;
+            let selected_component = self.selected_component;
+            let Some(page) = self.current_page_mut() else {
+                self.status = "Failed to save: no page.".to_string();
+                return;
+            };
+            let ni = selected_node.min(page.nodes.len().saturating_sub(1));
+            let col_i = selected_column;
+            let ci = selected_component;
+
+            if let PageNode::Section(section) = &mut page.nodes[ni] {
+                normalize_section_columns(section);
+                let col_i = col_i.min(section.columns.len().saturating_sub(1));
+                let ci = ci.min(section.columns[col_i].components.len().saturating_sub(1));
+
+                if let crate::model::SectionComponent::Banner(banner) =
+                    &mut section.columns[col_i].components[ci]
+                {
+                    for field in &modal.fields {
+                        match field.label.as_str() {
+                            "Banner Class" => {
+                                if let Some(v) = parse_banner_class(&field.value) {
+                                    banner.parent_class = v;
+                                }
+                            }
+                            "Data AOS" => {
+                                if let Some(v) = parse_parent_data_aos(&field.value) {
+                                    banner.parent_data_aos = v;
+                                }
+                            }
+                            "Image URL" => banner.parent_image_url = field.value.clone(),
+                            "Image Alt" => banner.parent_image_alt = field.value.clone(),
+                            _ => {}
+                        }
+                    }
+                    true
+                } else {
+                    false
+                }
+            } else {
+                self.status = "Failed to save: selected node is not a section.".to_string();
+                false
+            }
+        } else if modal.title == "dd-alert" {
+            let selected_node = self.selected_node;
+            let selected_column = self.selected_column;
+            let selected_component = self.selected_component;
+            let Some(page) = self.current_page_mut() else {
+                self.status = "Failed to save: no page.".to_string();
+                return;
+            };
+            let ni = selected_node.min(page.nodes.len().saturating_sub(1));
+            let col_i = selected_column;
+            let ci = selected_component;
+
+            if let PageNode::Section(section) = &mut page.nodes[ni] {
+                normalize_section_columns(section);
+                let col_i = col_i.min(section.columns.len().saturating_sub(1));
+                let ci = ci.min(section.columns[col_i].components.len().saturating_sub(1));
+
+                if let crate::model::SectionComponent::Alert(alert) =
+                    &mut section.columns[col_i].components[ci]
+                {
+                    for field in &modal.fields {
+                        match field.label.as_str() {
+                            "Alert Type" => {
+                                if let Some(v) = parse_alert_type(&field.value) {
+                                    alert.parent_type = v;
+                                }
+                            }
+                            "Alert Class" => {
+                                if let Some(v) = parse_alert_class(&field.value) {
+                                    alert.parent_class = v;
+                                }
+                            }
+                            "Data AOS" => {
+                                if let Some(v) = parse_parent_data_aos(&field.value) {
+                                    alert.parent_data_aos = v;
+                                }
+                            }
+                            "Title" => {
+                                alert.parent_title = if field.value.is_empty() {
+                                    None
+                                } else {
+                                    Some(field.value.clone())
+                                }
+                            }
+                            "Copy" => alert.parent_copy = field.value.clone(),
+                            _ => {}
+                        }
+                    }
+                    true
+                } else {
+                    false
+                }
+            } else {
+                self.status = "Failed to save: selected node is not a section.".to_string();
+                false
+            }
+        } else if modal.title == "dd-cta" {
+            self.save_cta_changes(&modal.fields)
+        } else if modal.title == "dd-blockquote" {
+            self.save_blockquote_changes(&modal.fields)
+        } else if modal.title == "dd-modal" {
+            self.save_modal_changes(&modal.fields)
+        } else if modal.title == "dd-filmstrip" {
+            self.save_filmstrip_changes(&modal.fields)
+        } else if modal.title == "dd-accordion" {
+            self.save_accordion_changes(&modal.fields)
+        } else {
+            false
+        };
+
+        if saved {
+            self.status = format!("Saved {} changes.", modal.title);
+        }
+    }
+
+    fn save_cta_changes(&mut self, fields: &[EditField]) -> bool {
+        let selected_node = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            self.status = "Failed to save: no page.".to_string();
+            return false;
+        };
+        let ni = selected_node.min(page.nodes.len().saturating_sub(1));
+
+        if let PageNode::Section(section) = &mut page.nodes[ni] {
+            normalize_section_columns(section);
+            let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+            let ci =
+                selected_component.min(section.columns[col_i].components.len().saturating_sub(1));
+
+            if let crate::model::SectionComponent::Cta(cta) =
+                &mut section.columns[col_i].components[ci]
+            {
+                for field in fields {
+                    match field.label.as_str() {
+                        "CTA Class" => {
+                            if let Some(v) = parse_cta_class(&field.value) {
+                                cta.parent_class = v;
+                            }
+                        }
+                        "Data AOS" => {
+                            if let Some(v) = parse_parent_data_aos(&field.value) {
+                                cta.parent_data_aos = v;
+                            }
+                        }
+                        "Image URL" => cta.parent_image_url = field.value.clone(),
+                        "Image Alt" => cta.parent_image_alt = field.value.clone(),
+                        "Title" => cta.parent_title = field.value.clone(),
+                        "Subtitle" => cta.parent_subtitle = field.value.clone(),
+                        "Copy" => cta.parent_copy = field.value.clone(),
+                        "Link URL" => {
+                            cta.parent_link_url = if field.value.is_empty() {
+                                None
+                            } else {
+                                Some(field.value.clone())
+                            }
+                        }
+                        "Link Target" => cta.parent_link_target = parse_child_link_target(&field.value),
+                        "Link Label" => {
+                            cta.parent_link_label = if field.value.is_empty() {
+                                None
+                            } else {
+                                Some(field.value.clone())
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                true
+            } else {
+                false
+            }
+        } else {
+            self.status = "Failed to save: selected node is not a section.".to_string();
+            false
+        }
+    }
+
+    fn save_blockquote_changes(&mut self, fields: &[EditField]) -> bool {
+        let selected_node = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            self.status = "Failed to save: no page.".to_string();
+            return false;
+        };
+        let ni = selected_node.min(page.nodes.len().saturating_sub(1));
+
+        if let PageNode::Section(section) = &mut page.nodes[ni] {
+            normalize_section_columns(section);
+            let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+            let ci =
+                selected_component.min(section.columns[col_i].components.len().saturating_sub(1));
+
+            if let crate::model::SectionComponent::Blockquote(blockquote) =
+                &mut section.columns[col_i].components[ci]
+            {
+                for field in fields {
+                    match field.label.as_str() {
+                        "Data AOS" => {
+                            if let Some(v) = parse_parent_data_aos(&field.value) {
+                                blockquote.parent_data_aos = v;
+                            }
+                        }
+                        "Image URL" => blockquote.parent_image_url = field.value.clone(),
+                        "Image Alt" => blockquote.parent_image_alt = field.value.clone(),
+                        "Person Name" => blockquote.parent_name = field.value.clone(),
+                        "Person Title" => blockquote.parent_role = field.value.clone(),
+                        "Copy" => blockquote.parent_copy = field.value.clone(),
+                        _ => {}
+                    }
+                }
+                true
+            } else {
+                false
+            }
+        } else {
+            self.status = "Failed to save: selected node is not a section.".to_string();
+            false
+        }
+    }
+
+    fn save_modal_changes(&mut self, fields: &[EditField]) -> bool {
+        let selected_node = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            self.status = "Failed to save: no page.".to_string();
+            return false;
+        };
+        let ni = selected_node.min(page.nodes.len().saturating_sub(1));
+
+        if let PageNode::Section(section) = &mut page.nodes[ni] {
+            normalize_section_columns(section);
+            let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+            let ci =
+                selected_component.min(section.columns[col_i].components.len().saturating_sub(1));
+
+            if let crate::model::SectionComponent::Modal(modal) =
+                &mut section.columns[col_i].components[ci]
+            {
+                for field in fields {
+                    match field.label.as_str() {
+                        "Title" => modal.parent_title = field.value.clone(),
+                        "Copy" => modal.parent_copy = field.value.clone(),
+                        _ => {}
+                    }
+                }
+                true
+            } else {
+                false
+            }
+        } else {
+            self.status = "Failed to save: selected node is not a section.".to_string();
+            false
+        }
+    }
+
+    fn save_filmstrip_changes(&mut self, fields: &[EditField]) -> bool {
+        let selected_node = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            self.status = "Failed to save: no page.".to_string();
+            return false;
+        };
+        let ni = selected_node.min(page.nodes.len().saturating_sub(1));
+
+        if let PageNode::Section(section) = &mut page.nodes[ni] {
+            normalize_section_columns(section);
+            let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+            let ci =
+                selected_component.min(section.columns[col_i].components.len().saturating_sub(1));
+
+            if let crate::model::SectionComponent::Filmstrip(filmstrip) =
+                &mut section.columns[col_i].components[ci]
+            {
+                for field in fields {
+                    match field.label.as_str() {
+                        "Filmstrip Type" => {
+                            if let Some(v) = parse_filmstrip_type(&field.value) {
+                                filmstrip.parent_type = v;
+                            }
+                        }
+                        "Data AOS" => {
+                            if let Some(v) = parse_parent_data_aos(&field.value) {
+                                filmstrip.parent_data_aos = v;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                true
+            } else {
+                false
+            }
+        } else {
+            self.status = "Failed to save: selected node is not a section.".to_string();
+            false
+        }
+    }
+
+    fn save_accordion_changes(&mut self, fields: &[EditField]) -> bool {
+        let selected_node = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let Some(page) = self.current_page_mut() else {
+            self.status = "Failed to save: no page.".to_string();
+            return false;
+        };
+        let ni = selected_node.min(page.nodes.len().saturating_sub(1));
+
+        if let PageNode::Section(section) = &mut page.nodes[ni] {
+            normalize_section_columns(section);
+            let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+            let ci =
+                selected_component.min(section.columns[col_i].components.len().saturating_sub(1));
+
+            if let crate::model::SectionComponent::Accordion(accordion) =
+                &mut section.columns[col_i].components[ci]
+            {
+                for field in fields {
+                    match field.label.as_str() {
+                        "Accordion Type" => {
+                            if let Some(v) = parse_accordion_type(&field.value) {
+                                accordion.parent_type = v;
+                            }
+                        }
+                        "Accordion Class" => {
+                            if let Some(v) = parse_accordion_class(&field.value) {
+                                accordion.parent_class = v;
+                            }
+                        }
+                        "Data AOS" => {
+                            if let Some(v) = parse_parent_data_aos(&field.value) {
+                                accordion.parent_data_aos = v;
+                            }
+                        }
+                        "Group Name" => accordion.parent_group_name = field.value.clone(),
+                        _ => {}
+                    }
+                }
+                true
+            } else {
+                false
+            }
+        } else {
+            self.status = "Failed to save: selected node is not a section.".to_string();
+            false
+        }
+    }
+
     fn begin_save_prompt(&mut self) {
         self.component_picker = None;
         self.input_mode = None;
@@ -2053,6 +4054,160 @@ impl App {
     }
 
     fn begin_edit_selected(&mut self) {
+        if self.selected_region == SelectedRegion::Header {
+            self.begin_edit_header();
+            return;
+        }
+        let page = self.current_page();
+        if page.nodes.is_empty() {
+            self.status = "No node selected.".to_string();
+            return;
+        }
+        let idx = self.selected_node.min(page.nodes.len() - 1);
+        match &page.nodes[idx] {
+            PageNode::Hero(v) => {
+                let hero = v.clone();
+                self.open_edit_modal_for_hero(&hero);
+            }
+            PageNode::Section(v) => {
+                let section = v.clone();
+                self.open_edit_modal_for_section(&section);
+            }
+        }
+    }
+
+    fn open_edit_modal_for_hero(&mut self, hero: &crate::model::DdHero) {
+        let fields = vec![
+            EditField {
+                label: "Image URL".to_string(),
+                value: hero.parent_image_url.clone(),
+                buffer: hero.parent_image_url.clone(),
+                cursor: hero.parent_image_url.len(),
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "Title".to_string(),
+                value: hero.parent_title.clone(),
+                buffer: hero.parent_title.clone(),
+                cursor: hero.parent_title.len(),
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "Subtitle".to_string(),
+                value: hero.parent_subtitle.clone(),
+                buffer: hero.parent_subtitle.clone(),
+                cursor: hero.parent_subtitle.len(),
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "Copy".to_string(),
+                value: hero.parent_copy.clone().unwrap_or_default(),
+                buffer: hero.parent_copy.clone().unwrap_or_default(),
+                cursor: hero.parent_copy.clone().unwrap_or_default().len(),
+                is_multiline: true,
+                rows: 3, // Textarea: 3 rows per dd-hero.md spec
+            },
+            EditField {
+                label: "CTA Text".to_string(),
+                value: hero.link_1_label.clone().unwrap_or_default(),
+                buffer: hero.link_1_label.clone().unwrap_or_default(),
+                cursor: hero.link_1_label.clone().unwrap_or_default().len(),
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "CTA Link".to_string(),
+                value: hero.link_1_url.clone().unwrap_or_default(),
+                buffer: hero.link_1_url.clone().unwrap_or_default(),
+                cursor: hero.link_1_url.clone().unwrap_or_default().len(),
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "Hero Class".to_string(),
+                value: hero
+                    .parent_class
+                    .map(|c| format!("{:?}", c))
+                    .unwrap_or_default(),
+                buffer: hero
+                    .parent_class
+                    .map(|c| format!("{:?}", c))
+                    .unwrap_or_default(),
+                cursor: 0,
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "Custom CSS".to_string(),
+                value: hero.parent_custom_css.clone().unwrap_or_default(),
+                buffer: hero.parent_custom_css.clone().unwrap_or_default(),
+                cursor: hero.parent_custom_css.clone().unwrap_or_default().len(),
+                is_multiline: false,
+                rows: 1,
+            },
+        ];
+        self.edit_modal = Some(EditModalState {
+            title: "dd-hero".to_string(),
+            fields,
+            selected_field: 0,
+            scroll_offset: 0,
+            visible_fields: 6,
+        });
+        self.status =
+            "Multi-field edit: Tab/Up/Down to navigate fields, type to edit, Ctrl+S to save, Esc to cancel."
+                .to_string();
+    }
+
+    fn open_edit_modal_for_section(&mut self, section: &crate::model::DdSection) {
+        let fields = vec![
+            EditField {
+                label: "Section ID".to_string(),
+                value: section.id.clone(),
+                buffer: section.id.clone(),
+                cursor: section.id.len(),
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "Section Title".to_string(),
+                value: section.section_title.clone().unwrap_or_default(),
+                buffer: section.section_title.clone().unwrap_or_default(),
+                cursor: section.section_title.clone().unwrap_or_default().len(),
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "Section Class".to_string(),
+                value: section
+                    .section_class
+                    .map(|c| format!("{:?}", c))
+                    .unwrap_or_default(),
+                buffer: section
+                    .section_class
+                    .map(|c| format!("{:?}", c))
+                    .unwrap_or_default(),
+                cursor: 0,
+                is_multiline: false,
+                rows: 1,
+            },
+        ];
+        self.edit_modal = Some(EditModalState {
+            title: "dd-section".to_string(),
+            fields,
+            selected_field: 0,
+            scroll_offset: 0,
+            visible_fields: 6,
+        });
+        self.status =
+            "Multi-field edit: Tab/Up/Down to navigate fields, type to edit, Ctrl+S to save, Esc to cancel."
+                .to_string();
+    }
+
+    fn old_begin_edit_selected(&mut self) {
+        // Deprecated - keeping for reference
         let selected = {
             let page = self.current_page();
             if page.nodes.is_empty() {
@@ -2060,7 +4215,7 @@ impl App {
             } else {
                 let idx = self.selected_node.min(page.nodes.len() - 1);
                 Some(match &page.nodes[idx] {
-                    PageNode::Hero(v) => (InputMode::EditHeroImage, v.image.clone()),
+                    PageNode::Hero(v) => (InputMode::EditHeroImage, v.parent_image_url.clone()),
                     PageNode::Section(v) => (InputMode::EditSectionId, v.id.clone()),
                 })
             }
@@ -2152,6 +4307,21 @@ impl App {
             InputMode::EditAlternatingItemCopy => {
                 "Editing dd-alternating item copy. Enter: newline, Ctrl+S: save, esc: cancel."
                     .to_string()
+            }
+            InputMode::EditAlertType => {
+                "Editing dd-alert type. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertClass => {
+                "Editing dd-alert class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertDataAos => {
+                "Editing dd-alert data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertTitle => {
+                "Editing dd-alert title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertCopy => {
+                "Editing dd-alert copy. Enter: newline, Ctrl+S: save, esc: cancel.".to_string()
             }
             InputMode::EditBlockquoteDataAos => {
                 "Editing dd-blockquote data-aos. Enter to save, esc to cancel.".to_string()
@@ -2342,7 +4512,90 @@ impl App {
             InputMode::EditSliderItemImageAlt => {
                 "Editing dd-slider item child_image_alt. Enter to save, esc to cancel.".to_string()
             }
+            InputMode::EditHeaderId => {
+                "Editing header id. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeaderClass => {
+                "Editing header class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeaderCustomCss => {
+                "Editing header custom CSS. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeaderColumnId => {
+                "Editing header column id. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeaderColumnWidthClass => {
+                "Editing header column width class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditHeaderPlaceholderContent => {
+                "Editing header placeholder content. Enter to save, esc to cancel.".to_string()
+            }
         };
+    }
+
+    fn begin_edit_header(&mut self) {
+        let rows = self.build_header_tree_rows();
+        let row_kind = rows.get(self.selected_tree_row).map(|r| r.kind);
+        match row_kind {
+            Some(TreeRowKind::HeaderRoot) => {
+                self.input_mode = Some(InputMode::EditHeaderId);
+                self.input_buffer = self.site.header.id.clone();
+            }
+            Some(TreeRowKind::HeaderSection { section_idx }) => {
+                self.input_mode = Some(InputMode::EditSectionId);
+                let section_i = section_idx.min(self.site.header.sections.len().saturating_sub(1));
+                self.input_buffer = self.site.header.sections[section_i].id.clone();
+            }
+            Some(TreeRowKind::HeaderColumn {
+                section_idx,
+                column_idx,
+            }) => {
+                self.input_mode = Some(InputMode::EditColumnId);
+                let section_i = section_idx.min(self.site.header.sections.len().saturating_sub(1));
+                let col_i = column_idx.min(
+                    self.site.header.sections[section_i]
+                        .columns
+                        .len()
+                        .saturating_sub(1),
+                );
+                self.input_buffer = self.site.header.sections[section_i].columns[col_i]
+                    .id
+                    .clone();
+            }
+            Some(TreeRowKind::HeaderComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            }) => {
+                self.input_mode = Some(InputMode::EditBannerImageUrl);
+                let section_i = section_idx.min(self.site.header.sections.len().saturating_sub(1));
+                let col_i = column_idx.min(
+                    self.site.header.sections[section_i]
+                        .columns
+                        .len()
+                        .saturating_sub(1),
+                );
+                let comp_i = component_idx.min(
+                    self.site.header.sections[section_i].columns[col_i]
+                        .components
+                        .len()
+                        .saturating_sub(1),
+                );
+                if let crate::model::SectionComponent::Banner(banner) =
+                    &self.site.header.sections[section_i].columns[col_i].components[comp_i]
+                {
+                    self.input_buffer = banner.parent_image_url.clone();
+                } else {
+                    self.input_buffer = String::new();
+                }
+            }
+            _ => {
+                self.status = "No header element selected.".to_string();
+                return;
+            }
+        }
+        self.input_cursor = self.input_buffer.chars().count();
+        self.status = "Editing header. Enter to save, esc to cancel.".to_string();
     }
 
     fn begin_edit_selected_column_id(&mut self) {
@@ -2455,19 +4708,16 @@ impl App {
             return false;
         }
         let idx = selected.min(page.nodes.len() - 1);
-        if let PageNode::Section(section) = &mut page.nodes[idx] {
-            pull_selected_column_into_legacy_components(section, selected_column);
-        }
         status = match (&mut page.nodes[idx], mode) {
             (PageNode::Hero(v), InputMode::EditHeroImage) => {
-                v.image = value;
+                v.parent_image_url = value;
                 applied = true;
                 "Updated hero image.".to_string()
             }
             (PageNode::Hero(v), InputMode::EditHeroClass) => {
                 let parsed = parse_hero_image_class(value.as_str());
-                if let Some(hero_class) = parsed {
-                    v.hero_class = Some(hero_class);
+                if let Some(parent_class) = parsed {
+                    v.parent_class = Some(parent_class);
                     applied = true;
                     "Updated hero default class.".to_string()
                 } else {
@@ -2476,9 +4726,9 @@ impl App {
                 }
             }
             (PageNode::Hero(v), InputMode::EditHeroAos) => {
-                let parsed = parse_hero_aos(value.as_str());
+                let parsed = parse_parent_data_aos(value.as_str());
                 if let Some(aos) = parsed {
-                    v.hero_aos = Some(aos);
+                    v.parent_data_aos = Some(aos);
                     applied = true;
                     "Updated hero data-aos option.".to_string()
                 } else {
@@ -2487,42 +4737,42 @@ impl App {
                 }
             }
             (PageNode::Hero(v), InputMode::EditHeroCustomCss) => {
-                v.custom_css = if value.is_empty() { None } else { Some(value) };
+                v.parent_custom_css = if value.is_empty() { None } else { Some(value) };
                 applied = true;
                 "Updated hero custom CSS classes.".to_string()
             }
             (PageNode::Hero(v), InputMode::EditHeroTitle) => {
-                v.title = value;
+                v.parent_title = value;
                 applied = true;
                 "Updated hero title.".to_string()
             }
             (PageNode::Hero(v), InputMode::EditHeroSubtitle) => {
-                v.subtitle = value;
+                v.parent_subtitle = value;
                 applied = true;
                 "Updated hero subtitle.".to_string()
             }
             (PageNode::Hero(v), InputMode::EditHeroCopy) => {
-                v.copy = if value.is_empty() { None } else { Some(value) };
+                v.parent_copy = if value.is_empty() { None } else { Some(value) };
                 applied = true;
                 "Updated hero copy.".to_string()
             }
             (PageNode::Hero(v), InputMode::EditHeroCtaText) => {
-                v.cta_text = if value.is_empty() { None } else { Some(value) };
+                v.link_1_label = if value.is_empty() { None } else { Some(value) };
                 applied = true;
                 "Updated hero primary link text.".to_string()
             }
             (PageNode::Hero(v), InputMode::EditHeroCtaLink) => {
-                v.cta_link = if value.is_empty() { None } else { Some(value) };
+                v.link_1_url = if value.is_empty() { None } else { Some(value) };
                 applied = true;
                 "Updated hero primary link URL.".to_string()
             }
             (PageNode::Hero(v), InputMode::EditHeroCtaTarget) => {
                 if value.is_empty() {
-                    v.cta_target = None;
+                    v.link_1_target = None;
                     applied = true;
                     "Updated hero primary link target.".to_string()
-                } else if let Some(target) = parse_cta_target(value.as_str()) {
-                    v.cta_target = Some(target);
+                } else if let Some(target) = parse_link_1_target(value.as_str()) {
+                    v.link_1_target = Some(target);
                     applied = true;
                     "Updated hero primary link target.".to_string()
                 } else {
@@ -2531,22 +4781,22 @@ impl App {
                 }
             }
             (PageNode::Hero(v), InputMode::EditHeroCtaText2) => {
-                v.cta_text_2 = if value.is_empty() { None } else { Some(value) };
+                v.link_2_label = if value.is_empty() { None } else { Some(value) };
                 applied = true;
                 "Updated hero secondary link text.".to_string()
             }
             (PageNode::Hero(v), InputMode::EditHeroCtaLink2) => {
-                v.cta_link_2 = if value.is_empty() { None } else { Some(value) };
+                v.link_2_url = if value.is_empty() { None } else { Some(value) };
                 applied = true;
                 "Updated hero secondary link URL.".to_string()
             }
             (PageNode::Hero(v), InputMode::EditHeroCtaTarget2) => {
                 if value.is_empty() {
-                    v.cta_target_2 = None;
+                    v.link_2_target = None;
                     applied = true;
                     "Updated hero secondary link target.".to_string()
-                } else if let Some(target) = parse_cta_target(value.as_str()) {
-                    v.cta_target_2 = Some(target);
+                } else if let Some(target) = parse_link_1_target(value.as_str()) {
+                    v.link_2_target = Some(target);
                     applied = true;
                     "Updated hero secondary link target.".to_string()
                 } else {
@@ -2587,11 +4837,11 @@ impl App {
                 "Updated column width class.".to_string()
             }
             (PageNode::Section(v), InputMode::EditAlternatingType) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.components[ci]
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(vt) = parse_alternating_type(value.as_str()) {
-                            alt.alternating_type = vt;
+                            alt.parent_type = vt;
                             applied = true;
                             "Updated dd-alternating type.".to_string()
                         } else {
@@ -2606,10 +4856,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditAlternatingClass) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.components[ci]
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.columns[selected_column].components[ci]
                     {
-                        alt.alternating_class = value;
+                        alt.parent_class = value;
                         applied = true;
                         "Updated dd-alternating class.".to_string()
                     } else {
@@ -2620,11 +4870,11 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditAlternatingDataAos) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.components[ci]
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.columns[selected_column].components[ci]
                     {
-                        if let Some(va) = parse_hero_aos(value.as_str()) {
-                            alt.alternating_data_aos = va;
+                        if let Some(va) = parse_parent_data_aos(value.as_str()) {
+                            alt.parent_data_aos = va;
                             applied = true;
                             "Updated dd-alternating data-aos.".to_string()
                         } else {
@@ -2639,11 +4889,11 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditAlternatingItemImage) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.components[ci]
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(ni) = nested_index(alt.items.len(), selected_nested_item) {
-                            alt.items[ni].image = value;
+                            alt.items[ni].child_image_url = value;
                             applied = true;
                             format!("Updated dd-alternating item {} image.", ni + 1)
                         } else {
@@ -2657,11 +4907,11 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditAlternatingItemImageAlt) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.components[ci]
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(ni) = nested_index(alt.items.len(), selected_nested_item) {
-                            alt.items[ni].image_alt = value;
+                            alt.items[ni].child_image_alt = value;
                             applied = true;
                             format!("Updated dd-alternating item {} image alt.", ni + 1)
                         } else {
@@ -2675,11 +4925,11 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditAlternatingItemTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.components[ci]
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(ni) = nested_index(alt.items.len(), selected_nested_item) {
-                            alt.items[ni].title = value;
+                            alt.items[ni].child_title = value;
                             applied = true;
                             format!("Updated dd-alternating item {} title.", ni + 1)
                         } else {
@@ -2693,11 +4943,11 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditAlternatingItemCopy) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.components[ci]
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Alternating(alt) = &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(ni) = nested_index(alt.items.len(), selected_nested_item) {
-                            alt.items[ni].copy = value;
+                            alt.items[ni].child_copy = value;
                             applied = true;
                             format!("Updated dd-alternating item {} copy.", ni + 1)
                         } else {
@@ -2711,10 +4961,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditBannerClass) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Banner(banner) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Banner(banner) = &mut v.columns[selected_column].components[ci] {
                         if let Some(vc) = parse_banner_class(value.as_str()) {
-                            banner.banner_class = vc;
+                            banner.parent_class = vc;
                             applied = true;
                             "Updated dd-banner class.".to_string()
                         } else {
@@ -2729,10 +4979,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditBannerDataAos) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Banner(banner) = &mut v.components[ci] {
-                        if let Some(va) = parse_hero_aos(value.as_str()) {
-                            banner.banner_data_aos = va;
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Banner(banner) = &mut v.columns[selected_column].components[ci] {
+                        if let Some(va) = parse_parent_data_aos(value.as_str()) {
+                            banner.parent_data_aos = va;
                             applied = true;
                             "Updated dd-banner data-aos.".to_string()
                         } else {
@@ -2747,9 +4997,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditBannerImageUrl) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Banner(banner) = &mut v.components[ci] {
-                        banner.banner_image_url = value;
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Banner(banner) = &mut v.columns[selected_column].components[ci] {
+                        banner.parent_image_url = value;
                         applied = true;
                         "Updated dd-banner image URL.".to_string()
                     } else {
@@ -2760,9 +5010,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditBannerImageAlt) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Banner(banner) = &mut v.components[ci] {
-                        banner.banner_image_alt = value;
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Banner(banner) = &mut v.columns[selected_column].components[ci] {
+                        banner.parent_image_alt = value;
                         applied = true;
                         "Updated dd-banner image alt text.".to_string()
                     } else {
@@ -2773,10 +5023,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCtaClass) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.columns[selected_column].components[ci] {
                         if let Some(vc) = parse_cta_class(value.as_str()) {
-                            cta.cta_class = vc;
+                            cta.parent_class = vc;
                             applied = true;
                             "Updated dd-cta class.".to_string()
                         } else {
@@ -2791,9 +5041,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCtaImageUrl) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
-                        cta.cta_image_url = value;
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.columns[selected_column].components[ci] {
+                        cta.parent_image_url = value;
                         applied = true;
                         "Updated dd-cta image URL.".to_string()
                     } else {
@@ -2804,9 +5054,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCtaImageAlt) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
-                        cta.cta_image_alt = value;
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.columns[selected_column].components[ci] {
+                        cta.parent_image_alt = value;
                         applied = true;
                         "Updated dd-cta image alt text.".to_string()
                     } else {
@@ -2817,10 +5067,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCtaDataAos) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
-                        if let Some(va) = parse_hero_aos(value.as_str()) {
-                            cta.cta_data_aos = va;
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.columns[selected_column].components[ci] {
+                        if let Some(va) = parse_parent_data_aos(value.as_str()) {
+                            cta.parent_data_aos = va;
                             applied = true;
                             "Updated dd-cta data-aos.".to_string()
                         } else {
@@ -2835,9 +5085,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCtaTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
-                        cta.cta_title = value;
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.columns[selected_column].components[ci] {
+                        cta.parent_title = value;
                         applied = true;
                         "Updated dd-cta title.".to_string()
                     } else {
@@ -2848,9 +5098,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCtaSubtitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
-                        cta.cta_subtitle = value;
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.columns[selected_column].components[ci] {
+                        cta.parent_subtitle = value;
                         applied = true;
                         "Updated dd-cta subtitle.".to_string()
                     } else {
@@ -2861,9 +5111,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCtaCopy) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
-                        cta.cta_copy = value;
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.columns[selected_column].components[ci] {
+                        cta.parent_copy = value;
                         applied = true;
                         "Updated dd-cta copy.".to_string()
                     } else {
@@ -2874,9 +5124,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCtaLinkUrl) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
-                        cta.cta_link_url = if value.is_empty() { None } else { Some(value) };
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.columns[selected_column].components[ci] {
+                        cta.parent_link_url = if value.is_empty() { None } else { Some(value) };
                         applied = true;
                         "Updated dd-cta link URL.".to_string()
                     } else {
@@ -2887,14 +5137,14 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCtaLinkTarget) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.columns[selected_column].components[ci] {
                         if value.is_empty() {
-                            cta.cta_link_target = None;
+                            cta.parent_link_target = None;
                             applied = true;
                             "Updated dd-cta link target.".to_string()
-                        } else if let Some(vt) = parse_card_link_target(value.as_str()) {
-                            cta.cta_link_target = Some(vt);
+                        } else if let Some(vt) = parse_child_link_target(value.as_str()) {
+                            cta.parent_link_target = Some(vt);
                             applied = true;
                             "Updated dd-cta link target.".to_string()
                         } else {
@@ -2909,9 +5159,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCtaLinkLabel) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Cta(cta) = &mut v.components[ci] {
-                        cta.cta_link_label = if value.is_empty() { None } else { Some(value) };
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Cta(cta) = &mut v.columns[selected_column].components[ci] {
+                        cta.parent_link_label = if value.is_empty() { None } else { Some(value) };
                         applied = true;
                         "Updated dd-cta link label.".to_string()
                     } else {
@@ -2922,12 +5172,12 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditFilmstripType) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Filmstrip(filmstrip) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(vt) = parse_filmstrip_type(value.as_str()) {
-                            filmstrip.filmstrip_type = vt;
+                            filmstrip.parent_type = vt;
                             applied = true;
                             "Updated dd-filmstrip type.".to_string()
                         } else {
@@ -2942,12 +5192,12 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditFilmstripDataAos) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Filmstrip(filmstrip) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
-                        if let Some(va) = parse_hero_aos(value.as_str()) {
-                            filmstrip.filmstrip_data_aos = va;
+                        if let Some(va) = parse_parent_data_aos(value.as_str()) {
+                            filmstrip.parent_data_aos = va;
                             applied = true;
                             "Updated dd-filmstrip data-aos.".to_string()
                         } else {
@@ -2962,13 +5212,13 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditFilmstripItemImageUrl) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Filmstrip(filmstrip) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(ni) = nested_index(filmstrip.items.len(), selected_nested_item)
                         {
-                            filmstrip.items[ni].image_url = value;
+                            filmstrip.items[ni].child_image_url = value;
                             applied = true;
                             format!("Updated dd-filmstrip item {} image URL.", ni + 1)
                         } else {
@@ -2982,13 +5232,13 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditFilmstripItemImageAlt) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Filmstrip(filmstrip) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(ni) = nested_index(filmstrip.items.len(), selected_nested_item)
                         {
-                            filmstrip.items[ni].image_alt = value;
+                            filmstrip.items[ni].child_image_alt = value;
                             applied = true;
                             format!("Updated dd-filmstrip item {} image alt.", ni + 1)
                         } else {
@@ -3002,13 +5252,13 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditFilmstripItemTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Filmstrip(filmstrip) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(ni) = nested_index(filmstrip.items.len(), selected_nested_item)
                         {
-                            filmstrip.items[ni].title = value;
+                            filmstrip.items[ni].child_title = value;
                             applied = true;
                             format!("Updated dd-filmstrip item {} title.", ni + 1)
                         } else {
@@ -3022,11 +5272,11 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditMilestonesDataAos) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Milestones(milestones) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
-                        if let Some(va) = parse_hero_aos(value.as_str()) {
+                        if let Some(va) = parse_parent_data_aos(value.as_str()) {
                             milestones.parent_data_aos = va;
                             applied = true;
                             "Updated dd-milestones parent_data_aos.".to_string()
@@ -3042,9 +5292,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditMilestonesWidth) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Milestones(milestones) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
                         milestones.parent_width = value;
                         applied = true;
@@ -3057,9 +5307,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditMilestonesItemPercentage) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Milestones(milestones) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(ni) = nested_index(milestones.items.len(), selected_nested_item)
                         {
@@ -3077,9 +5327,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditMilestonesItemTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Milestones(milestones) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(ni) = nested_index(milestones.items.len(), selected_nested_item)
                         {
@@ -3097,9 +5347,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditMilestonesItemSubtitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Milestones(milestones) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(ni) = nested_index(milestones.items.len(), selected_nested_item)
                         {
@@ -3117,9 +5367,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditMilestonesItemCopy) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Milestones(milestones) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(ni) = nested_index(milestones.items.len(), selected_nested_item)
                         {
@@ -3137,9 +5387,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditMilestonesItemLinkUrl) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Milestones(milestones) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(ni) = nested_index(milestones.items.len(), selected_nested_item)
                         {
@@ -3158,9 +5408,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditMilestonesItemLinkTarget) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Milestones(milestones) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(ni) = nested_index(milestones.items.len(), selected_nested_item)
                         {
@@ -3168,7 +5418,7 @@ impl App {
                                 milestones.items[ni].child_link_target = None;
                                 applied = true;
                                 format!("Updated dd-milestones item {} child_link_target.", ni + 1)
-                            } else if let Some(vt) = parse_card_link_target(value.as_str()) {
+                            } else if let Some(vt) = parse_child_link_target(value.as_str()) {
                                 milestones.items[ni].child_link_target = Some(vt);
                                 applied = true;
                                 format!("Updated dd-milestones item {} child_link_target.", ni + 1)
@@ -3187,9 +5437,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditMilestonesItemLinkLabel) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Milestones(milestones) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
                         if let Some(ni) = nested_index(milestones.items.len(), selected_nested_item)
                         {
@@ -3208,8 +5458,8 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditModalTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Modal(modal) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Modal(modal) = &mut v.columns[selected_column].components[ci] {
                         modal.parent_title = value;
                         applied = true;
                         "Updated dd-modal parent_title.".to_string()
@@ -3221,8 +5471,8 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditModalCopy) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Modal(modal) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Modal(modal) = &mut v.columns[selected_column].components[ci] {
                         modal.parent_copy = value;
                         applied = true;
                         "Updated dd-modal parent_copy.".to_string()
@@ -3234,8 +5484,8 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditSliderTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.columns[selected_column].components[ci] {
                         slider.parent_title = value;
                         applied = true;
                         "Updated dd-slider parent_title.".to_string()
@@ -3247,8 +5497,8 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditSliderItemTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(slider.items.len(), selected_nested_item) {
                             slider.items[ni].child_title = value;
                             applied = true;
@@ -3264,8 +5514,8 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditSliderItemCopy) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(slider.items.len(), selected_nested_item) {
                             slider.items[ni].child_copy = value;
                             applied = true;
@@ -3281,8 +5531,8 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditSliderItemLinkUrl) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(slider.items.len(), selected_nested_item) {
                             slider.items[ni].child_link_url =
                                 if value.is_empty() { None } else { Some(value) };
@@ -3299,14 +5549,14 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditSliderItemLinkTarget) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(slider.items.len(), selected_nested_item) {
                             if value.is_empty() {
                                 slider.items[ni].child_link_target = None;
                                 applied = true;
                                 format!("Updated dd-slider item {} child_link_target.", ni + 1)
-                            } else if let Some(vt) = parse_card_link_target(value.as_str()) {
+                            } else if let Some(vt) = parse_child_link_target(value.as_str()) {
                                 slider.items[ni].child_link_target = Some(vt);
                                 applied = true;
                                 format!("Updated dd-slider item {} child_link_target.", ni + 1)
@@ -3325,8 +5575,8 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditSliderItemLinkLabel) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(slider.items.len(), selected_nested_item) {
                             slider.items[ni].child_link_label =
                                 if value.is_empty() { None } else { Some(value) };
@@ -3343,8 +5593,8 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditSliderItemImageUrl) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(slider.items.len(), selected_nested_item) {
                             slider.items[ni].child_image_url = value;
                             applied = true;
@@ -3360,8 +5610,8 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditSliderItemImageAlt) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Slider(slider) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Slider(slider) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(slider.items.len(), selected_nested_item) {
                             slider.items[ni].child_image_alt = value;
                             applied = true;
@@ -3377,12 +5627,12 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditBlockquoteDataAos) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Blockquote(blockquote) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
-                        if let Some(va) = parse_hero_aos(value.as_str()) {
-                            blockquote.blockquote_data_aos = va;
+                        if let Some(va) = parse_parent_data_aos(value.as_str()) {
+                            blockquote.parent_data_aos = va;
                             applied = true;
                             "Updated dd-blockquote data-aos.".to_string()
                         } else {
@@ -3397,11 +5647,11 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditBlockquoteImageUrl) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Blockquote(blockquote) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
-                        blockquote.blockquote_image_url = value;
+                        blockquote.parent_image_url = value;
                         applied = true;
                         "Updated dd-blockquote image URL.".to_string()
                     } else {
@@ -3412,11 +5662,11 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditBlockquoteImageAlt) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Blockquote(blockquote) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
-                        blockquote.blockquote_image_alt = value;
+                        blockquote.parent_image_alt = value;
                         applied = true;
                         "Updated dd-blockquote image alt text.".to_string()
                     } else {
@@ -3427,11 +5677,11 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditBlockquotePersonsName) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Blockquote(blockquote) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
-                        blockquote.blockquote_persons_name = value;
+                        blockquote.parent_name = value;
                         applied = true;
                         "Updated dd-blockquote person name.".to_string()
                     } else {
@@ -3442,11 +5692,11 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditBlockquotePersonsTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Blockquote(blockquote) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
-                        blockquote.blockquote_persons_title = value;
+                        blockquote.parent_role = value;
                         applied = true;
                         "Updated dd-blockquote person title.".to_string()
                     } else {
@@ -3457,11 +5707,11 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditBlockquoteCopy) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
                     if let crate::model::SectionComponent::Blockquote(blockquote) =
-                        &mut v.components[ci]
+                        &mut v.columns[selected_column].components[ci]
                     {
-                        blockquote.blockquote_copy = value;
+                        blockquote.parent_copy = value;
                         applied = true;
                         "Updated dd-blockquote copy.".to_string()
                     } else {
@@ -3472,10 +5722,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCardType) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.columns[selected_column].components[ci] {
                         if let Some(vt) = parse_card_type(value.as_str()) {
-                            card.card_type = vt;
+                            card.parent_type = vt;
                             applied = true;
                             "Updated dd-card type.".to_string()
                         } else {
@@ -3490,10 +5740,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCardDataAos) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
-                        if let Some(va) = parse_hero_aos(value.as_str()) {
-                            card.card_data_aos = va;
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.columns[selected_column].components[ci] {
+                        if let Some(va) = parse_parent_data_aos(value.as_str()) {
+                            card.parent_data_aos = va;
                             applied = true;
                             "Updated dd-card data-aos.".to_string()
                         } else {
@@ -3508,9 +5758,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCardWidth) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
-                        card.card_width = value;
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.columns[selected_column].components[ci] {
+                        card.parent_width = value;
                         applied = true;
                         "Updated dd-card width classes.".to_string()
                     } else {
@@ -3521,10 +5771,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCardItemImageUrl) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
-                            card.items[ni].card_image_url = value;
+                            card.items[ni].child_image_url = value;
                             applied = true;
                             format!("Updated dd-card item {} image URL.", ni + 1)
                         } else {
@@ -3538,10 +5788,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCardItemImageAlt) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
-                            card.items[ni].card_image_alt = value;
+                            card.items[ni].child_image_alt = value;
                             applied = true;
                             format!("Updated dd-card item {} image alt.", ni + 1)
                         } else {
@@ -3555,10 +5805,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCardItemTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
-                            card.items[ni].card_title = value;
+                            card.items[ni].child_title = value;
                             applied = true;
                             format!("Updated dd-card item {} title.", ni + 1)
                         } else {
@@ -3572,10 +5822,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCardItemSubtitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
-                            card.items[ni].card_subtitle = value;
+                            card.items[ni].child_subtitle = value;
                             applied = true;
                             format!("Updated dd-card item {} subtitle.", ni + 1)
                         } else {
@@ -3589,10 +5839,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCardItemCopy) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
-                            card.items[ni].card_copy = value;
+                            card.items[ni].child_copy = value;
                             applied = true;
                             format!("Updated dd-card item {} copy.", ni + 1)
                         } else {
@@ -3606,10 +5856,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCardItemLinkUrl) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
-                            card.items[ni].card_link_url =
+                            card.items[ni].child_link_url =
                                 if value.is_empty() { None } else { Some(value) };
                             applied = true;
                             format!("Updated dd-card item {} link URL.", ni + 1)
@@ -3624,15 +5874,15 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCardItemLinkTarget) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
                             if value.is_empty() {
-                                card.items[ni].card_link_target = None;
+                                card.items[ni].child_link_target = None;
                                 applied = true;
                                 format!("Updated dd-card item {} link target.", ni + 1)
-                            } else if let Some(vt) = parse_card_link_target(value.as_str()) {
-                                card.items[ni].card_link_target = Some(vt);
+                            } else if let Some(vt) = parse_child_link_target(value.as_str()) {
+                                card.items[ni].child_link_target = Some(vt);
                                 applied = true;
                                 format!("Updated dd-card item {} link target.", ni + 1)
                             } else {
@@ -3650,10 +5900,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditCardItemLinkLabel) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Card(card) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Card(card) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(card.items.len(), selected_nested_item) {
-                            card.items[ni].card_link_label =
+                            card.items[ni].child_link_label =
                                 if value.is_empty() { None } else { Some(value) };
                             applied = true;
                             format!("Updated dd-card item {} link label.", ni + 1)
@@ -3668,10 +5918,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditAccordionType) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.columns[selected_column].components[ci] {
                         if let Some(vt) = parse_accordion_type(value.as_str()) {
-                            acc.accordion_type = vt;
+                            acc.parent_type = vt;
                             applied = true;
                             "Updated dd-accordion type.".to_string()
                         } else {
@@ -3686,10 +5936,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditAccordionClass) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.columns[selected_column].components[ci] {
                         if let Some(vc) = parse_accordion_class(value.as_str()) {
-                            acc.accordion_class = vc;
+                            acc.parent_class = vc;
                             applied = true;
                             "Updated dd-accordion class.".to_string()
                         } else {
@@ -3704,10 +5954,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditAccordionAos) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
-                        if let Some(va) = parse_hero_aos(value.as_str()) {
-                            acc.accordion_aos = va;
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.columns[selected_column].components[ci] {
+                        if let Some(va) = parse_parent_data_aos(value.as_str()) {
+                            acc.parent_data_aos = va;
                             applied = true;
                             "Updated dd-accordion data-aos.".to_string()
                         } else {
@@ -3722,9 +5972,9 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditAccordionGroupName) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
-                        acc.group_name = value;
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.columns[selected_column].components[ci] {
+                        acc.parent_group_name = value;
                         applied = true;
                         "Updated dd-accordion group name.".to_string()
                     } else {
@@ -3735,10 +5985,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditAccordionFirstTitle) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(acc.items.len(), selected_nested_item) {
-                            acc.items[ni].title = value;
+                            acc.items[ni].child_title = value;
                             applied = true;
                             format!("Updated dd-accordion item {} title.", ni + 1)
                         } else {
@@ -3752,10 +6002,10 @@ impl App {
                 }
             }
             (PageNode::Section(v), InputMode::EditAccordionFirstContent) => {
-                if let Some(ci) = component_index(v.components.len(), selected_component) {
-                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.components[ci] {
+                if let Some(ci) = component_index(v.columns[selected_column].components.len(), selected_component) {
+                    if let crate::model::SectionComponent::Accordion(acc) = &mut v.columns[selected_column].components[ci] {
                         if let Some(ni) = nested_index(acc.items.len(), selected_nested_item) {
-                            acc.items[ni].content = value;
+                            acc.items[ni].child_copy = value;
                             applied = true;
                             format!("Updated dd-accordion item {} content.", ni + 1)
                         } else {
@@ -3770,9 +6020,6 @@ impl App {
             }
             _ => "Edit type no longer matches selected node.".to_string(),
         };
-        if let PageNode::Section(section) = &mut page.nodes[idx] {
-            push_legacy_components_into_selected_column(section, selected_column);
-        }
         self.status = status;
         if clear_input {
             self.input_mode = None;
@@ -3787,7 +6034,7 @@ impl App {
         if !contains(self.list_area, x, y) {
             return;
         }
-        let tree_rows = self.build_node_tree_rows();
+        let tree_rows = self.build_tree_rows();
         if tree_rows.is_empty() {
             return;
         }
@@ -3823,30 +6070,38 @@ impl App {
         }
     }
 
-    fn build_node_tree_rows(&self) -> Vec<NodeTreeRow> {
+    fn build_tree_rows(&self) -> Vec<TreeRow> {
+        match self.selected_region {
+            SelectedRegion::Header => self.build_header_tree_rows(),
+            SelectedRegion::Footer => Vec::new(),
+            SelectedRegion::Page => self.build_page_tree_rows(),
+        }
+    }
+
+    fn build_page_tree_rows(&self) -> Vec<TreeRow> {
         let page = self.current_page();
         let mut rows = Vec::new();
         for (node_idx, node) in page.nodes.iter().enumerate() {
             match node {
-                PageNode::Hero(_) => rows.push(NodeTreeRow {
-                    kind: NodeTreeKind::Hero { node_idx },
+                PageNode::Hero(_) => rows.push(TreeRow {
+                    kind: TreeRowKind::Hero { node_idx },
                 }),
                 PageNode::Section(section) => {
-                    rows.push(NodeTreeRow {
-                        kind: NodeTreeKind::Section { node_idx },
+                    rows.push(TreeRow {
+                        kind: TreeRowKind::Section { node_idx },
                     });
                     if self.is_section_expanded(node_idx) {
                         let columns = section_columns_ref(section);
                         for (column_idx, col) in columns.iter().enumerate() {
-                            rows.push(NodeTreeRow {
-                                kind: NodeTreeKind::Column {
+                            rows.push(TreeRow {
+                                kind: TreeRowKind::Column {
                                     node_idx,
                                     column_idx,
                                 },
                             });
                             for (component_idx, _) in col.components.iter().enumerate() {
-                                rows.push(NodeTreeRow {
-                                    kind: NodeTreeKind::Component {
+                                rows.push(TreeRow {
+                                    kind: TreeRowKind::Component {
                                         node_idx,
                                         column_idx,
                                         component_idx,
@@ -3861,8 +6116,8 @@ impl App {
                                         component_idx,
                                     ) {
                                         for (item_idx, _) in acc.items.iter().enumerate() {
-                                            rows.push(NodeTreeRow {
-                                                kind: NodeTreeKind::AccordionItem {
+                                            rows.push(TreeRow {
+                                                kind: TreeRowKind::AccordionItem {
                                                     node_idx,
                                                     column_idx,
                                                     component_idx,
@@ -3881,8 +6136,8 @@ impl App {
                                         component_idx,
                                     ) {
                                         for (item_idx, _) in alt.items.iter().enumerate() {
-                                            rows.push(NodeTreeRow {
-                                                kind: NodeTreeKind::AlternatingItem {
+                                            rows.push(TreeRow {
+                                                kind: TreeRowKind::AlternatingItem {
                                                     node_idx,
                                                     column_idx,
                                                     component_idx,
@@ -3901,8 +6156,8 @@ impl App {
                                         component_idx,
                                     ) {
                                         for (item_idx, _) in card.items.iter().enumerate() {
-                                            rows.push(NodeTreeRow {
-                                                kind: NodeTreeKind::CardItem {
+                                            rows.push(TreeRow {
+                                                kind: TreeRowKind::CardItem {
                                                     node_idx,
                                                     column_idx,
                                                     component_idx,
@@ -3921,8 +6176,8 @@ impl App {
                                         component_idx,
                                     ) {
                                         for (item_idx, _) in filmstrip.items.iter().enumerate() {
-                                            rows.push(NodeTreeRow {
-                                                kind: NodeTreeKind::FilmstripItem {
+                                            rows.push(TreeRow {
+                                                kind: TreeRowKind::FilmstripItem {
                                                     node_idx,
                                                     column_idx,
                                                     component_idx,
@@ -3942,8 +6197,8 @@ impl App {
                                         component_idx,
                                     ) {
                                         for (item_idx, _) in milestones.items.iter().enumerate() {
-                                            rows.push(NodeTreeRow {
-                                                kind: NodeTreeKind::MilestonesItem {
+                                            rows.push(TreeRow {
+                                                kind: TreeRowKind::MilestonesItem {
                                                     node_idx,
                                                     column_idx,
                                                     component_idx,
@@ -3962,8 +6217,8 @@ impl App {
                                         component_idx,
                                     ) {
                                         for (item_idx, _) in slider.items.iter().enumerate() {
-                                            rows.push(NodeTreeRow {
-                                                kind: NodeTreeKind::SliderItem {
+                                            rows.push(TreeRow {
+                                                kind: TreeRowKind::SliderItem {
                                                     node_idx,
                                                     column_idx,
                                                     component_idx,
@@ -3982,30 +6237,135 @@ impl App {
         rows
     }
 
-    fn tree_row_label(&self, row: &NodeTreeRow) -> String {
-        let page = self.current_page();
-        match row.kind {
-            NodeTreeKind::Hero { node_idx } => format!("{}. dd-hero", node_idx + 1),
-            NodeTreeKind::Section { node_idx } => {
-                let PageNode::Section(section) = &page.nodes[node_idx] else {
+    fn build_header_tree_rows(&self) -> Vec<TreeRow> {
+        let mut rows = Vec::new();
+        rows.push(TreeRow {
+            kind: TreeRowKind::HeaderRoot,
+        });
+        if self.header_column_expanded {
+            for (section_idx, section) in self.site.header.sections.iter().enumerate() {
+                rows.push(TreeRow {
+                    kind: TreeRowKind::HeaderSection { section_idx },
+                });
+                if self.is_header_section_expanded(section_idx) {
+                    for (column_idx, _) in section.columns.iter().enumerate() {
+                        rows.push(TreeRow {
+                            kind: TreeRowKind::HeaderColumn {
+                                section_idx,
+                                column_idx,
+                            },
+                        });
+                        for (component_idx, _) in
+                            section.columns[column_idx].components.iter().enumerate()
+                        {
+                            rows.push(TreeRow {
+                                kind: TreeRowKind::HeaderComponent {
+                                    section_idx,
+                                    column_idx,
+                                    component_idx,
+                                },
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        rows
+    }
+
+    fn is_header_section_expanded(&self, section_idx: usize) -> bool {
+        self.expanded_sections.contains(&(usize::MAX, section_idx))
+    }
+
+    fn set_header_section_expanded(&mut self, section_idx: usize, expanded: bool) {
+        let key = (usize::MAX, section_idx);
+        if expanded {
+            self.expanded_sections.insert(key);
+        } else {
+            self.expanded_sections.remove(&key);
+        }
+    }
+
+    fn tree_row_label(&self, row: &TreeRow) -> String {
+        match &row.kind {
+            TreeRowKind::HeaderRoot => {
+                let marker = if self.header_column_expanded {
+                    "[-]"
+                } else {
+                    "[+]"
+                };
+                format!("1. {} dd-header ({})", marker, self.site.header.id)
+            }
+            TreeRowKind::HeaderSection { section_idx } => {
+                let section_i =
+                    (*section_idx).min(self.site.header.sections.len().saturating_sub(1));
+                let section = &self.site.header.sections[section_i];
+                let marker = if self.is_header_section_expanded(*section_idx) {
+                    "[-]"
+                } else {
+                    "[+]"
+                };
+                format!(
+                    "    {} {} dd-section ({})",
+                    section_i + 1,
+                    marker,
+                    section.id
+                )
+            }
+            TreeRowKind::HeaderColumn {
+                section_idx,
+                column_idx,
+            } => {
+                let section_i =
+                    (*section_idx).min(self.site.header.sections.len().saturating_sub(1));
+                let section = &self.site.header.sections[section_i];
+                let col_i = (*column_idx).min(section.columns.len().saturating_sub(1));
+                let col = &section.columns[col_i];
+                format!(
+                    "        |- column {} ({}) [{}]",
+                    col_i + 1,
+                    col.id,
+                    col.width_class
+                )
+            }
+            TreeRowKind::HeaderComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            } => {
+                let section_i =
+                    (*section_idx).min(self.site.header.sections.len().saturating_sub(1));
+                let section = &self.site.header.sections[section_i];
+                let col_i = (*column_idx).min(section.columns.len().saturating_sub(1));
+                let comp_i =
+                    (*component_idx).min(section.columns[col_i].components.len().saturating_sub(1));
+                let component = &section.columns[col_i].components[comp_i];
+                let label = component_label(component);
+                format!("            - {} {}", comp_i + 1, label)
+            }
+            TreeRowKind::Hero { node_idx } => format!("{}. dd-hero", node_idx + 1),
+            TreeRowKind::Section { node_idx } => {
+                let page = self.current_page();
+                let PageNode::Section(section) = &page.nodes[*node_idx] else {
                     return format!("{}. dd-section", node_idx + 1);
                 };
-                let marker = if self.is_section_expanded(node_idx) {
+                let marker = if self.is_section_expanded(*node_idx) {
                     "[-]"
                 } else {
                     "[+]"
                 };
                 format!("{}. {} dd-section ({})", node_idx + 1, marker, section.id)
             }
-            NodeTreeKind::Column {
+            TreeRowKind::Column {
                 node_idx,
                 column_idx,
             } => {
-                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                let page = self.current_page();
+                let PageNode::Section(section) = &page.nodes[*node_idx] else {
                     return format!("    |- column {}", column_idx + 1);
                 };
                 let columns = section_columns_ref(section);
-                let col_i = column_idx.min(columns.len().saturating_sub(1));
+                let col_i = (*column_idx).min(columns.len().saturating_sub(1));
                 let col = &columns[col_i];
                 format!(
                     "    |- column {} ({}) [{}]",
@@ -4014,56 +6374,58 @@ impl App {
                     col.width_class
                 )
             }
-            NodeTreeKind::Component {
+            TreeRowKind::Component {
                 node_idx,
                 column_idx,
                 component_idx,
             } => {
-                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                let page = self.current_page();
+                let PageNode::Section(section) = &page.nodes[*node_idx] else {
                     return format!("       - component {}", component_idx + 1);
                 };
                 let columns = section_columns_ref(section);
-                let col_i = column_idx.min(columns.len().saturating_sub(1));
-                let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
+                let col_i = (*column_idx).min(columns.len().saturating_sub(1));
+                let comp_i =
+                    (*component_idx).min(columns[col_i].components.len().saturating_sub(1));
                 let component = &columns[col_i].components[comp_i];
                 let label = component_label(component);
                 if matches!(component, crate::model::SectionComponent::Accordion(_)) {
-                    let marker = if self.is_accordion_items_expanded(node_idx, col_i, comp_i) {
+                    let marker = if self.is_accordion_items_expanded(*node_idx, col_i, comp_i) {
                         "[-]"
                     } else {
                         "[+]"
                     };
                     format!("       - {} {} {}", comp_i + 1, marker, label)
                 } else if matches!(component, crate::model::SectionComponent::Alternating(_)) {
-                    let marker = if self.is_alternating_items_expanded(node_idx, col_i, comp_i) {
+                    let marker = if self.is_alternating_items_expanded(*node_idx, col_i, comp_i) {
                         "[-]"
                     } else {
                         "[+]"
                     };
                     format!("       - {} {} {}", comp_i + 1, marker, label)
                 } else if matches!(component, crate::model::SectionComponent::Card(_)) {
-                    let marker = if self.is_card_items_expanded(node_idx, col_i, comp_i) {
+                    let marker = if self.is_card_items_expanded(*node_idx, col_i, comp_i) {
                         "[-]"
                     } else {
                         "[+]"
                     };
                     format!("       - {} {} {}", comp_i + 1, marker, label)
                 } else if matches!(component, crate::model::SectionComponent::Filmstrip(_)) {
-                    let marker = if self.is_filmstrip_items_expanded(node_idx, col_i, comp_i) {
+                    let marker = if self.is_filmstrip_items_expanded(*node_idx, col_i, comp_i) {
                         "[-]"
                     } else {
                         "[+]"
                     };
                     format!("       - {} {} {}", comp_i + 1, marker, label)
                 } else if matches!(component, crate::model::SectionComponent::Milestones(_)) {
-                    let marker = if self.is_milestones_items_expanded(node_idx, col_i, comp_i) {
+                    let marker = if self.is_milestones_items_expanded(*node_idx, col_i, comp_i) {
                         "[-]"
                     } else {
                         "[+]"
                     };
                     format!("       - {} {} {}", comp_i + 1, marker, label)
                 } else if matches!(component, crate::model::SectionComponent::Slider(_)) {
-                    let marker = if self.is_slider_items_expanded(node_idx, col_i, comp_i) {
+                    let marker = if self.is_slider_items_expanded(*node_idx, col_i, comp_i) {
                         "[-]"
                     } else {
                         "[+]"
@@ -4073,255 +6435,207 @@ impl App {
                     format!("       - {} {}", comp_i + 1, label)
                 }
             }
-            NodeTreeKind::AccordionItem {
+            TreeRowKind::AccordionItem {
                 node_idx,
                 column_idx,
                 component_idx,
                 item_idx,
             } => {
-                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                let page = self.current_page();
+                let PageNode::Section(section) = &page.nodes[*node_idx] else {
                     return format!("          - item {}", item_idx + 1);
                 };
                 let columns = section_columns_ref(section);
-                let col_i = column_idx.min(columns.len().saturating_sub(1));
-                let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
-                let title = if let Some(crate::model::SectionComponent::Accordion(acc)) =
-                    columns[col_i].components.get(comp_i)
-                {
-                    acc.items
-                        .get(item_idx)
-                        .map(|i| i.title.as_str())
-                        .unwrap_or("(none)")
-                } else {
-                    "(none)"
+                let col_i = (*column_idx).min(columns.len().saturating_sub(1));
+                let comp_i =
+                    (*component_idx).min(columns[col_i].components.len().saturating_sub(1));
+                let acc = match &columns[col_i].components[comp_i] {
+                    crate::model::SectionComponent::Accordion(a) => a,
+                    _ => return format!("          - item {}", item_idx + 1),
                 };
-                let marker = if node_idx == self.selected_node
-                    && col_i == self.selected_column
-                    && comp_i == self.selected_component
-                    && item_idx == self.selected_nested_item
-                {
-                    "*"
-                } else {
-                    "-"
-                };
+                let item_i = (*item_idx).min(acc.items.len().saturating_sub(1));
+                let item = &acc.items[item_i];
                 format!(
-                    "          {} item {}: {}",
-                    marker,
-                    item_idx + 1,
-                    truncate_ascii(title, 48)
+                    "          - {}: {}",
+                    item_i + 1,
+                    truncate_ascii(&item.child_title, 40)
                 )
             }
-            NodeTreeKind::AlternatingItem {
+            TreeRowKind::AlternatingItem {
                 node_idx,
                 column_idx,
                 component_idx,
                 item_idx,
             } => {
-                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                let page = self.current_page();
+                let PageNode::Section(section) = &page.nodes[*node_idx] else {
                     return format!("          - item {}", item_idx + 1);
                 };
                 let columns = section_columns_ref(section);
-                let col_i = column_idx.min(columns.len().saturating_sub(1));
-                let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
-                let title = if let Some(crate::model::SectionComponent::Alternating(alt)) =
-                    columns[col_i].components.get(comp_i)
-                {
-                    alt.items
-                        .get(item_idx)
-                        .map(|i| i.title.as_str())
-                        .unwrap_or("(none)")
-                } else {
-                    "(none)"
+                let col_i = (*column_idx).min(columns.len().saturating_sub(1));
+                let comp_i =
+                    (*component_idx).min(columns[col_i].components.len().saturating_sub(1));
+                let alt = match &columns[col_i].components[comp_i] {
+                    crate::model::SectionComponent::Alternating(a) => a,
+                    _ => return format!("          - item {}", item_idx + 1),
                 };
-                let marker = if node_idx == self.selected_node
-                    && col_i == self.selected_column
-                    && comp_i == self.selected_component
-                    && item_idx == self.selected_nested_item
-                {
-                    "*"
-                } else {
-                    "-"
-                };
+                let item_i = (*item_idx).min(alt.items.len().saturating_sub(1));
+                let item = &alt.items[item_i];
                 format!(
-                    "          {} item {}: {}",
-                    marker,
-                    item_idx + 1,
-                    truncate_ascii(title, 48)
+                    "          - {}: {}",
+                    item_i + 1,
+                    truncate_ascii(&item.child_title, 40)
                 )
             }
-            NodeTreeKind::CardItem {
+            TreeRowKind::CardItem {
                 node_idx,
                 column_idx,
                 component_idx,
                 item_idx,
             } => {
-                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                let page = self.current_page();
+                let PageNode::Section(section) = &page.nodes[*node_idx] else {
                     return format!("          - item {}", item_idx + 1);
                 };
                 let columns = section_columns_ref(section);
-                let col_i = column_idx.min(columns.len().saturating_sub(1));
-                let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
-                let title = if let Some(crate::model::SectionComponent::Card(card)) =
-                    columns[col_i].components.get(comp_i)
-                {
-                    card.items
-                        .get(item_idx)
-                        .map(|i| i.card_title.as_str())
-                        .unwrap_or("(none)")
-                } else {
-                    "(none)"
+                let col_i = (*column_idx).min(columns.len().saturating_sub(1));
+                let comp_i =
+                    (*component_idx).min(columns[col_i].components.len().saturating_sub(1));
+                let card = match &columns[col_i].components[comp_i] {
+                    crate::model::SectionComponent::Card(c) => c,
+                    _ => return format!("          - item {}", item_idx + 1),
                 };
-                let marker = if node_idx == self.selected_node
-                    && col_i == self.selected_column
-                    && comp_i == self.selected_component
-                    && item_idx == self.selected_nested_item
-                {
-                    "*"
-                } else {
-                    "-"
-                };
+                let item_i = (*item_idx).min(card.items.len().saturating_sub(1));
+                let item = &card.items[item_i];
                 format!(
-                    "          {} item {}: {}",
-                    marker,
-                    item_idx + 1,
-                    truncate_ascii(title, 48)
+                    "          - {}: {}",
+                    item_i + 1,
+                    truncate_ascii(&item.child_title, 40)
                 )
             }
-            NodeTreeKind::FilmstripItem {
+            TreeRowKind::FilmstripItem {
                 node_idx,
                 column_idx,
                 component_idx,
                 item_idx,
             } => {
-                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                let page = self.current_page();
+                let PageNode::Section(section) = &page.nodes[*node_idx] else {
                     return format!("          - item {}", item_idx + 1);
                 };
                 let columns = section_columns_ref(section);
-                let col_i = column_idx.min(columns.len().saturating_sub(1));
-                let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
-                let title = if let Some(crate::model::SectionComponent::Filmstrip(filmstrip)) =
-                    columns[col_i].components.get(comp_i)
-                {
-                    filmstrip
-                        .items
-                        .get(item_idx)
-                        .map(|i| i.title.as_str())
-                        .unwrap_or("(none)")
-                } else {
-                    "(none)"
+                let col_i = (*column_idx).min(columns.len().saturating_sub(1));
+                let comp_i =
+                    (*component_idx).min(columns[col_i].components.len().saturating_sub(1));
+                let filmstrip = match &columns[col_i].components[comp_i] {
+                    crate::model::SectionComponent::Filmstrip(f) => f,
+                    _ => return format!("          - item {}", item_idx + 1),
                 };
-                let marker = if node_idx == self.selected_node
-                    && col_i == self.selected_column
-                    && comp_i == self.selected_component
-                    && item_idx == self.selected_nested_item
-                {
-                    "*"
-                } else {
-                    "-"
-                };
+                let item_i = (*item_idx).min(filmstrip.items.len().saturating_sub(1));
+                let item = &filmstrip.items[item_i];
                 format!(
-                    "          {} item {}: {}",
-                    marker,
-                    item_idx + 1,
-                    truncate_ascii(title, 48)
+                    "          - {}: {}",
+                    item_i + 1,
+                    truncate_ascii(&item.child_title, 40)
                 )
             }
-            NodeTreeKind::MilestonesItem {
+            TreeRowKind::MilestonesItem {
                 node_idx,
                 column_idx,
                 component_idx,
                 item_idx,
             } => {
-                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                let page = self.current_page();
+                let PageNode::Section(section) = &page.nodes[*node_idx] else {
                     return format!("          - item {}", item_idx + 1);
                 };
                 let columns = section_columns_ref(section);
-                let col_i = column_idx.min(columns.len().saturating_sub(1));
-                let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
-                let title = if let Some(crate::model::SectionComponent::Milestones(milestones)) =
-                    columns[col_i].components.get(comp_i)
-                {
-                    milestones
-                        .items
-                        .get(item_idx)
-                        .map(|i| i.child_title.as_str())
-                        .unwrap_or("(none)")
-                } else {
-                    "(none)"
+                let col_i = (*column_idx).min(columns.len().saturating_sub(1));
+                let comp_i =
+                    (*component_idx).min(columns[col_i].components.len().saturating_sub(1));
+                let milestones = match &columns[col_i].components[comp_i] {
+                    crate::model::SectionComponent::Milestones(m) => m,
+                    _ => return format!("          - item {}", item_idx + 1),
                 };
-                let marker = if node_idx == self.selected_node
-                    && col_i == self.selected_column
-                    && comp_i == self.selected_component
-                    && item_idx == self.selected_nested_item
-                {
-                    "*"
-                } else {
-                    "-"
-                };
+                let item_i = (*item_idx).min(milestones.items.len().saturating_sub(1));
+                let item = &milestones.items[item_i];
                 format!(
-                    "          {} item {}: {}",
-                    marker,
-                    item_idx + 1,
-                    truncate_ascii(title, 48)
+                    "          - {}: {}",
+                    item_i + 1,
+                    truncate_ascii(&item.child_title, 40)
                 )
             }
-            NodeTreeKind::SliderItem {
+            TreeRowKind::SliderItem {
                 node_idx,
                 column_idx,
                 component_idx,
                 item_idx,
             } => {
-                let PageNode::Section(section) = &page.nodes[node_idx] else {
+                let page = self.current_page();
+                let PageNode::Section(section) = &page.nodes[*node_idx] else {
                     return format!("          - item {}", item_idx + 1);
                 };
                 let columns = section_columns_ref(section);
-                let col_i = column_idx.min(columns.len().saturating_sub(1));
-                let comp_i = component_idx.min(columns[col_i].components.len().saturating_sub(1));
-                let title = if let Some(crate::model::SectionComponent::Slider(slider)) =
-                    columns[col_i].components.get(comp_i)
-                {
-                    slider
-                        .items
-                        .get(item_idx)
-                        .map(|i| i.child_title.as_str())
-                        .unwrap_or("(none)")
-                } else {
-                    "(none)"
+                let col_i = (*column_idx).min(columns.len().saturating_sub(1));
+                let comp_i =
+                    (*component_idx).min(columns[col_i].components.len().saturating_sub(1));
+                let slider = match &columns[col_i].components[comp_i] {
+                    crate::model::SectionComponent::Slider(s) => s,
+                    _ => return format!("          - item {}", item_idx + 1),
                 };
-                let marker = if node_idx == self.selected_node
-                    && col_i == self.selected_column
-                    && comp_i == self.selected_component
-                    && item_idx == self.selected_nested_item
-                {
-                    "*"
-                } else {
-                    "-"
-                };
+                let item_i = (*item_idx).min(slider.items.len().saturating_sub(1));
+                let item = &slider.items[item_i];
                 format!(
-                    "          {} item {}: {}",
-                    marker,
-                    item_idx + 1,
-                    truncate_ascii(title, 48)
+                    "          - {}: {}",
+                    item_i + 1,
+                    truncate_ascii(&item.child_title, 40)
                 )
             }
         }
     }
 
-    fn apply_tree_row_selection(&mut self, row: NodeTreeRow) {
+    fn apply_tree_row_selection(&mut self, row: TreeRow) {
         match row.kind {
-            NodeTreeKind::Hero { node_idx } => {
+            TreeRowKind::HeaderRoot { .. } => {
+                self.selected_header_section = 0;
+                self.selected_header_column = 0;
+                self.selected_header_component = 0;
+            }
+            TreeRowKind::HeaderSection { section_idx } => {
+                self.selected_header_section = section_idx;
+                self.selected_header_column = 0;
+                self.selected_header_component = 0;
+            }
+            TreeRowKind::HeaderColumn {
+                section_idx,
+                column_idx,
+            } => {
+                self.selected_header_section = section_idx;
+                self.selected_header_column = column_idx;
+                self.selected_header_component = 0;
+            }
+            TreeRowKind::HeaderComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            } => {
+                self.selected_header_section = section_idx;
+                self.selected_header_column = column_idx;
+                self.selected_header_component = component_idx;
+            }
+            TreeRowKind::Hero { node_idx } => {
                 self.selected_node = node_idx;
                 self.selected_column = 0;
                 self.selected_component = 0;
                 self.selected_nested_item = 0;
             }
-            NodeTreeKind::Section { node_idx } => {
+            TreeRowKind::Section { node_idx } => {
                 self.selected_node = node_idx;
                 self.selected_column = 0;
                 self.selected_component = 0;
                 self.selected_nested_item = 0;
             }
-            NodeTreeKind::Column {
+            TreeRowKind::Column {
                 node_idx,
                 column_idx,
             } => {
@@ -4330,7 +6644,7 @@ impl App {
                 self.selected_component = 0;
                 self.selected_nested_item = 0;
             }
-            NodeTreeKind::Component {
+            TreeRowKind::Component {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4340,7 +6654,7 @@ impl App {
                 self.selected_component = component_idx;
                 self.selected_nested_item = 0;
             }
-            NodeTreeKind::AccordionItem {
+            TreeRowKind::AccordionItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4351,7 +6665,7 @@ impl App {
                 self.selected_component = component_idx;
                 self.selected_nested_item = item_idx;
             }
-            NodeTreeKind::AlternatingItem {
+            TreeRowKind::AlternatingItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4362,7 +6676,7 @@ impl App {
                 self.selected_component = component_idx;
                 self.selected_nested_item = item_idx;
             }
-            NodeTreeKind::CardItem {
+            TreeRowKind::CardItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4373,7 +6687,7 @@ impl App {
                 self.selected_component = component_idx;
                 self.selected_nested_item = item_idx;
             }
-            NodeTreeKind::FilmstripItem {
+            TreeRowKind::FilmstripItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4384,7 +6698,7 @@ impl App {
                 self.selected_component = component_idx;
                 self.selected_nested_item = item_idx;
             }
-            NodeTreeKind::MilestonesItem {
+            TreeRowKind::MilestonesItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4395,7 +6709,7 @@ impl App {
                 self.selected_component = component_idx;
                 self.selected_nested_item = item_idx;
             }
-            NodeTreeKind::SliderItem {
+            TreeRowKind::SliderItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4410,19 +6724,39 @@ impl App {
     }
 
     fn sync_tree_row_with_selection(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_tree_rows();
         if rows.is_empty() {
             self.selected_tree_row = 0;
             return;
         }
-        let row_matches_selection = |row: &NodeTreeRow| match row.kind {
-            NodeTreeKind::Hero { node_idx } => node_idx == self.selected_node,
-            NodeTreeKind::Section { node_idx } => node_idx == self.selected_node,
-            NodeTreeKind::Column {
+        let row_matches_selection = |row: &TreeRow| match row.kind {
+            TreeRowKind::HeaderRoot { .. } => true,
+            TreeRowKind::HeaderSection { section_idx } => {
+                section_idx == self.selected_header_section
+            }
+            TreeRowKind::HeaderColumn {
+                section_idx,
+                column_idx,
+            } => {
+                section_idx == self.selected_header_section
+                    && column_idx == self.selected_header_column
+            }
+            TreeRowKind::HeaderComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            } => {
+                section_idx == self.selected_header_section
+                    && column_idx == self.selected_header_column
+                    && component_idx == self.selected_header_component
+            }
+            TreeRowKind::Hero { node_idx } => node_idx == self.selected_node,
+            TreeRowKind::Section { node_idx } => node_idx == self.selected_node,
+            TreeRowKind::Column {
                 node_idx,
                 column_idx,
             } => node_idx == self.selected_node && column_idx == self.selected_column,
-            NodeTreeKind::Component {
+            TreeRowKind::Component {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4432,7 +6766,7 @@ impl App {
                     && component_idx == self.selected_component
                     && self.selected_nested_item == 0
             }
-            NodeTreeKind::AccordionItem {
+            TreeRowKind::AccordionItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4443,7 +6777,7 @@ impl App {
                     && component_idx == self.selected_component
                     && item_idx == self.selected_nested_item
             }
-            NodeTreeKind::AlternatingItem {
+            TreeRowKind::AlternatingItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4454,7 +6788,7 @@ impl App {
                     && component_idx == self.selected_component
                     && item_idx == self.selected_nested_item
             }
-            NodeTreeKind::CardItem {
+            TreeRowKind::CardItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4465,7 +6799,7 @@ impl App {
                     && component_idx == self.selected_component
                     && item_idx == self.selected_nested_item
             }
-            NodeTreeKind::FilmstripItem {
+            TreeRowKind::FilmstripItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4476,7 +6810,7 @@ impl App {
                     && component_idx == self.selected_component
                     && item_idx == self.selected_nested_item
             }
-            NodeTreeKind::MilestonesItem {
+            TreeRowKind::MilestonesItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4487,7 +6821,7 @@ impl App {
                     && component_idx == self.selected_component
                     && item_idx == self.selected_nested_item
             }
-            NodeTreeKind::SliderItem {
+            TreeRowKind::SliderItem {
                 node_idx,
                 column_idx,
                 component_idx,
@@ -4704,47 +7038,47 @@ impl App {
     }
 
     fn toggle_selected_tree_expanded(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_tree_rows();
         if rows.is_empty() {
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
-        if let NodeTreeKind::Component {
+        if let TreeRowKind::Component {
             node_idx,
             column_idx,
             component_idx,
         }
-        | NodeTreeKind::AccordionItem {
-            node_idx,
-            column_idx,
-            component_idx,
-            ..
-        }
-        | NodeTreeKind::AlternatingItem {
+        | TreeRowKind::AccordionItem {
             node_idx,
             column_idx,
             component_idx,
             ..
         }
-        | NodeTreeKind::CardItem {
+        | TreeRowKind::AlternatingItem {
             node_idx,
             column_idx,
             component_idx,
             ..
         }
-        | NodeTreeKind::FilmstripItem {
+        | TreeRowKind::CardItem {
             node_idx,
             column_idx,
             component_idx,
             ..
         }
-        | NodeTreeKind::MilestonesItem {
+        | TreeRowKind::FilmstripItem {
             node_idx,
             column_idx,
             component_idx,
             ..
         }
-        | NodeTreeKind::SliderItem {
+        | TreeRowKind::MilestonesItem {
+            node_idx,
+            column_idx,
+            component_idx,
+            ..
+        }
+        | TreeRowKind::SliderItem {
             node_idx,
             column_idx,
             component_idx,
@@ -4869,16 +7203,44 @@ impl App {
             }
         }
         let node_idx = match row.kind {
-            NodeTreeKind::Section { node_idx } => node_idx,
-            NodeTreeKind::Column { node_idx, .. } => node_idx,
-            NodeTreeKind::Component { node_idx, .. } => node_idx,
-            NodeTreeKind::AccordionItem { node_idx, .. } => node_idx,
-            NodeTreeKind::AlternatingItem { node_idx, .. } => node_idx,
-            NodeTreeKind::CardItem { node_idx, .. } => node_idx,
-            NodeTreeKind::FilmstripItem { node_idx, .. } => node_idx,
-            NodeTreeKind::MilestonesItem { node_idx, .. } => node_idx,
-            NodeTreeKind::SliderItem { node_idx, .. } => node_idx,
-            NodeTreeKind::Hero { .. } => {
+            TreeRowKind::HeaderRoot { .. } => {
+                self.header_column_expanded = !self.header_column_expanded;
+                self.status = if self.header_column_expanded {
+                    "Expanded header columns.".to_string()
+                } else {
+                    "Collapsed header columns.".to_string()
+                };
+                self.sync_tree_row_with_selection();
+                return;
+            }
+            TreeRowKind::HeaderSection { section_idx } => {
+                let expanded = self.is_header_section_expanded(section_idx);
+                self.set_header_section_expanded(section_idx, !expanded);
+                self.selected_header_section = section_idx;
+                self.selected_header_column = 0;
+                self.selected_header_component = 0;
+                self.status = if expanded {
+                    "Collapsed header section.".to_string()
+                } else {
+                    "Expanded header section.".to_string()
+                };
+                self.sync_tree_row_with_selection();
+                return;
+            }
+            TreeRowKind::HeaderColumn { .. } | TreeRowKind::HeaderComponent { .. } => {
+                self.status = "Press Enter to edit.".to_string();
+                return;
+            }
+            TreeRowKind::Section { node_idx } => node_idx,
+            TreeRowKind::Column { node_idx, .. } => node_idx,
+            TreeRowKind::Component { node_idx, .. } => node_idx,
+            TreeRowKind::AccordionItem { node_idx, .. } => node_idx,
+            TreeRowKind::AlternatingItem { node_idx, .. } => node_idx,
+            TreeRowKind::CardItem { node_idx, .. } => node_idx,
+            TreeRowKind::FilmstripItem { node_idx, .. } => node_idx,
+            TreeRowKind::MilestonesItem { node_idx, .. } => node_idx,
+            TreeRowKind::SliderItem { node_idx, .. } => node_idx,
+            TreeRowKind::Hero { .. } => {
                 self.status = "Selected row is not a section.".to_string();
                 return;
             }
@@ -4903,47 +7265,51 @@ impl App {
     }
 
     fn handle_enter_on_selected_row(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_tree_rows();
         if rows.is_empty() {
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
         match row.kind {
-            NodeTreeKind::Section { .. } => self.begin_edit_selected(),
-            NodeTreeKind::Hero { .. } => self.begin_edit_selected(),
-            NodeTreeKind::Column { .. } => self.begin_edit_selected_column_width_class(),
-            NodeTreeKind::Component { .. } => self.begin_edit_selected_component_primary(),
-            NodeTreeKind::AccordionItem { .. } => {
+            TreeRowKind::HeaderRoot { .. } => self.begin_edit_header(),
+            TreeRowKind::HeaderSection { .. } => self.begin_edit_selected(),
+            TreeRowKind::HeaderColumn { .. } => self.begin_edit_selected_column_width_class(),
+            TreeRowKind::HeaderComponent { .. } => self.begin_edit_selected_component_primary(),
+            TreeRowKind::Section { .. } => self.begin_edit_selected(),
+            TreeRowKind::Hero { .. } => self.begin_edit_selected(),
+            TreeRowKind::Column { .. } => self.begin_edit_selected_column_width_class(),
+            TreeRowKind::Component { .. } => self.begin_edit_selected_component_primary(),
+            TreeRowKind::AccordionItem { .. } => {
                 if self.set_component_input_mode(InputMode::EditAccordionFirstTitle) {
                     return;
                 }
                 self.begin_edit_selected_component_primary();
             }
-            NodeTreeKind::AlternatingItem { .. } => {
+            TreeRowKind::AlternatingItem { .. } => {
                 if self.set_component_input_mode(InputMode::EditAlternatingItemTitle) {
                     return;
                 }
                 self.begin_edit_selected_component_primary();
             }
-            NodeTreeKind::CardItem { .. } => {
+            TreeRowKind::CardItem { .. } => {
                 if self.set_component_input_mode(InputMode::EditCardItemImageUrl) {
                     return;
                 }
                 self.begin_edit_selected_component_primary();
             }
-            NodeTreeKind::FilmstripItem { .. } => {
+            TreeRowKind::FilmstripItem { .. } => {
                 if self.set_component_input_mode(InputMode::EditFilmstripItemImageUrl) {
                     return;
                 }
                 self.begin_edit_selected_component_primary();
             }
-            NodeTreeKind::MilestonesItem { .. } => {
+            TreeRowKind::MilestonesItem { .. } => {
                 if self.set_component_input_mode(InputMode::EditMilestonesItemPercentage) {
                     return;
                 }
                 self.begin_edit_selected_component_primary();
             }
-            NodeTreeKind::SliderItem { .. } => {
+            TreeRowKind::SliderItem { .. } => {
                 if self.set_component_input_mode(InputMode::EditSliderItemTitle) {
                     return;
                 }
@@ -4964,9 +7330,73 @@ impl App {
     fn insert_selected_component_kind(&mut self) {
         match self.component_kind {
             ComponentKind::Hero => self.add_hero(),
-            ComponentKind::Section => self.add_section(),
-            _ => self.add_selected_component_to_section(),
+            ComponentKind::Section => {
+                if self.selected_region == SelectedRegion::Header {
+                    self.add_header_section();
+                } else {
+                    self.add_section();
+                }
+            }
+            _ => {
+                if self.selected_region == SelectedRegion::Header {
+                    self.add_component_to_header_section();
+                } else {
+                    self.add_selected_component_to_section();
+                }
+            }
         }
+    }
+
+    fn add_header_section(&mut self) {
+        let section = crate::model::DdSection {
+            id: format!("header-section-{}", self.site.header.sections.len() + 1),
+            section_title: None,
+            section_class: Some(crate::model::SectionClass::FullContained),
+            item_box_class: Some(crate::model::SectionItemBoxClass::LBox),
+            columns: vec![SectionColumn {
+                id: "column-1".to_string(),
+                width_class: "dd-u-1-1".to_string(),
+                components: Vec::new(),
+            }],
+        };
+        self.site.header.sections.push(section);
+        self.selected_header_section = self.site.header.sections.len() - 1;
+        self.selected_header_column = 0;
+        self.selected_header_component = 0;
+        self.status = format!(
+            "Added dd-section to header at position {}.",
+            self.selected_header_section + 1
+        );
+    }
+
+    fn add_component_to_header_section(&mut self) {
+        if self.site.header.sections.is_empty() {
+            self.status = "No header section available. Add a section first with '/'.".to_string();
+            return;
+        }
+        let section_idx = self
+            .selected_header_section
+            .min(self.site.header.sections.len().saturating_sub(1));
+        let col_idx = self.selected_header_column.min(
+            self.site.header.sections[section_idx]
+                .columns
+                .len()
+                .saturating_sub(1),
+        );
+        let kind = self.component_kind;
+        let component = kind.default_component();
+        self.site.header.sections[section_idx].columns[col_idx]
+            .components
+            .push(component);
+        self.selected_header_component = self.site.header.sections[section_idx].columns[col_idx]
+            .components
+            .len()
+            - 1;
+        self.status = format!(
+            "Added {} to header section column '{}'.",
+            kind.label(),
+            self.site.header.sections[section_idx].columns[col_idx].id
+        );
     }
 
     fn normalize_component_picker_selection(&mut self) {
@@ -5020,6 +7450,22 @@ impl App {
         }
     }
 
+    fn header_selection_summary(&self) -> String {
+        if self.site.header.sections.is_empty() {
+            return "dd-header (no sections - press '/' to add dd-section)".to_string();
+        }
+        let section_i = self
+            .selected_header_section
+            .min(self.site.header.sections.len().saturating_sub(1));
+        format!(
+            "dd-header:{}, section:{}, column {}, component {}",
+            self.site.header.id,
+            self.site.header.sections[section_i].id,
+            self.selected_header_column + 1,
+            self.selected_header_component + 1
+        )
+    }
+
     fn current_input_mode_label(&self) -> &'static str {
         match self.input_mode {
             Some(InputMode::EditHeroImage) => "hero.image",
@@ -5049,18 +7495,18 @@ impl App {
             Some(InputMode::EditAlternatingItemCopy) => "dd-alternating.active.copy",
             Some(InputMode::EditBannerClass) => "dd-banner.class",
             Some(InputMode::EditBannerDataAos) => "dd-banner.data_aos",
-            Some(InputMode::EditBannerImageUrl) => "dd-banner_image_url",
-            Some(InputMode::EditBannerImageAlt) => "dd-banner_image_alt",
+            Some(InputMode::EditBannerImageUrl) => "dd-parent_image_url",
+            Some(InputMode::EditBannerImageAlt) => "dd-parent_image_alt",
             Some(InputMode::EditCtaClass) => "dd-cta.class",
-            Some(InputMode::EditCtaImageUrl) => "dd-cta_image_url",
-            Some(InputMode::EditCtaImageAlt) => "dd-cta_image_alt",
+            Some(InputMode::EditCtaImageUrl) => "dd-parent_image_url",
+            Some(InputMode::EditCtaImageAlt) => "dd-parent_image_alt",
             Some(InputMode::EditCtaDataAos) => "dd-cta.data_aos",
-            Some(InputMode::EditCtaTitle) => "dd-cta_title",
-            Some(InputMode::EditCtaSubtitle) => "dd-cta_subtitle",
-            Some(InputMode::EditCtaCopy) => "dd-cta_copy",
-            Some(InputMode::EditCtaLinkUrl) => "dd-cta_link_url",
-            Some(InputMode::EditCtaLinkTarget) => "dd-cta_link_target",
-            Some(InputMode::EditCtaLinkLabel) => "dd-cta_link_label",
+            Some(InputMode::EditCtaTitle) => "dd-parent_title",
+            Some(InputMode::EditCtaSubtitle) => "dd-parent_subtitle",
+            Some(InputMode::EditCtaCopy) => "dd-parent_copy",
+            Some(InputMode::EditCtaLinkUrl) => "dd-parent_link_url",
+            Some(InputMode::EditCtaLinkTarget) => "dd-parent_link_target",
+            Some(InputMode::EditCtaLinkLabel) => "dd-parent_link_label",
             Some(InputMode::EditFilmstripType) => "dd-filmstrip.type",
             Some(InputMode::EditFilmstripDataAos) => "dd-filmstrip.data_aos",
             Some(InputMode::EditFilmstripItemImageUrl) => "dd-filmstrip.active.image_url",
@@ -5090,28 +7536,39 @@ impl App {
             Some(InputMode::EditSliderItemImageUrl) => "dd-slider.active.child_image_url",
             Some(InputMode::EditSliderItemImageAlt) => "dd-slider.active.child_image_alt",
             Some(InputMode::EditBlockquoteDataAos) => "dd-blockquote.data_aos",
-            Some(InputMode::EditBlockquoteImageUrl) => "blockquote_image_url",
-            Some(InputMode::EditBlockquoteImageAlt) => "blockquote_image_alt",
-            Some(InputMode::EditBlockquotePersonsName) => "blockquote_persons_name",
-            Some(InputMode::EditBlockquotePersonsTitle) => "blockquote_persons_title",
-            Some(InputMode::EditBlockquoteCopy) => "blockquote_copy",
-            Some(InputMode::EditCardType) => "card_type",
-            Some(InputMode::EditCardDataAos) => "card_data_aos",
-            Some(InputMode::EditCardWidth) => "card_width",
-            Some(InputMode::EditCardItemImageUrl) => "dd-card.active.card_image_url",
-            Some(InputMode::EditCardItemImageAlt) => "dd-card.active.card_image_alt",
-            Some(InputMode::EditCardItemTitle) => "dd-card.active.card_title",
-            Some(InputMode::EditCardItemSubtitle) => "dd-card.active.card_subtitle",
-            Some(InputMode::EditCardItemCopy) => "dd-card.active.card_copy",
-            Some(InputMode::EditCardItemLinkUrl) => "dd-card.active.card_link_url",
-            Some(InputMode::EditCardItemLinkTarget) => "dd-card.active.card_link_target",
-            Some(InputMode::EditCardItemLinkLabel) => "dd-card.active.card_link_label",
+            Some(InputMode::EditBlockquoteImageUrl) => "parent_image_url",
+            Some(InputMode::EditBlockquoteImageAlt) => "parent_image_alt",
+            Some(InputMode::EditBlockquotePersonsName) => "parent_name",
+            Some(InputMode::EditBlockquotePersonsTitle) => "parent_role",
+            Some(InputMode::EditBlockquoteCopy) => "parent_copy",
+            Some(InputMode::EditAlertType) => "dd-alert.type",
+            Some(InputMode::EditAlertClass) => "dd-alert.class",
+            Some(InputMode::EditAlertDataAos) => "dd-alert.data_aos",
+            Some(InputMode::EditAlertTitle) => "dd-alert.parent_title",
+            Some(InputMode::EditAlertCopy) => "dd-alert.parent_copy",
+            Some(InputMode::EditCardType) => "parent_type",
+            Some(InputMode::EditCardDataAos) => "parent_data_aos",
+            Some(InputMode::EditCardWidth) => "parent_width",
+            Some(InputMode::EditCardItemImageUrl) => "dd-card.active.child_image_url",
+            Some(InputMode::EditCardItemImageAlt) => "dd-card.active.child_image_alt",
+            Some(InputMode::EditCardItemTitle) => "dd-card.active.child_title",
+            Some(InputMode::EditCardItemSubtitle) => "dd-card.active.child_subtitle",
+            Some(InputMode::EditCardItemCopy) => "dd-card.active.child_copy",
+            Some(InputMode::EditCardItemLinkUrl) => "dd-card.active.child_link_url",
+            Some(InputMode::EditCardItemLinkTarget) => "dd-card.active.child_link_target",
+            Some(InputMode::EditCardItemLinkLabel) => "dd-card.active.child_link_label",
             Some(InputMode::EditAccordionType) => "dd-accordion.type",
             Some(InputMode::EditAccordionClass) => "dd-accordion.class",
             Some(InputMode::EditAccordionAos) => "dd-accordion.data_aos",
-            Some(InputMode::EditAccordionGroupName) => "dd-accordion.group_name",
+            Some(InputMode::EditAccordionGroupName) => "dd-accordion.parent_group_name",
             Some(InputMode::EditAccordionFirstTitle) => "dd-accordion.active.title",
             Some(InputMode::EditAccordionFirstContent) => "dd-accordion.active.content",
+            Some(InputMode::EditHeaderId) => "header.id",
+            Some(InputMode::EditHeaderClass) => "header.class",
+            Some(InputMode::EditHeaderCustomCss) => "header.custom_css",
+            Some(InputMode::EditHeaderColumnId) => "header.column.id",
+            Some(InputMode::EditHeaderColumnWidthClass) => "header.column.width_class",
+            Some(InputMode::EditHeaderPlaceholderContent) => "header.placeholder.content",
             None => "field",
         }
     }
@@ -5125,33 +7582,33 @@ impl App {
         match &page.nodes[ni] {
             PageNode::Hero(v) => format!(
                 "- hero.image: {}\n- hero.class: {}\n- hero.data_aos: {}\n- hero.custom_css: {}\n- hero.title: {}\n- hero.subtitle: {}\n- hero.copy: {}\n- hero.link_1.text: {}\n- hero.link_1.url: {}\n- hero.link_1.target: {}\n- hero.link_2.text: {}\n- hero.link_2.url: {}\n- hero.link_2.target: {}",
-                v.image,
+                v.parent_image_url,
                 hero_image_class_to_str(
-                    v.hero_class
+                    v.parent_class
                         .unwrap_or(crate::model::HeroImageClass::FullFull)
                 ),
-                hero_aos_to_str(v.hero_aos.unwrap_or(crate::model::HeroAos::FadeIn)),
-                v.custom_css.as_deref().unwrap_or("(none)"),
-                v.title,
-                v.subtitle,
-                v.copy.as_deref().unwrap_or("(none)"),
-                v.cta_text.as_deref().unwrap_or("(none)"),
-                v.cta_link.as_deref().unwrap_or("(none)"),
-                cta_target_to_str(v.cta_target.unwrap_or(crate::model::CtaTarget::SelfTarget)),
-                v.cta_text_2.as_deref().unwrap_or("(none)"),
-                v.cta_link_2.as_deref().unwrap_or("(none)"),
-                cta_target_to_str(
-                    v.cta_target_2
+                parent_data_aos_to_str(v.parent_data_aos.unwrap_or(crate::model::HeroAos::FadeIn)),
+                v.parent_custom_css.as_deref().unwrap_or("(none)"),
+                v.parent_title,
+                v.parent_subtitle,
+                v.parent_copy.as_deref().unwrap_or("(none)"),
+                v.link_1_label.as_deref().unwrap_or("(none)"),
+                v.link_1_url.as_deref().unwrap_or("(none)"),
+                link_1_target_to_str(v.link_1_target.unwrap_or(crate::model::CtaTarget::SelfTarget)),
+                v.link_2_label.as_deref().unwrap_or("(none)"),
+                v.link_2_url.as_deref().unwrap_or("(none)"),
+                link_1_target_to_str(
+                    v.link_2_target
                         .unwrap_or(crate::model::CtaTarget::SelfTarget)
                 )
             ),
             PageNode::Section(section) => {
-                let rows = self.build_node_tree_rows();
+                let rows = self.build_page_tree_rows();
                 let row_kind = rows
                     .get(self.selected_tree_row.min(rows.len().saturating_sub(1)))
                     .map(|row| row.kind);
                 match row_kind {
-                    Some(NodeTreeKind::Column { .. }) => {
+                    Some(TreeRowKind::Column { .. }) => {
                         let columns = section_columns_ref(section);
                         if let Some(col) =
                             columns.get(self.selected_column.min(columns.len().saturating_sub(1)))
@@ -5165,13 +7622,13 @@ impl App {
                             "(none)".to_string()
                         }
                     }
-                    Some(NodeTreeKind::Component { .. })
-                    | Some(NodeTreeKind::AccordionItem { .. })
-                    | Some(NodeTreeKind::AlternatingItem { .. })
-                    | Some(NodeTreeKind::CardItem { .. })
-                    | Some(NodeTreeKind::FilmstripItem { .. })
-                    | Some(NodeTreeKind::MilestonesItem { .. })
-                    | Some(NodeTreeKind::SliderItem { .. }) => {
+                    Some(TreeRowKind::Component { .. })
+                    | Some(TreeRowKind::AccordionItem { .. })
+                    | Some(TreeRowKind::AlternatingItem { .. })
+                    | Some(TreeRowKind::CardItem { .. })
+                    | Some(TreeRowKind::FilmstripItem { .. })
+                    | Some(TreeRowKind::MilestonesItem { .. })
+                    | Some(TreeRowKind::SliderItem { .. }) => {
                         let columns = section_columns_ref(section);
                         if let Some(col) =
                             columns.get(self.selected_column.min(columns.len().saturating_sub(1)))
@@ -5186,14 +7643,14 @@ impl App {
                                         | Some(InputMode::EditCardDataAos)
                                         | Some(InputMode::EditCardWidth) => vec![
                                             format!(
-                                                "- card_type: {}",
-                                                card_type_to_str(card.card_type)
+                                                "- parent_type: {}",
+                                                card_type_to_str(card.parent_type)
                                             ),
                                             format!(
-                                                "- card_data_aos: {}",
-                                                hero_aos_to_str(card.card_data_aos)
+                                                "- parent_data_aos: {}",
+                                                parent_data_aos_to_str(card.parent_data_aos)
                                             ),
-                                            format!("- card_width: {}", card.card_width),
+                                            format!("- parent_width: {}", card.parent_width),
                                         ]
                                         .join("\n"),
                                         Some(InputMode::EditCardItemImageUrl)
@@ -5211,44 +7668,44 @@ impl App {
                                             .and_then(|i| card.items.get(i));
                                             vec![
                                                 format!(
-                                                    "- card_image_url: {}",
-                                                    item.map(|i| i.card_image_url.as_str())
+                                                    "- child_image_url: {}",
+                                                    item.map(|i| i.child_image_url.as_str())
                                                         .unwrap_or("(none)")
                                                 ),
                                                 format!(
-                                                    "- card_image_alt: {}",
-                                                    item.map(|i| i.card_image_alt.as_str())
+                                                    "- child_image_alt: {}",
+                                                    item.map(|i| i.child_image_alt.as_str())
                                                         .unwrap_or("(none)")
                                                 ),
                                                 format!(
-                                                    "- card_title: {}",
-                                                    item.map(|i| i.card_title.as_str())
+                                                    "- child_title: {}",
+                                                    item.map(|i| i.child_title.as_str())
                                                         .unwrap_or("(none)")
                                                 ),
                                                 format!(
-                                                    "- card_subtitle: {}",
-                                                    item.map(|i| i.card_subtitle.as_str())
+                                                    "- child_subtitle: {}",
+                                                    item.map(|i| i.child_subtitle.as_str())
                                                         .unwrap_or("(none)")
                                                 ),
                                                 format!(
-                                                    "- card_copy: {}",
-                                                    item.map(|i| i.card_copy.as_str())
+                                                    "- child_copy: {}",
+                                                    item.map(|i| i.child_copy.as_str())
                                                         .unwrap_or("(none)")
                                                 ),
                                                 format!(
-                                                    "- card_link_url: {}",
-                                                    item.and_then(|i| i.card_link_url.as_deref())
+                                                    "- child_link_url: {}",
+                                                    item.and_then(|i| i.child_link_url.as_deref())
                                                         .unwrap_or("(none)")
                                                 ),
                                                 format!(
-                                                    "- card_link_target: {}",
-                                                    item.and_then(|i| i.card_link_target)
-                                                        .map(card_link_target_to_str)
+                                                    "- child_link_target: {}",
+                                                    item.and_then(|i| i.child_link_target)
+                                                        .map(child_link_target_to_str)
                                                         .unwrap_or("_self")
                                                 ),
                                                 format!(
-                                                    "- card_link_label: {}",
-                                                    item.and_then(|i| i.card_link_label.as_deref())
+                                                    "- child_link_label: {}",
+                                                    item.and_then(|i| i.child_link_label.as_deref())
                                                         .unwrap_or("(none)")
                                                 ),
                                             ]
@@ -5264,11 +7721,11 @@ impl App {
                                         | Some(InputMode::EditFilmstripDataAos) => vec![
                                             format!(
                                                 "- parent_type: {}",
-                                                filmstrip_type_to_str(filmstrip.filmstrip_type)
+                                                filmstrip_type_to_str(filmstrip.parent_type)
                                             ),
                                             format!(
                                                 "- parent_data_aos: {}",
-                                                hero_aos_to_str(filmstrip.filmstrip_data_aos)
+                                                parent_data_aos_to_str(filmstrip.parent_data_aos)
                                             ),
                                         ]
                                         .join("\n"),
@@ -5283,17 +7740,17 @@ impl App {
                                             vec![
                                                 format!(
                                                     "- child_image_url: {}",
-                                                    item.map(|i| i.image_url.as_str())
+                                                    item.map(|i| i.child_image_url.as_str())
                                                         .unwrap_or("(none)")
                                                 ),
                                                 format!(
                                                     "- child_image_alt: {}",
-                                                    item.map(|i| i.image_alt.as_str())
+                                                    item.map(|i| i.child_image_alt.as_str())
                                                         .unwrap_or("(none)")
                                                 ),
                                                 format!(
                                                     "- child_title: {}",
-                                                    item.map(|i| i.title.as_str())
+                                                    item.map(|i| i.child_title.as_str())
                                                         .unwrap_or("(none)")
                                                 ),
                                             ]
@@ -5310,7 +7767,7 @@ impl App {
                                         | Some(InputMode::EditMilestonesWidth) => vec![
                                             format!(
                                                 "- parent_data_aos: {}",
-                                                hero_aos_to_str(milestones.parent_data_aos)
+                                                parent_data_aos_to_str(milestones.parent_data_aos)
                                             ),
                                             format!("- parent_width: {}", milestones.parent_width),
                                         ]
@@ -5356,7 +7813,7 @@ impl App {
                                                 format!(
                                                     "- child_link_target: {}",
                                                     item.and_then(|i| i.child_link_target)
-                                                        .map(card_link_target_to_str)
+                                                        .map(child_link_target_to_str)
                                                         .unwrap_or("_self")
                                                 ),
                                                 format!(
@@ -5410,7 +7867,7 @@ impl App {
                                                 format!(
                                                     "- child_link_target: {}",
                                                     item.and_then(|i| i.child_link_target)
-                                                        .map(card_link_target_to_str)
+                                                        .map(child_link_target_to_str)
                                                         .unwrap_or("_self")
                                                 ),
                                                 format!(
@@ -5443,16 +7900,16 @@ impl App {
                                         | Some(InputMode::EditAlternatingClass)
                                         | Some(InputMode::EditAlternatingDataAos) => vec![
                                             format!(
-                                                "- alternating_type: {}",
-                                                alternating_type_to_str(alt.alternating_type)
+                                                "- parent_type: {}",
+                                                alternating_type_to_str(alt.parent_type)
                                             ),
                                             format!(
                                                 "- alternating.class: {}",
-                                                alt.alternating_class
+                                                alt.parent_class
                                             ),
                                             format!(
                                                 "- alternating.data_aos: {}",
-                                                hero_aos_to_str(alt.alternating_data_aos)
+                                                parent_data_aos_to_str(alt.parent_data_aos)
                                             ),
                                         ]
                                         .join("\n"),
@@ -5465,28 +7922,28 @@ impl App {
                                                 self.selected_nested_item,
                                             )
                                             .and_then(|i| alt.items.get(i))
-                                            .map(|i| i.image.as_str())
+                                            .map(|i| i.child_image_url.as_str())
                                             .unwrap_or("(none)");
                                             let image_alt = nested_index(
                                                 alt.items.len(),
                                                 self.selected_nested_item,
                                             )
                                             .and_then(|i| alt.items.get(i))
-                                            .map(|i| i.image_alt.as_str())
+                                            .map(|i| i.child_image_alt.as_str())
                                             .unwrap_or("(none)");
                                             let title = nested_index(
                                                 alt.items.len(),
                                                 self.selected_nested_item,
                                             )
                                             .and_then(|i| alt.items.get(i))
-                                            .map(|i| i.title.as_str())
+                                            .map(|i| i.child_title.as_str())
                                             .unwrap_or("(none)");
                                             let copy = nested_index(
                                                 alt.items.len(),
                                                 self.selected_nested_item,
                                             )
                                             .and_then(|i| alt.items.get(i))
-                                            .map(|i| i.copy.as_str())
+                                            .map(|i| i.child_copy.as_str())
                                             .unwrap_or("(none)");
                                             vec![
                                                 format!("- alternating_image: {}", image),
@@ -5507,18 +7964,18 @@ impl App {
                                         | Some(InputMode::EditAccordionAos)
                                         | Some(InputMode::EditAccordionGroupName) => vec![
                                             format!(
-                                                "- accordion_type: {}",
-                                                accordion_type_to_str(acc.accordion_type)
+                                                "- parent_type: {}",
+                                                accordion_type_to_str(acc.parent_type)
                                             ),
                                             format!(
                                                 "- accordion.class: {}",
-                                                accordion_class_to_str(acc.accordion_class)
+                                                accordion_class_to_str(acc.parent_class)
                                             ),
                                             format!(
                                                 "- accordion.data_aos: {}",
-                                                hero_aos_to_str(acc.accordion_aos)
+                                                parent_data_aos_to_str(acc.parent_data_aos)
                                             ),
-                                            format!("- accordion.group_name: {}", acc.group_name),
+                                            format!("- accordion.parent_group_name: {}", acc.parent_group_name),
                                         ]
                                         .join("\n"),
                                         Some(InputMode::EditAccordionFirstTitle)
@@ -5528,14 +7985,14 @@ impl App {
                                                 self.selected_nested_item,
                                             )
                                             .and_then(|i| acc.items.get(i))
-                                            .map(|i| i.title.as_str())
+                                            .map(|i| i.child_title.as_str())
                                             .unwrap_or("(none)");
                                             let content = nested_index(
                                                 acc.items.len(),
                                                 self.selected_nested_item,
                                             )
                                             .and_then(|i| acc.items.get(i))
-                                            .map(|i| i.content.as_str())
+                                            .map(|i| i.child_copy.as_str())
                                             .unwrap_or("(none)");
                                             vec![
                                                 format!("- accordion_title: {}", title),
@@ -5655,6 +8112,21 @@ impl App {
             InputMode::EditAlternatingItemCopy => {
                 "Editing dd-alternating item copy. Enter: newline, Ctrl+S: save, esc: cancel."
                     .to_string()
+            }
+            InputMode::EditAlertType => {
+                "Editing dd-alert type. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertClass => {
+                "Editing dd-alert class. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertDataAos => {
+                "Editing dd-alert data-aos. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertTitle => {
+                "Editing dd-alert title. Enter to save, esc to cancel.".to_string()
+            }
+            InputMode::EditAlertCopy => {
+                "Editing dd-alert copy. Enter: newline, Ctrl+S: save, esc: cancel.".to_string()
             }
             InputMode::EditBannerClass => {
                 "Editing dd-banner class. Enter to save, esc to cancel.".to_string()
@@ -5858,36 +8330,36 @@ impl App {
         let node_idx = self.selected_node.min(page.nodes.len() - 1);
         match &page.nodes[node_idx] {
             PageNode::Hero(hero) => match mode {
-                InputMode::EditHeroImage => Some(hero.image.clone()),
+                InputMode::EditHeroImage => Some(hero.parent_image_url.clone()),
                 InputMode::EditHeroClass => Some(
                     hero_image_class_to_str(
-                        hero.hero_class
+                        hero.parent_class
                             .unwrap_or(crate::model::HeroImageClass::FullFull),
                     )
                     .to_string(),
                 ),
                 InputMode::EditHeroAos => Some(
-                    hero_aos_to_str(hero.hero_aos.unwrap_or(crate::model::HeroAos::FadeIn))
+                    parent_data_aos_to_str(hero.parent_data_aos.unwrap_or(crate::model::HeroAos::FadeIn))
                         .to_string(),
                 ),
-                InputMode::EditHeroCustomCss => Some(hero.custom_css.clone().unwrap_or_default()),
-                InputMode::EditHeroTitle => Some(hero.title.clone()),
-                InputMode::EditHeroSubtitle => Some(hero.subtitle.clone()),
-                InputMode::EditHeroCopy => Some(hero.copy.clone().unwrap_or_default()),
-                InputMode::EditHeroCtaText => Some(hero.cta_text.clone().unwrap_or_default()),
-                InputMode::EditHeroCtaLink => Some(hero.cta_link.clone().unwrap_or_default()),
+                InputMode::EditHeroCustomCss => Some(hero.parent_custom_css.clone().unwrap_or_default()),
+                InputMode::EditHeroTitle => Some(hero.parent_title.clone()),
+                InputMode::EditHeroSubtitle => Some(hero.parent_subtitle.clone()),
+                InputMode::EditHeroCopy => Some(hero.parent_copy.clone().unwrap_or_default()),
+                InputMode::EditHeroCtaText => Some(hero.link_1_label.clone().unwrap_or_default()),
+                InputMode::EditHeroCtaLink => Some(hero.link_1_url.clone().unwrap_or_default()),
                 InputMode::EditHeroCtaTarget => Some(
-                    cta_target_to_str(
-                        hero.cta_target
+                    link_1_target_to_str(
+                        hero.link_1_target
                             .unwrap_or(crate::model::CtaTarget::SelfTarget),
                     )
                     .to_string(),
                 ),
-                InputMode::EditHeroCtaText2 => Some(hero.cta_text_2.clone().unwrap_or_default()),
-                InputMode::EditHeroCtaLink2 => Some(hero.cta_link_2.clone().unwrap_or_default()),
+                InputMode::EditHeroCtaText2 => Some(hero.link_2_label.clone().unwrap_or_default()),
+                InputMode::EditHeroCtaLink2 => Some(hero.link_2_url.clone().unwrap_or_default()),
                 InputMode::EditHeroCtaTarget2 => Some(
-                    cta_target_to_str(
-                        hero.cta_target_2
+                    link_1_target_to_str(
+                        hero.link_2_target
                             .unwrap_or(crate::model::CtaTarget::SelfTarget),
                     )
                     .to_string(),
@@ -5926,126 +8398,126 @@ impl App {
                         (
                             InputMode::EditAlternatingType,
                             crate::model::SectionComponent::Alternating(v),
-                        ) => Some(alternating_type_to_str(v.alternating_type).to_string()),
+                        ) => Some(alternating_type_to_str(v.parent_type).to_string()),
                         (
                             InputMode::EditAlternatingClass,
                             crate::model::SectionComponent::Alternating(v),
-                        ) => Some(v.alternating_class.clone()),
+                        ) => Some(v.parent_class.clone()),
                         (
                             InputMode::EditAlternatingDataAos,
                             crate::model::SectionComponent::Alternating(v),
-                        ) => Some(hero_aos_to_str(v.alternating_data_aos).to_string()),
+                        ) => Some(parent_data_aos_to_str(v.parent_data_aos).to_string()),
                         (
                             InputMode::EditAlternatingItemImage,
                             crate::model::SectionComponent::Alternating(v),
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].image.clone())
+                            Some(v.items[ni].child_image_url.clone())
                         }
                         (
                             InputMode::EditAlternatingItemImageAlt,
                             crate::model::SectionComponent::Alternating(v),
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].image_alt.clone())
+                            Some(v.items[ni].child_image_alt.clone())
                         }
                         (
                             InputMode::EditAlternatingItemTitle,
                             crate::model::SectionComponent::Alternating(v),
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].title.clone())
+                            Some(v.items[ni].child_title.clone())
                         }
                         (
                             InputMode::EditAlternatingItemCopy,
                             crate::model::SectionComponent::Alternating(v),
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].copy.clone())
+                            Some(v.items[ni].child_copy.clone())
                         }
                         (InputMode::EditBannerClass, crate::model::SectionComponent::Banner(v)) => {
-                            Some(banner_class_to_str(v.banner_class).to_string())
+                            Some(banner_class_to_str(v.parent_class).to_string())
                         }
                         (
                             InputMode::EditBannerDataAos,
                             crate::model::SectionComponent::Banner(v),
-                        ) => Some(hero_aos_to_str(v.banner_data_aos).to_string()),
+                        ) => Some(parent_data_aos_to_str(v.parent_data_aos).to_string()),
                         (
                             InputMode::EditBannerImageUrl,
                             crate::model::SectionComponent::Banner(v),
-                        ) => Some(v.banner_image_url.clone()),
+                        ) => Some(v.parent_image_url.clone()),
                         (
                             InputMode::EditBannerImageAlt,
                             crate::model::SectionComponent::Banner(v),
-                        ) => Some(v.banner_image_alt.clone()),
+                        ) => Some(v.parent_image_alt.clone()),
                         (InputMode::EditCtaClass, crate::model::SectionComponent::Cta(v)) => {
-                            Some(cta_class_to_str(v.cta_class).to_string())
+                            Some(cta_class_to_str(v.parent_class).to_string())
                         }
                         (InputMode::EditCtaImageUrl, crate::model::SectionComponent::Cta(v)) => {
-                            Some(v.cta_image_url.clone())
+                            Some(v.parent_image_url.clone())
                         }
                         (InputMode::EditCtaImageAlt, crate::model::SectionComponent::Cta(v)) => {
-                            Some(v.cta_image_alt.clone())
+                            Some(v.parent_image_alt.clone())
                         }
                         (InputMode::EditCtaDataAos, crate::model::SectionComponent::Cta(v)) => {
-                            Some(hero_aos_to_str(v.cta_data_aos).to_string())
+                            Some(parent_data_aos_to_str(v.parent_data_aos).to_string())
                         }
                         (InputMode::EditCtaTitle, crate::model::SectionComponent::Cta(v)) => {
-                            Some(v.cta_title.clone())
+                            Some(v.parent_title.clone())
                         }
                         (InputMode::EditCtaSubtitle, crate::model::SectionComponent::Cta(v)) => {
-                            Some(v.cta_subtitle.clone())
+                            Some(v.parent_subtitle.clone())
                         }
                         (InputMode::EditCtaCopy, crate::model::SectionComponent::Cta(v)) => {
-                            Some(v.cta_copy.clone())
+                            Some(v.parent_copy.clone())
                         }
                         (InputMode::EditCtaLinkUrl, crate::model::SectionComponent::Cta(v)) => {
-                            Some(v.cta_link_url.clone().unwrap_or_default())
+                            Some(v.parent_link_url.clone().unwrap_or_default())
                         }
                         (InputMode::EditCtaLinkTarget, crate::model::SectionComponent::Cta(v)) => {
                             Some(
-                                v.cta_link_target
-                                    .map(card_link_target_to_str)
+                                v.parent_link_target
+                                    .map(child_link_target_to_str)
                                     .unwrap_or("_self")
                                     .to_string(),
                             )
                         }
                         (InputMode::EditCtaLinkLabel, crate::model::SectionComponent::Cta(v)) => {
-                            Some(v.cta_link_label.clone().unwrap_or_default())
+                            Some(v.parent_link_label.clone().unwrap_or_default())
                         }
                         (
                             InputMode::EditFilmstripType,
                             crate::model::SectionComponent::Filmstrip(v),
-                        ) => Some(filmstrip_type_to_str(v.filmstrip_type).to_string()),
+                        ) => Some(filmstrip_type_to_str(v.parent_type).to_string()),
                         (
                             InputMode::EditFilmstripDataAos,
                             crate::model::SectionComponent::Filmstrip(v),
-                        ) => Some(hero_aos_to_str(v.filmstrip_data_aos).to_string()),
+                        ) => Some(parent_data_aos_to_str(v.parent_data_aos).to_string()),
                         (
                             InputMode::EditFilmstripItemImageUrl,
                             crate::model::SectionComponent::Filmstrip(v),
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].image_url.clone())
+                            Some(v.items[ni].child_image_url.clone())
                         }
                         (
                             InputMode::EditFilmstripItemImageAlt,
                             crate::model::SectionComponent::Filmstrip(v),
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].image_alt.clone())
+                            Some(v.items[ni].child_image_alt.clone())
                         }
                         (
                             InputMode::EditFilmstripItemTitle,
                             crate::model::SectionComponent::Filmstrip(v),
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].title.clone())
+                            Some(v.items[ni].child_title.clone())
                         }
                         (
                             InputMode::EditMilestonesDataAos,
                             crate::model::SectionComponent::Milestones(v),
-                        ) => Some(hero_aos_to_str(v.parent_data_aos).to_string()),
+                        ) => Some(parent_data_aos_to_str(v.parent_data_aos).to_string()),
                         (
                             InputMode::EditMilestonesWidth,
                             crate::model::SectionComponent::Milestones(v),
@@ -6091,7 +8563,7 @@ impl App {
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
                             Some(
-                                card_link_target_to_str(
+                                child_link_target_to_str(
                                     v.items[ni]
                                         .child_link_target
                                         .unwrap_or(crate::model::CardLinkTarget::SelfTarget),
@@ -6142,7 +8614,7 @@ impl App {
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
                             Some(
-                                card_link_target_to_str(
+                                child_link_target_to_str(
                                     v.items[ni]
                                         .child_link_target
                                         .unwrap_or(crate::model::CardLinkTarget::SelfTarget),
@@ -6172,49 +8644,49 @@ impl App {
                             Some(v.items[ni].child_image_alt.clone())
                         }
                         (InputMode::EditCardType, crate::model::SectionComponent::Card(v)) => {
-                            Some(card_type_to_str(v.card_type).to_string())
+                            Some(card_type_to_str(v.parent_type).to_string())
                         }
                         (InputMode::EditCardDataAos, crate::model::SectionComponent::Card(v)) => {
-                            Some(hero_aos_to_str(v.card_data_aos).to_string())
+                            Some(parent_data_aos_to_str(v.parent_data_aos).to_string())
                         }
                         (InputMode::EditCardWidth, crate::model::SectionComponent::Card(v)) => {
-                            Some(v.card_width.clone())
+                            Some(v.parent_width.clone())
                         }
                         (
                             InputMode::EditCardItemImageUrl,
                             crate::model::SectionComponent::Card(v),
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].card_image_url.clone())
+                            Some(v.items[ni].child_image_url.clone())
                         }
                         (
                             InputMode::EditCardItemImageAlt,
                             crate::model::SectionComponent::Card(v),
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].card_image_alt.clone())
+                            Some(v.items[ni].child_image_alt.clone())
                         }
                         (InputMode::EditCardItemTitle, crate::model::SectionComponent::Card(v)) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].card_title.clone())
+                            Some(v.items[ni].child_title.clone())
                         }
                         (
                             InputMode::EditCardItemSubtitle,
                             crate::model::SectionComponent::Card(v),
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].card_subtitle.clone())
+                            Some(v.items[ni].child_subtitle.clone())
                         }
                         (InputMode::EditCardItemCopy, crate::model::SectionComponent::Card(v)) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].card_copy.clone())
+                            Some(v.items[ni].child_copy.clone())
                         }
                         (
                             InputMode::EditCardItemLinkUrl,
                             crate::model::SectionComponent::Card(v),
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].card_link_url.clone().unwrap_or_default())
+                            Some(v.items[ni].child_link_url.clone().unwrap_or_default())
                         }
                         (
                             InputMode::EditCardItemLinkTarget,
@@ -6222,9 +8694,9 @@ impl App {
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
                             Some(
-                                card_link_target_to_str(
+                                child_link_target_to_str(
                                     v.items[ni]
-                                        .card_link_target
+                                        .child_link_target
                                         .unwrap_or(crate::model::CardLinkTarget::SelfTarget),
                                 )
                                 .to_string(),
@@ -6235,61 +8707,61 @@ impl App {
                             crate::model::SectionComponent::Card(v),
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].card_link_label.clone().unwrap_or_default())
+                            Some(v.items[ni].child_link_label.clone().unwrap_or_default())
                         }
                         (
                             InputMode::EditBlockquoteDataAos,
                             crate::model::SectionComponent::Blockquote(v),
-                        ) => Some(hero_aos_to_str(v.blockquote_data_aos).to_string()),
+                        ) => Some(parent_data_aos_to_str(v.parent_data_aos).to_string()),
                         (
                             InputMode::EditBlockquoteImageUrl,
                             crate::model::SectionComponent::Blockquote(v),
-                        ) => Some(v.blockquote_image_url.clone()),
+                        ) => Some(v.parent_image_url.clone()),
                         (
                             InputMode::EditBlockquoteImageAlt,
                             crate::model::SectionComponent::Blockquote(v),
-                        ) => Some(v.blockquote_image_alt.clone()),
+                        ) => Some(v.parent_image_alt.clone()),
                         (
                             InputMode::EditBlockquotePersonsName,
                             crate::model::SectionComponent::Blockquote(v),
-                        ) => Some(v.blockquote_persons_name.clone()),
+                        ) => Some(v.parent_name.clone()),
                         (
                             InputMode::EditBlockquotePersonsTitle,
                             crate::model::SectionComponent::Blockquote(v),
-                        ) => Some(v.blockquote_persons_title.clone()),
+                        ) => Some(v.parent_role.clone()),
                         (
                             InputMode::EditBlockquoteCopy,
                             crate::model::SectionComponent::Blockquote(v),
-                        ) => Some(v.blockquote_copy.clone()),
+                        ) => Some(v.parent_copy.clone()),
                         (
                             InputMode::EditAccordionType,
                             crate::model::SectionComponent::Accordion(v),
-                        ) => Some(accordion_type_to_str(v.accordion_type).to_string()),
+                        ) => Some(accordion_type_to_str(v.parent_type).to_string()),
                         (
                             InputMode::EditAccordionClass,
                             crate::model::SectionComponent::Accordion(v),
-                        ) => Some(accordion_class_to_str(v.accordion_class).to_string()),
+                        ) => Some(accordion_class_to_str(v.parent_class).to_string()),
                         (
                             InputMode::EditAccordionAos,
                             crate::model::SectionComponent::Accordion(v),
-                        ) => Some(hero_aos_to_str(v.accordion_aos).to_string()),
+                        ) => Some(parent_data_aos_to_str(v.parent_data_aos).to_string()),
                         (
                             InputMode::EditAccordionGroupName,
                             crate::model::SectionComponent::Accordion(v),
-                        ) => Some(v.group_name.clone()),
+                        ) => Some(v.parent_group_name.clone()),
                         (
                             InputMode::EditAccordionFirstTitle,
                             crate::model::SectionComponent::Accordion(v),
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].title.clone())
+                            Some(v.items[ni].child_title.clone())
                         }
                         (
                             InputMode::EditAccordionFirstContent,
                             crate::model::SectionComponent::Accordion(v),
                         ) => {
                             let ni = nested_index(v.items.len(), self.selected_nested_item)?;
-                            Some(v.items[ni].content.clone())
+                            Some(v.items[ni].child_copy.clone())
                         }
                         _ => None,
                     }
@@ -6314,7 +8786,7 @@ impl App {
     }
 
     fn select_prev(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_tree_rows();
         if rows.is_empty() {
             return;
         }
@@ -6326,7 +8798,7 @@ impl App {
     }
 
     fn select_next(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_tree_rows();
         let total = rows.len();
         if total == 0 {
             return;
@@ -6341,9 +8813,9 @@ impl App {
     fn handle_up(&mut self) {
         match self.selected_sidebar_section {
             SidebarSection::Regions => {
-                // Regions has only 2 items: Header, Footer
-                // For now, just show status
-                self.status = "Regions: Navigate with Up/Down".to_string();
+                self.selected_region = SelectedRegion::Header;
+                self.selected_tree_row = 0;
+                self.status = "Selected Header region.".to_string();
             }
             SidebarSection::Pages => {
                 if self.site.pages.is_empty() {
@@ -6371,9 +8843,9 @@ impl App {
     fn handle_down(&mut self) {
         match self.selected_sidebar_section {
             SidebarSection::Regions => {
-                // Regions has only 2 items: Header, Footer
-                // For now, just show status
-                self.status = "Regions: Navigate with Up/Down".to_string();
+                self.selected_region = SelectedRegion::Footer;
+                self.selected_tree_row = 0;
+                self.status = "Selected Footer region (not yet implemented).".to_string();
             }
             SidebarSection::Pages => {
                 if self.site.pages.is_empty() {
@@ -6427,12 +8899,45 @@ impl App {
     }
 
     fn details_text(&self, detail_width: usize) -> String {
+        match self.selected_region {
+            SelectedRegion::Header => self.header_details_text(detail_width),
+            SelectedRegion::Footer => "Footer editing not yet implemented.".to_string(),
+            SelectedRegion::Page => self.page_details_text(detail_width),
+        }
+    }
+
+    fn header_details_text(&self, detail_width: usize) -> String {
+        let mut out = Vec::new();
+        out.push("Site header".to_string());
+        out.push(String::new());
+        let marker = if matches!(self.selected_region, SelectedRegion::Header) {
+            "*"
+        } else {
+            " "
+        };
+        out.push(format!("{}[01] dd-header {}", marker, self.site.header.id));
+        out.push(header_ascii_map(
+            &self.site.header,
+            self.selected_header_section,
+            self.selected_header_column,
+            detail_width,
+        ));
+        out.push(String::new());
+        out.push(format!(
+            "Selected: {} | Insert mode: {}",
+            self.header_selection_summary(),
+            self.component_kind.label()
+        ));
+        out.join("\n")
+    }
+
+    fn page_details_text(&self, detail_width: usize) -> String {
         let page = self.current_page();
         if page.nodes.is_empty() {
             return "No nodes on this page.".to_string();
         }
         let mut out = Vec::new();
-        out.push(format!("Page blueprint: {}", page.title));
+        out.push(format!("Page blueprint: {}", page.head.title));
         out.push(String::new());
         for (idx, node) in page.nodes.iter().enumerate() {
             let marker = if idx == self.selected_node { "*" } else { " " };
@@ -6470,24 +8975,24 @@ impl App {
             return;
         };
         let hero = crate::model::DdHero {
-            image: "/assets/images/hero-new.jpg".to_string(),
-            hero_class: Some(crate::model::HeroImageClass::FullFull),
-            hero_aos: Some(crate::model::HeroAos::FadeIn),
-            custom_css: None,
-            title: "New Hero".to_string(),
-            subtitle: "Add subtitle".to_string(),
-            copy: None,
-            cta_text: None,
-            cta_link: None,
-            cta_target: Some(crate::model::CtaTarget::SelfTarget),
-            cta_text_2: None,
-            cta_link_2: None,
-            cta_target_2: Some(crate::model::CtaTarget::SelfTarget),
-            image_alt: Some("Hero image".to_string()),
-            image_mobile: None,
-            image_tablet: None,
-            image_desktop: None,
-            image_class: Some(crate::model::HeroImageClass::FullFull),
+            parent_image_url: "/assets/images/hero-new.jpg".to_string(),
+            parent_class: Some(crate::model::HeroImageClass::FullFull),
+            parent_data_aos: Some(crate::model::HeroAos::FadeIn),
+            parent_custom_css: None,
+            parent_title: "New Hero".to_string(),
+            parent_subtitle: "Add subtitle".to_string(),
+            parent_copy: None,
+            link_1_label: None,
+            link_1_url: None,
+            link_1_target: Some(crate::model::CtaTarget::SelfTarget),
+            link_2_label: None,
+            link_2_url: None,
+            link_2_target: Some(crate::model::CtaTarget::SelfTarget),
+            parent_image_alt: Some("Hero image".to_string()),
+            parent_image_mobile: None,
+            parent_image_tablet: None,
+            parent_image_desktop: None,
+            parent_image_class: Some(crate::model::HeroImageClass::FullFull),
         };
         let idx = Self::selected_index_for_page(page, selected)
             .map(|v| v + 1)
@@ -6516,7 +9021,6 @@ impl App {
                 width_class: "dd-u-1-1".to_string(),
                 components: Vec::new(),
             }],
-            components: Vec::new(),
         };
         let idx = Self::selected_index_for_page(page, selected)
             .map(|v| v + 1)
@@ -6635,7 +9139,7 @@ impl App {
         self.status = result.1;
     }
 
-    fn cycle_hero_class(&mut self, forward: bool) {
+    fn cycle_hero_parent_class(&mut self, forward: bool) {
         let selected = self.selected_node;
         let Some(page) = self.current_page_mut() else {
             return;
@@ -6648,10 +9152,10 @@ impl App {
         match &mut page.nodes[idx] {
             PageNode::Hero(hero) => {
                 let current = hero
-                    .hero_class
+                    .parent_class
                     .unwrap_or(crate::model::HeroImageClass::FullFull);
                 let next = next_hero_image_class(current, forward);
-                hero.hero_class = Some(next);
+                hero.parent_class = Some(next);
                 self.status = format!("Hero default class: {}", hero_image_class_to_str(next));
             }
             _ => {
@@ -6661,7 +9165,7 @@ impl App {
         }
     }
 
-    fn cycle_hero_aos(&mut self, forward: bool) {
+    fn cycle_hero_parent_data_aos(&mut self, forward: bool) {
         let selected = self.selected_node;
         let Some(page) = self.current_page_mut() else {
             return;
@@ -6673,10 +9177,10 @@ impl App {
         let idx = selected.min(page.nodes.len() - 1);
         match &mut page.nodes[idx] {
             PageNode::Hero(hero) => {
-                let current = hero.hero_aos.unwrap_or(crate::model::HeroAos::FadeIn);
-                let next = next_hero_aos(current, forward);
-                hero.hero_aos = Some(next);
-                self.status = format!("Hero data-aos: {}", hero_aos_to_str(next));
+                let current = hero.parent_data_aos.unwrap_or(crate::model::HeroAos::FadeIn);
+                let next = next_parent_data_aos(current, forward);
+                hero.parent_data_aos = Some(next);
+                self.status = format!("Hero data-aos: {}", parent_data_aos_to_str(next));
             }
             _ => {
                 self.status =
@@ -6685,7 +9189,7 @@ impl App {
         }
     }
 
-    fn cycle_hero_cta_target(&mut self, secondary: bool, forward: bool) {
+    fn cycle_hero_link_1_target(&mut self, secondary: bool, forward: bool) {
         let selected = self.selected_node;
         let Some(page) = self.current_page_mut() else {
             return;
@@ -6698,22 +9202,22 @@ impl App {
         match &mut page.nodes[idx] {
             PageNode::Hero(hero) => {
                 let current = if secondary {
-                    hero.cta_target_2
+                    hero.link_2_target
                         .unwrap_or(crate::model::CtaTarget::SelfTarget)
                 } else {
-                    hero.cta_target
+                    hero.link_1_target
                         .unwrap_or(crate::model::CtaTarget::SelfTarget)
                 };
-                let next = next_hero_cta_target(current, forward);
+                let next = next_hero_link_1_target(current, forward);
                 if secondary {
-                    hero.cta_target_2 = Some(next);
+                    hero.link_2_target = Some(next);
                 } else {
-                    hero.cta_target = Some(next);
+                    hero.link_1_target = Some(next);
                 }
                 self.status = if secondary {
-                    format!("Hero link_2 target: {}", cta_target_to_str(next))
+                    format!("Hero link_2 target: {}", link_1_target_to_str(next))
                 } else {
-                    format!("Hero link_1 target: {}", cta_target_to_str(next))
+                    format!("Hero link_1 target: {}", link_1_target_to_str(next))
                 };
             }
             _ => {
@@ -6735,52 +9239,52 @@ impl App {
         );
     }
 
-    fn cycle_banner_class(&mut self, forward: bool) {
+    fn cycle_banner_parent_class(&mut self, forward: bool) {
         self.mutate_selected_banner(
             |b| {
-                b.banner_class = next_banner_class(b.banner_class, forward);
+                b.parent_class = next_banner_class(b.parent_class, forward);
             },
             "Cycled dd-banner class.",
         );
     }
 
-    fn cycle_banner_data_aos(&mut self, forward: bool) {
+    fn cycle_banner_parent_data_aos(&mut self, forward: bool) {
         self.mutate_selected_banner(
             |b| {
-                b.banner_data_aos = next_hero_aos(b.banner_data_aos, forward);
+                b.parent_data_aos = next_parent_data_aos(b.parent_data_aos, forward);
             },
             "Cycled dd-banner data-aos.",
         );
     }
 
-    fn cycle_blockquote_data_aos(&mut self, forward: bool) {
+    fn cycle_blockquote_parent_data_aos(&mut self, forward: bool) {
         self.mutate_selected_blockquote(
             |b| {
-                b.blockquote_data_aos = next_hero_aos(b.blockquote_data_aos, forward);
+                b.parent_data_aos = next_parent_data_aos(b.parent_data_aos, forward);
             },
             "Cycled dd-blockquote data-aos.",
         );
     }
 
-    fn cycle_card_type(&mut self, forward: bool) {
+    fn cycle_card_parent_type(&mut self, forward: bool) {
         self.mutate_selected_card(
             |c| {
-                c.card_type = next_card_type(c.card_type, forward);
+                c.parent_type = next_card_type(c.parent_type, forward);
             },
             "Cycled dd-card type.",
         );
     }
 
-    fn cycle_card_data_aos(&mut self, forward: bool) {
+    fn cycle_card_parent_data_aos(&mut self, forward: bool) {
         self.mutate_selected_card(
             |c| {
-                c.card_data_aos = next_hero_aos(c.card_data_aos, forward);
+                c.parent_data_aos = next_parent_data_aos(c.parent_data_aos, forward);
             },
             "Cycled dd-card data-aos.",
         );
     }
 
-    fn cycle_card_link_target(&mut self, forward: bool) {
+    fn cycle_child_link_target(&mut self, forward: bool) {
         let selected = self.selected_node;
         let selected_column = self.selected_column;
         let selected_component = self.selected_component;
@@ -6802,14 +9306,14 @@ impl App {
                     if let crate::model::SectionComponent::Card(card) = &mut components[ci] {
                         if let Some(item_i) = nested_index(card.items.len(), selected_nested_item) {
                             let current = card.items[item_i]
-                                .card_link_target
+                                .child_link_target
                                 .unwrap_or(crate::model::CardLinkTarget::SelfTarget);
-                            let next = next_card_link_target(current, forward);
-                            card.items[item_i].card_link_target = Some(next);
+                            let next = next_child_link_target(current, forward);
+                            card.items[item_i].child_link_target = Some(next);
                             format!(
                                 "dd-card item {} link target: {}",
                                 item_i + 1,
-                                card_link_target_to_str(next)
+                                child_link_target_to_str(next)
                             )
                         } else {
                             "dd-card has no items.".to_string()
@@ -6826,19 +9330,19 @@ impl App {
         self.status = result;
     }
 
-    fn cycle_filmstrip_type(&mut self, forward: bool) {
+    fn cycle_filmstrip_parent_type(&mut self, forward: bool) {
         self.mutate_selected_filmstrip(
             |f| {
-                f.filmstrip_type = next_filmstrip_type(f.filmstrip_type, forward);
+                f.parent_type = next_filmstrip_type(f.parent_type, forward);
             },
             "Cycled dd-filmstrip type.",
         );
     }
 
-    fn cycle_filmstrip_data_aos(&mut self, forward: bool) {
+    fn cycle_filmstrip_parent_data_aos(&mut self, forward: bool) {
         self.mutate_selected_filmstrip(
             |f| {
-                f.filmstrip_data_aos = next_hero_aos(f.filmstrip_data_aos, forward);
+                f.parent_data_aos = next_parent_data_aos(f.parent_data_aos, forward);
             },
             "Cycled dd-filmstrip data-aos.",
         );
@@ -6847,7 +9351,7 @@ impl App {
     fn cycle_milestones_data_aos(&mut self, forward: bool) {
         self.mutate_selected_milestones(
             |m| {
-                m.parent_data_aos = next_hero_aos(m.parent_data_aos, forward);
+                m.parent_data_aos = next_parent_data_aos(m.parent_data_aos, forward);
             },
             "Cycled dd-milestones parent_data_aos.",
         );
@@ -6861,7 +9365,7 @@ impl App {
                     let current = m.items[ni]
                         .child_link_target
                         .unwrap_or(crate::model::CardLinkTarget::SelfTarget);
-                    m.items[ni].child_link_target = Some(next_card_link_target(current, forward));
+                    m.items[ni].child_link_target = Some(next_child_link_target(current, forward));
                 }
             },
             "Cycled dd-milestones child_link_target.",
@@ -6876,26 +9380,26 @@ impl App {
                     let current = s.items[ni]
                         .child_link_target
                         .unwrap_or(crate::model::CardLinkTarget::SelfTarget);
-                    s.items[ni].child_link_target = Some(next_card_link_target(current, forward));
+                    s.items[ni].child_link_target = Some(next_child_link_target(current, forward));
                 }
             },
             "Cycled dd-slider child_link_target.",
         );
     }
 
-    fn cycle_alternating_type(&mut self, forward: bool) {
+    fn cycle_alternating_parent_type(&mut self, forward: bool) {
         self.mutate_selected_alternating(
             |a| {
-                a.alternating_type = next_alternating_type(a.alternating_type, forward);
+                a.parent_type = next_alternating_type(a.parent_type, forward);
             },
             "Cycled dd-alternating type.",
         );
     }
 
-    fn cycle_alternating_data_aos(&mut self, forward: bool) {
+    fn cycle_alternating_parent_data_aos(&mut self, forward: bool) {
         self.mutate_selected_alternating(
             |a| {
-                a.alternating_data_aos = next_hero_aos(a.alternating_data_aos, forward);
+                a.parent_data_aos = next_parent_data_aos(a.parent_data_aos, forward);
             },
             "Cycled dd-alternating data-aos.",
         );
@@ -6973,31 +9477,31 @@ impl App {
         self.status = result;
     }
 
-    fn cycle_cta_class(&mut self, forward: bool) {
+    fn cycle_cta_parent_class(&mut self, forward: bool) {
         self.mutate_selected_cta(
             |cta| {
-                cta.cta_class = next_cta_class(cta.cta_class, forward);
+                cta.parent_class = next_cta_class(cta.parent_class, forward);
             },
             "Cycled dd-cta class.",
         );
     }
 
-    fn cycle_cta_data_aos(&mut self, forward: bool) {
+    fn cycle_cta_parent_data_aos(&mut self, forward: bool) {
         self.mutate_selected_cta(
             |cta| {
-                cta.cta_data_aos = next_hero_aos(cta.cta_data_aos, forward);
+                cta.parent_data_aos = next_parent_data_aos(cta.parent_data_aos, forward);
             },
             "Cycled dd-cta data-aos.",
         );
     }
 
-    fn cycle_cta_link_target(&mut self, forward: bool) {
+    fn cycle_parent_link_target(&mut self, forward: bool) {
         self.mutate_selected_cta(
             |cta| {
                 let current = cta
-                    .cta_link_target
+                    .parent_link_target
                     .unwrap_or(crate::model::CardLinkTarget::SelfTarget);
-                cta.cta_link_target = Some(next_card_link_target(current, forward));
+                cta.parent_link_target = Some(next_child_link_target(current, forward));
             },
             "Cycled dd-cta link target.",
         );
@@ -7225,28 +9729,28 @@ impl App {
         self.status = result;
     }
 
-    fn cycle_accordion_type(&mut self, forward: bool) {
+    fn cycle_accordion_parent_type(&mut self, forward: bool) {
         self.mutate_selected_accordion(
             |a| {
-                a.accordion_type = next_accordion_type(a.accordion_type, forward);
+                a.parent_type = next_accordion_type(a.parent_type, forward);
             },
             "Cycled dd-accordion type.",
         );
     }
 
-    fn cycle_accordion_class(&mut self, forward: bool) {
+    fn cycle_accordion_parent_class(&mut self, forward: bool) {
         self.mutate_selected_accordion(
             |a| {
-                a.accordion_class = next_accordion_class(a.accordion_class, forward);
+                a.parent_class = next_accordion_class(a.parent_class, forward);
             },
             "Cycled dd-accordion class.",
         );
     }
 
-    fn cycle_accordion_aos(&mut self, forward: bool) {
+    fn cycle_accordion_parent_data_aos(&mut self, forward: bool) {
         self.mutate_selected_accordion(
             |a| {
-                a.accordion_aos = next_hero_aos(a.accordion_aos, forward);
+                a.parent_data_aos = next_parent_data_aos(a.parent_data_aos, forward);
             },
             "Cycled dd-accordion data-aos.",
         );
@@ -7343,7 +9847,7 @@ impl App {
     }
 
     fn add_selected_accordion_item(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_page_tree_rows();
         if rows.is_empty() {
             self.status = "No selected section.".to_string();
             return;
@@ -7353,7 +9857,7 @@ impl App {
         let selected_column = self.selected_column;
         let selected_component = self.selected_component;
         let preferred_insert_after = match row.kind {
-            NodeTreeKind::AccordionItem { item_idx, .. } => Some(item_idx),
+            TreeRowKind::AccordionItem { item_idx, .. } => Some(item_idx),
             _ => None,
         };
         let Some(page) = self.current_page_mut() else {
@@ -7378,8 +9882,8 @@ impl App {
                         acc.items.insert(
                             insert_idx,
                             crate::model::AccordionItem {
-                                title: format!("Accordion Item {}", next_num),
-                                content: "Accordion content".to_string(),
+                                child_title: format!("Accordion Item {}", next_num),
+                                child_copy: "Accordion content".to_string(),
                             },
                         );
                         (
@@ -7459,7 +9963,7 @@ impl App {
     }
 
     fn add_selected_alternating_item(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_page_tree_rows();
         if rows.is_empty() {
             self.status = "No selected section.".to_string();
             return;
@@ -7469,7 +9973,7 @@ impl App {
         let selected_column = self.selected_column;
         let selected_component = self.selected_component;
         let preferred_insert_after = match row.kind {
-            NodeTreeKind::AlternatingItem { item_idx, .. } => Some(item_idx),
+            TreeRowKind::AlternatingItem { item_idx, .. } => Some(item_idx),
             _ => None,
         };
         let Some(page) = self.current_page_mut() else {
@@ -7494,10 +9998,10 @@ impl App {
                         alt.items.insert(
                             insert_idx,
                             crate::model::AlternatingItem {
-                                image: "https://dummyimage.com/600x400/000/fff".to_string(),
-                                image_alt: format!("Alternating image {}", next_num),
-                                title: format!("Alternating Item {}", next_num),
-                                copy: "Alternating content".to_string(),
+                                child_image_url: "https://dummyimage.com/600x400/000/fff".to_string(),
+                                child_image_alt: format!("Alternating image {}", next_num),
+                                child_title: format!("Alternating Item {}", next_num),
+                                child_copy: "Alternating content".to_string(),
                             },
                         );
                         (
@@ -7583,7 +10087,7 @@ impl App {
     }
 
     fn add_selected_card_item(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_page_tree_rows();
         if rows.is_empty() {
             self.status = "No selected section.".to_string();
             return;
@@ -7593,7 +10097,7 @@ impl App {
         let selected_column = self.selected_column;
         let selected_component = self.selected_component;
         let preferred_insert_after = match row.kind {
-            NodeTreeKind::CardItem { item_idx, .. } => Some(item_idx),
+            TreeRowKind::CardItem { item_idx, .. } => Some(item_idx),
             _ => None,
         };
         let Some(page) = self.current_page_mut() else {
@@ -7618,15 +10122,15 @@ impl App {
                         card.items.insert(
                             insert_idx,
                             crate::model::CardItem {
-                                card_image_url: "https://dummyimage.com/720x720/000/fff"
+                                child_image_url: "https://dummyimage.com/720x720/000/fff"
                                     .to_string(),
-                                card_image_alt: "Image alt text".to_string(),
-                                card_title: format!("Title {}", next_num),
-                                card_subtitle: "Subtitle".to_string(),
-                                card_copy: "Copy".to_string(),
-                                card_link_url: Some("/front".to_string()),
-                                card_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
-                                card_link_label: Some("Learn More".to_string()),
+                                child_image_alt: "Image alt text".to_string(),
+                                child_title: format!("Title {}", next_num),
+                                child_subtitle: "Subtitle".to_string(),
+                                child_copy: "Copy".to_string(),
+                                child_link_url: Some("/front".to_string()),
+                                child_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                                child_link_label: Some("Learn More".to_string()),
                             },
                         );
                         (
@@ -7651,7 +10155,7 @@ impl App {
     }
 
     fn remove_selected_card_item(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_page_tree_rows();
         if rows.is_empty() {
             self.status = "No selected section.".to_string();
             return;
@@ -7662,7 +10166,7 @@ impl App {
         let selected_component = self.selected_component;
         let selected_nested_item = self.selected_nested_item;
         let preferred_remove = match row.kind {
-            NodeTreeKind::CardItem { item_idx, .. } => Some(item_idx),
+            TreeRowKind::CardItem { item_idx, .. } => Some(item_idx),
             _ => None,
         };
         let Some(page) = self.current_page_mut() else {
@@ -7711,7 +10215,7 @@ impl App {
     }
 
     fn add_selected_filmstrip_item(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_page_tree_rows();
         if rows.is_empty() {
             self.status = "No selected section.".to_string();
             return;
@@ -7721,7 +10225,7 @@ impl App {
         let selected_column = self.selected_column;
         let selected_component = self.selected_component;
         let preferred_insert_after = match row.kind {
-            NodeTreeKind::FilmstripItem { item_idx, .. } => Some(item_idx),
+            TreeRowKind::FilmstripItem { item_idx, .. } => Some(item_idx),
             _ => None,
         };
         let Some(page) = self.current_page_mut() else {
@@ -7748,9 +10252,9 @@ impl App {
                         filmstrip.items.insert(
                             insert_idx,
                             crate::model::FilmstripItem {
-                                image_url: "https://dummyimage.com/256x256/000/fff".to_string(),
-                                image_alt: "Image alt text".to_string(),
-                                title: format!("Title {}", next_num),
+                                child_image_url: "https://dummyimage.com/256x256/000/fff".to_string(),
+                                child_image_alt: "Image alt text".to_string(),
+                                child_title: format!("Title {}", next_num),
                             },
                         );
                         (
@@ -7775,7 +10279,7 @@ impl App {
     }
 
     fn remove_selected_filmstrip_item(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_page_tree_rows();
         if rows.is_empty() {
             self.status = "No selected section.".to_string();
             return;
@@ -7786,7 +10290,7 @@ impl App {
         let selected_component = self.selected_component;
         let selected_nested_item = self.selected_nested_item;
         let preferred_remove = match row.kind {
-            NodeTreeKind::FilmstripItem { item_idx, .. } => Some(item_idx),
+            TreeRowKind::FilmstripItem { item_idx, .. } => Some(item_idx),
             _ => None,
         };
         let Some(page) = self.current_page_mut() else {
@@ -7840,7 +10344,7 @@ impl App {
     }
 
     fn add_selected_milestones_item(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_page_tree_rows();
         if rows.is_empty() {
             self.status = "No selected section.".to_string();
             return;
@@ -7850,7 +10354,7 @@ impl App {
         let selected_column = self.selected_column;
         let selected_component = self.selected_component;
         let preferred_insert_after = match row.kind {
-            NodeTreeKind::MilestonesItem { item_idx, .. } => Some(item_idx),
+            TreeRowKind::MilestonesItem { item_idx, .. } => Some(item_idx),
             _ => None,
         };
         let Some(page) = self.current_page_mut() else {
@@ -7908,7 +10412,7 @@ impl App {
     }
 
     fn remove_selected_milestones_item(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_page_tree_rows();
         if rows.is_empty() {
             self.status = "No selected section.".to_string();
             return;
@@ -7919,7 +10423,7 @@ impl App {
         let selected_component = self.selected_component;
         let selected_nested_item = self.selected_nested_item;
         let preferred_remove = match row.kind {
-            NodeTreeKind::MilestonesItem { item_idx, .. } => Some(item_idx),
+            TreeRowKind::MilestonesItem { item_idx, .. } => Some(item_idx),
             _ => None,
         };
         let Some(page) = self.current_page_mut() else {
@@ -7973,7 +10477,7 @@ impl App {
     }
 
     fn add_selected_slider_item(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_page_tree_rows();
         if rows.is_empty() {
             self.status = "No selected section.".to_string();
             return;
@@ -7983,7 +10487,7 @@ impl App {
         let selected_column = self.selected_column;
         let selected_component = self.selected_component;
         let preferred_insert_after = match row.kind {
-            NodeTreeKind::SliderItem { item_idx, .. } => Some(item_idx),
+            TreeRowKind::SliderItem { item_idx, .. } => Some(item_idx),
             _ => None,
         };
         let Some(page) = self.current_page_mut() else {
@@ -8040,7 +10544,7 @@ impl App {
     }
 
     fn remove_selected_slider_item(&mut self) {
-        let rows = self.build_node_tree_rows();
+        let rows = self.build_page_tree_rows();
         if rows.is_empty() {
             self.status = "No selected section.".to_string();
             return;
@@ -8051,7 +10555,7 @@ impl App {
         let selected_component = self.selected_component;
         let selected_nested_item = self.selected_nested_item;
         let preferred_remove = match row.kind {
-            NodeTreeKind::SliderItem { item_idx, .. } => Some(item_idx),
+            TreeRowKind::SliderItem { item_idx, .. } => Some(item_idx),
             _ => None,
         };
         let Some(page) = self.current_page_mut() else {
@@ -8132,6 +10636,12 @@ impl App {
     }
 
     fn add_column(&mut self) {
+        // Check if we're in Header mode
+        if self.selected_region == SelectedRegion::Header {
+            self.add_column_to_header_section();
+            return;
+        }
+
         self.mutate_selected_section(
             |section| {
                 normalize_section_columns(section);
@@ -8153,7 +10663,34 @@ impl App {
         self.selected_nested_item = 0;
     }
 
+    fn add_column_to_header_section(&mut self) {
+        if self.site.header.sections.is_empty() {
+            self.status = "No header section available. Add a section first with '/'.".to_string();
+            return;
+        }
+        let section_idx = self
+            .selected_header_section
+            .min(self.site.header.sections.len().saturating_sub(1));
+        let section = &mut self.site.header.sections[section_idx];
+        normalize_section_columns(section);
+        let next = section.columns.len() + 1;
+        section.columns.push(SectionColumn {
+            id: format!("column-{}", next),
+            width_class: "dd-u-1-1".to_string(),
+            components: Vec::new(),
+        });
+        self.selected_header_column = section.columns.len() - 1;
+        self.selected_header_component = 0;
+        self.status = format!("Added column to header section '{}'.", section.id);
+    }
+
     fn remove_selected_column(&mut self) {
+        // Check if we're in Header mode
+        if self.selected_region == SelectedRegion::Header {
+            self.remove_column_from_header_section();
+            return;
+        }
+
         let selected = self.selected_node;
         let selected_column = self.selected_column;
         let Some(page) = self.current_page_mut() else {
@@ -8188,7 +10725,51 @@ impl App {
         self.status = result.1;
     }
 
+    fn remove_column_from_header_section(&mut self) {
+        if self.site.header.sections.is_empty() {
+            self.status = "No header sections to modify.".to_string();
+            return;
+        }
+        let section_idx = self
+            .selected_header_section
+            .min(self.site.header.sections.len().saturating_sub(1));
+        let section = &mut self.site.header.sections[section_idx];
+        normalize_section_columns(section);
+        if section.columns.len() <= 1 {
+            self.status = "Header section must keep at least one column.".to_string();
+            return;
+        }
+        let ci = self.selected_header_column.min(section.columns.len() - 1);
+        section.columns.remove(ci);
+        self.selected_header_column = ci.min(section.columns.len() - 1);
+        self.selected_header_component = 0;
+        self.status = "Removed column from header section.".to_string();
+    }
+
     fn select_prev_column(&mut self) {
+        // Check if we're in Header mode
+        if self.selected_region == SelectedRegion::Header {
+            let total = match self.selected_header_section_column_total() {
+                Some(v) => v,
+                None => {
+                    self.status = "No header section selected.".to_string();
+                    return;
+                }
+            };
+            if total == 0 {
+                self.status = "Selected header section has no columns.".to_string();
+                return;
+            }
+            self.selected_header_column = self.selected_header_column.saturating_sub(1);
+            self.selected_header_component = 0;
+            self.status = format!(
+                "Selected header column {} of {}.",
+                self.selected_header_column + 1,
+                total
+            );
+            return;
+        }
+
         let total = match self.selected_section_column_total() {
             Some(v) => v,
             None => {
@@ -8207,6 +10788,29 @@ impl App {
     }
 
     fn select_next_column(&mut self) {
+        // Check if we're in Header mode
+        if self.selected_region == SelectedRegion::Header {
+            let total = match self.selected_header_section_column_total() {
+                Some(v) => v,
+                None => {
+                    self.status = "No header section selected.".to_string();
+                    return;
+                }
+            };
+            if total == 0 {
+                self.status = "Selected header section has no columns.".to_string();
+                return;
+            }
+            self.selected_header_column = (self.selected_header_column + 1).min(total - 1);
+            self.selected_header_component = 0;
+            self.status = format!(
+                "Selected header column {} of {}.",
+                self.selected_header_column + 1,
+                total
+            );
+            return;
+        }
+
         let total = match self.selected_section_column_total() {
             Some(v) => v,
             None => {
@@ -8224,7 +10828,43 @@ impl App {
         self.status = format!("Selected column {} of {}.", self.selected_column + 1, total);
     }
 
+    fn selected_header_section_column_total(&self) -> Option<usize> {
+        if self.site.header.sections.is_empty() {
+            return None;
+        }
+        let section_idx = self
+            .selected_header_section
+            .min(self.site.header.sections.len().saturating_sub(1));
+        Some(self.site.header.sections[section_idx].columns.len())
+    }
+
     fn move_selected_column_up(&mut self) {
+        // Check if we're in Header mode
+        if self.selected_region == SelectedRegion::Header {
+            if self.site.header.sections.is_empty() {
+                self.status = "No header sections to modify.".to_string();
+                return;
+            }
+            let section_idx = self
+                .selected_header_section
+                .min(self.site.header.sections.len().saturating_sub(1));
+            let section = &mut self.site.header.sections[section_idx];
+            normalize_section_columns(section);
+            if section.columns.len() < 2 {
+                self.status = "Need at least 2 columns.".to_string();
+                return;
+            }
+            let ci = self.selected_header_column.min(section.columns.len() - 1);
+            if ci == 0 {
+                self.status = "Column is already first.".to_string();
+                return;
+            }
+            section.columns.swap(ci, ci - 1);
+            self.selected_header_column = ci - 1;
+            self.status = "Moved header column up.".to_string();
+            return;
+        }
+
         let selected = self.selected_node;
         let selected_column = self.selected_column;
         let Some(page) = self.current_page_mut() else {
@@ -8261,6 +10901,32 @@ impl App {
     }
 
     fn move_selected_column_down(&mut self) {
+        // Check if we're in Header mode
+        if self.selected_region == SelectedRegion::Header {
+            if self.site.header.sections.is_empty() {
+                self.status = "No header sections to modify.".to_string();
+                return;
+            }
+            let section_idx = self
+                .selected_header_section
+                .min(self.site.header.sections.len().saturating_sub(1));
+            let section = &mut self.site.header.sections[section_idx];
+            normalize_section_columns(section);
+            if section.columns.len() < 2 {
+                self.status = "Need at least 2 columns.".to_string();
+                return;
+            }
+            let ci = self.selected_header_column.min(section.columns.len() - 1);
+            if ci + 1 >= section.columns.len() {
+                self.status = "Column is already last.".to_string();
+                return;
+            }
+            section.columns.swap(ci, ci + 1);
+            self.selected_header_column = ci + 1;
+            self.status = "Moved header column down.".to_string();
+            return;
+        }
+
         let selected = self.selected_node;
         let selected_column = self.selected_column;
         let Some(page) = self.current_page_mut() else {
@@ -8297,6 +10963,407 @@ impl App {
     }
 
     fn begin_edit_selected_component_primary(&mut self) {
+        let page = self.current_page();
+        if page.nodes.is_empty() {
+            self.status = "No nodes to edit.".to_string();
+            return;
+        }
+
+        let ni = self.selected_node.min(page.nodes.len() - 1);
+        let component_to_edit = match &page.nodes[ni] {
+            PageNode::Hero(_) => {
+                self.status = "Use Enter on hero node for multi-field editing.".to_string();
+                return;
+            }
+            PageNode::Section(section) => {
+                let columns = section_columns_ref(section);
+                let col_i = self.selected_column.min(columns.len().saturating_sub(1));
+                let components = &columns[col_i].components;
+                if let Some(ci) = component_index(components.len(), self.selected_component) {
+                    match &components[ci] {
+                        crate::model::SectionComponent::Banner(banner) => {
+                            let fields = vec![
+                                EditField {
+                                    label: "Banner Class".to_string(),
+                                    value: banner_class_to_str(banner.parent_class).to_string(),
+                                    buffer: banner_class_to_str(banner.parent_class).to_string(),
+                                    cursor: banner_class_to_str(banner.parent_class).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Data AOS".to_string(),
+                                    value: parent_data_aos_to_str(banner.parent_data_aos).to_string(),
+                                    buffer: parent_data_aos_to_str(banner.parent_data_aos).to_string(),
+                                    cursor: parent_data_aos_to_str(banner.parent_data_aos).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Image URL".to_string(),
+                                    value: banner.parent_image_url.clone(),
+                                    buffer: banner.parent_image_url.clone(),
+                                    cursor: banner.parent_image_url.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Image Alt".to_string(),
+                                    value: banner.parent_image_alt.clone(),
+                                    buffer: banner.parent_image_alt.clone(),
+                                    cursor: banner.parent_image_alt.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                            ];
+                            Some(EditModalState {
+                                title: "dd-banner".to_string(),
+                                fields,
+                                selected_field: 0,
+                                scroll_offset: 0,
+                                visible_fields: 6,
+                            })
+                        }
+                        crate::model::SectionComponent::Alert(alert) => {
+                            let fields = vec![
+                                EditField {
+                                    label: "Alert Type".to_string(),
+                                    value: alert_type_to_str(alert.parent_type).to_string(),
+                                    buffer: alert_type_to_str(alert.parent_type).to_string(),
+                                    cursor: alert_type_to_str(alert.parent_type).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Alert Class".to_string(),
+                                    value: alert_class_to_str(alert.parent_class).to_string(),
+                                    buffer: alert_class_to_str(alert.parent_class).to_string(),
+                                    cursor: alert_class_to_str(alert.parent_class).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Data AOS".to_string(),
+                                    value: parent_data_aos_to_str(alert.parent_data_aos).to_string(),
+                                    buffer: parent_data_aos_to_str(alert.parent_data_aos).to_string(),
+                                    cursor: parent_data_aos_to_str(alert.parent_data_aos).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Title".to_string(),
+                                    value: alert.parent_title.clone().unwrap_or_default(),
+                                    buffer: alert.parent_title.clone().unwrap_or_default(),
+                                    cursor: alert.parent_title.clone().unwrap_or_default().len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Copy".to_string(),
+                                    value: alert.parent_copy.clone(),
+                                    buffer: alert.parent_copy.clone(),
+                                    cursor: alert.parent_copy.len(),
+                                    is_multiline: true,
+                                    rows: 3, // textarea: 3 rows per dd-alert.md spec
+                                },
+                            ];
+                            Some(EditModalState {
+                                title: "dd-alert".to_string(),
+                                fields,
+                                selected_field: 0,
+                                scroll_offset: 0,
+                                visible_fields: 6,
+                            })
+                        }
+                        crate::model::SectionComponent::Cta(cta) => {
+                            let fields = vec![
+                                EditField {
+                                    label: "CTA Class".to_string(),
+                                    value: cta_class_to_str(cta.parent_class).to_string(),
+                                    buffer: cta_class_to_str(cta.parent_class).to_string(),
+                                    cursor: cta_class_to_str(cta.parent_class).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Data AOS".to_string(),
+                                    value: parent_data_aos_to_str(cta.parent_data_aos).to_string(),
+                                    buffer: parent_data_aos_to_str(cta.parent_data_aos).to_string(),
+                                    cursor: parent_data_aos_to_str(cta.parent_data_aos).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Image URL".to_string(),
+                                    value: cta.parent_image_url.clone(),
+                                    buffer: cta.parent_image_url.clone(),
+                                    cursor: cta.parent_image_url.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Image Alt".to_string(),
+                                    value: cta.parent_image_alt.clone(),
+                                    buffer: cta.parent_image_alt.clone(),
+                                    cursor: cta.parent_image_alt.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Title".to_string(),
+                                    value: cta.parent_title.clone(),
+                                    buffer: cta.parent_title.clone(),
+                                    cursor: cta.parent_title.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Subtitle".to_string(),
+                                    value: cta.parent_subtitle.clone(),
+                                    buffer: cta.parent_subtitle.clone(),
+                                    cursor: cta.parent_subtitle.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Copy".to_string(),
+                                    value: cta.parent_copy.clone(),
+                                    buffer: cta.parent_copy.clone(),
+                                    cursor: cta.parent_copy.len(),
+                                    is_multiline: true,
+                                    rows: 5, // textarea: 5 rows per dd-cta.md spec
+                                },
+                                EditField {
+                                    label: "Link URL".to_string(),
+                                    value: cta.parent_link_url.clone().unwrap_or_default(),
+                                    buffer: cta.parent_link_url.clone().unwrap_or_default(),
+                                    cursor: cta.parent_link_url.clone().unwrap_or_default().len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Link Target".to_string(),
+                                    value: cta
+                                        .parent_link_target
+                                        .map(child_link_target_to_str)
+                                        .unwrap_or("_self")
+                                        .to_string(),
+                                    buffer: cta
+                                        .parent_link_target
+                                        .map(child_link_target_to_str)
+                                        .unwrap_or("_self")
+                                        .to_string(),
+                                    cursor: cta
+                                        .parent_link_target
+                                        .map(child_link_target_to_str)
+                                        .unwrap_or("_self")
+                                        .len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Link Label".to_string(),
+                                    value: cta.parent_link_label.clone().unwrap_or_default(),
+                                    buffer: cta.parent_link_label.clone().unwrap_or_default(),
+                                    cursor: cta.parent_link_label.clone().unwrap_or_default().len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                            ];
+                            Some(EditModalState {
+                                title: "dd-cta".to_string(),
+                                fields,
+                                selected_field: 0,
+                                scroll_offset: 0,
+                                visible_fields: 6,
+                            })
+                        }
+                        crate::model::SectionComponent::Blockquote(blockquote) => {
+                            let fields = vec![
+                                EditField {
+                                    label: "Data AOS".to_string(),
+                                    value: parent_data_aos_to_str(blockquote.parent_data_aos)
+                                        .to_string(),
+                                    buffer: parent_data_aos_to_str(blockquote.parent_data_aos)
+                                        .to_string(),
+                                    cursor: parent_data_aos_to_str(blockquote.parent_data_aos).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Image URL".to_string(),
+                                    value: blockquote.parent_image_url.clone(),
+                                    buffer: blockquote.parent_image_url.clone(),
+                                    cursor: blockquote.parent_image_url.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Image Alt".to_string(),
+                                    value: blockquote.parent_image_alt.clone(),
+                                    buffer: blockquote.parent_image_alt.clone(),
+                                    cursor: blockquote.parent_image_alt.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Person Name".to_string(),
+                                    value: blockquote.parent_name.clone(),
+                                    buffer: blockquote.parent_name.clone(),
+                                    cursor: blockquote.parent_name.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Person Title".to_string(),
+                                    value: blockquote.parent_role.clone(),
+                                    buffer: blockquote.parent_role.clone(),
+                                    cursor: blockquote.parent_role.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Copy".to_string(),
+                                    value: blockquote.parent_copy.clone(),
+                                    buffer: blockquote.parent_copy.clone(),
+                                    cursor: blockquote.parent_copy.len(),
+                                    is_multiline: true,
+                                    rows: 5, // textarea: 5 rows per dd-blockquote.md spec
+                                },
+                            ];
+                            Some(EditModalState {
+                                title: "dd-blockquote".to_string(),
+                                fields,
+                                selected_field: 0,
+                                scroll_offset: 0,
+                                visible_fields: 6,
+                            })
+                        }
+                        crate::model::SectionComponent::Modal(modal) => {
+                            let fields = vec![
+                                EditField {
+                                    label: "Title".to_string(),
+                                    value: modal.parent_title.clone(),
+                                    buffer: modal.parent_title.clone(),
+                                    cursor: modal.parent_title.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Copy".to_string(),
+                                    value: modal.parent_copy.clone(),
+                                    buffer: modal.parent_copy.clone(),
+                                    cursor: modal.parent_copy.len(),
+                                    is_multiline: true,
+                                    rows: 5, // textarea: 5 rows per dd-modal.md spec
+                                },
+                            ];
+                            Some(EditModalState {
+                                title: "dd-modal".to_string(),
+                                fields,
+                                selected_field: 0,
+                                scroll_offset: 0,
+                                visible_fields: 6,
+                            })
+                        }
+                        crate::model::SectionComponent::Filmstrip(filmstrip) => {
+                            let fields = vec![
+                                EditField {
+                                    label: "Filmstrip Type".to_string(),
+                                    value: filmstrip_type_to_str(filmstrip.parent_type)
+                                        .to_string(),
+                                    buffer: filmstrip_type_to_str(filmstrip.parent_type)
+                                        .to_string(),
+                                    cursor: filmstrip_type_to_str(filmstrip.parent_type).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Data AOS".to_string(),
+                                    value: parent_data_aos_to_str(filmstrip.parent_data_aos)
+                                        .to_string(),
+                                    buffer: parent_data_aos_to_str(filmstrip.parent_data_aos)
+                                        .to_string(),
+                                    cursor: parent_data_aos_to_str(filmstrip.parent_data_aos).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                            ];
+                            Some(EditModalState {
+                                title: "dd-filmstrip".to_string(),
+                                fields,
+                                selected_field: 0,
+                                scroll_offset: 0,
+                                visible_fields: 6,
+                            })
+                        }
+                        crate::model::SectionComponent::Accordion(accordion) => {
+                            let fields = vec![
+                                EditField {
+                                    label: "Accordion Type".to_string(),
+                                    value: accordion_type_to_str(accordion.parent_type)
+                                        .to_string(),
+                                    buffer: accordion_type_to_str(accordion.parent_type)
+                                        .to_string(),
+                                    cursor: accordion_type_to_str(accordion.parent_type).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Accordion Class".to_string(),
+                                    value: accordion_class_to_str(accordion.parent_class)
+                                        .to_string(),
+                                    buffer: accordion_class_to_str(accordion.parent_class)
+                                        .to_string(),
+                                    cursor: accordion_class_to_str(accordion.parent_class).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Data AOS".to_string(),
+                                    value: parent_data_aos_to_str(accordion.parent_data_aos).to_string(),
+                                    buffer: parent_data_aos_to_str(accordion.parent_data_aos).to_string(),
+                                    cursor: parent_data_aos_to_str(accordion.parent_data_aos).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Group Name".to_string(),
+                                    value: accordion.parent_group_name.clone(),
+                                    buffer: accordion.parent_group_name.clone(),
+                                    cursor: accordion.parent_group_name.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                            ];
+                            Some(EditModalState {
+                                title: "dd-accordion".to_string(),
+                                fields,
+                                selected_field: 0,
+                                scroll_offset: 0,
+                                visible_fields: 6,
+                            })
+                        }
+                        _ => {
+                            // Fall back to single-field editing for components with collection items
+                            return self.begin_edit_selected_component_single_field();
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+        };
+
+        if let Some(modal) = component_to_edit {
+            self.edit_modal = Some(modal);
+            self.status = "Multi-field edit: Tab/Up/Down to navigate, type to edit, Ctrl+S to save, Esc to cancel.".to_string();
+        } else {
+            self.status = "No component selected.".to_string();
+        }
+    }
+
+    fn begin_edit_selected_component_single_field(&mut self) {
         let selected = {
             let page = self.current_page();
             if page.nodes.is_empty() {
@@ -8312,21 +11379,17 @@ impl App {
                         if let Some(ci) = component_index(components.len(), self.selected_component)
                         {
                             match &components[ci] {
-                                crate::model::SectionComponent::Banner(banner) => Some((
-                                    InputMode::EditBannerClass,
-                                    banner_class_to_str(banner.banner_class).to_string(),
-                                )),
                                 crate::model::SectionComponent::Cta(cta) => Some((
                                     InputMode::EditCtaClass,
-                                    cta_class_to_str(cta.cta_class).to_string(),
+                                    cta_class_to_str(cta.parent_class).to_string(),
                                 )),
                                 crate::model::SectionComponent::Filmstrip(filmstrip) => Some((
                                     InputMode::EditFilmstripType,
-                                    filmstrip_type_to_str(filmstrip.filmstrip_type).to_string(),
+                                    filmstrip_type_to_str(filmstrip.parent_type).to_string(),
                                 )),
                                 crate::model::SectionComponent::Milestones(milestones) => Some((
                                     InputMode::EditMilestonesDataAos,
-                                    hero_aos_to_str(milestones.parent_data_aos).to_string(),
+                                    parent_data_aos_to_str(milestones.parent_data_aos).to_string(),
                                 )),
                                 crate::model::SectionComponent::Modal(modal) => {
                                     Some((InputMode::EditModalTitle, modal.parent_title.clone()))
@@ -8336,20 +11399,21 @@ impl App {
                                 }
                                 crate::model::SectionComponent::Card(card) => Some((
                                     InputMode::EditCardType,
-                                    card_type_to_str(card.card_type).to_string(),
+                                    card_type_to_str(card.parent_type).to_string(),
                                 )),
                                 crate::model::SectionComponent::Accordion(acc) => Some((
                                     InputMode::EditAccordionType,
-                                    accordion_type_to_str(acc.accordion_type).to_string(),
+                                    accordion_type_to_str(acc.parent_type).to_string(),
                                 )),
                                 crate::model::SectionComponent::Blockquote(v) => Some((
                                     InputMode::EditBlockquoteDataAos,
-                                    hero_aos_to_str(v.blockquote_data_aos).to_string(),
+                                    parent_data_aos_to_str(v.parent_data_aos).to_string(),
                                 )),
                                 crate::model::SectionComponent::Alternating(alt) => Some((
                                     InputMode::EditAlternatingType,
-                                    alternating_type_to_str(alt.alternating_type).to_string(),
+                                    alternating_type_to_str(alt.parent_type).to_string(),
                                 )),
+                                _ => None,
                             }
                         } else {
                             None
@@ -8360,62 +11424,16 @@ impl App {
         };
 
         let Some((mode, value)) = selected else {
-            self.status =
-                "Primary edit supports cta/filmstrip/milestones/modal/slider/banner/card/blockquote/accordion/alternating."
-                    .to_string();
+            self.status = "Component editing not available for this type.".to_string();
             return;
         };
         self.input_mode = Some(mode);
         self.input_buffer = value;
         self.input_cursor = self.input_buffer.chars().count();
-        self.status = match mode {
-            InputMode::EditBannerClass => {
-                "Editing dd-banner class. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditCtaClass => {
-                "Editing dd-cta class. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditFilmstripType => {
-                "Editing dd-filmstrip type. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditMilestonesDataAos => {
-                "Editing dd-milestones parent_data_aos. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditModalTitle => {
-                "Editing dd-modal parent_title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditSliderTitle => {
-                "Editing dd-slider parent_title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAccordionType => {
-                "Editing dd-accordion type. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAccordionClass => {
-                "Editing dd-accordion class. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAccordionAos => {
-                "Editing dd-accordion data-aos. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAccordionGroupName => {
-                "Editing dd-accordion group name. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAccordionFirstTitle => {
-                "Editing dd-accordion first title. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditBlockquoteDataAos => {
-                "Editing dd-blockquote data-aos. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditCardType => {
-                "Editing dd-card type. Enter to save, esc to cancel.".to_string()
-            }
-            InputMode::EditAlternatingType => {
-                "Editing dd-alternating type. Enter to save, esc to cancel.".to_string()
-            }
-            _ => "Editing component value.".to_string(),
-        };
+        self.status = "Single-field edit: Enter to save, Esc to cancel.".to_string();
     }
 
-    fn selected_section_column_total(&self) -> Option<usize> {
+    fn selected_section_column_total(&mut self) -> Option<usize> {
         let page = self.current_page();
         if page.nodes.is_empty() {
             return None;
@@ -8460,44 +11478,17 @@ fn component_index(total: usize, selected_component: usize) -> Option<usize> {
 }
 
 fn section_columns_ref(section: &crate::model::DdSection) -> Vec<SectionColumn> {
-    if !section.columns.is_empty() {
-        section.columns.clone()
-    } else {
-        vec![SectionColumn {
-            id: format!("{}-legacy-column", section.id),
-            width_class: "dd-u-1-1".to_string(),
-            components: section.components.clone(),
-        }]
-    }
+    section.columns.clone()
 }
 
 fn normalize_section_columns(section: &mut crate::model::DdSection) {
     if section.columns.is_empty() {
-        let legacy = std::mem::take(&mut section.components);
         section.columns.push(SectionColumn {
             id: "column-1".to_string(),
             width_class: "dd-u-1-1".to_string(),
-            components: legacy,
+            components: Vec::new(),
         });
     }
-}
-
-fn pull_selected_column_into_legacy_components(
-    section: &mut crate::model::DdSection,
-    selected_column: usize,
-) {
-    normalize_section_columns(section);
-    let col_i = selected_column.min(section.columns.len().saturating_sub(1));
-    section.components = section.columns[col_i].components.clone();
-}
-
-fn push_legacy_components_into_selected_column(
-    section: &mut crate::model::DdSection,
-    selected_column: usize,
-) {
-    normalize_section_columns(section);
-    let col_i = selected_column.min(section.columns.len().saturating_sub(1));
-    section.columns[col_i].components = section.components.clone();
 }
 
 fn nested_index(total: usize, selected_nested_item: usize) -> Option<usize> {
@@ -8673,6 +11664,91 @@ fn section_ascii_map(
     out.join("\n")
 }
 
+fn header_ascii_map(
+    header: &crate::model::DdHeader,
+    selected_section: usize,
+    selected_column: usize,
+    panel_width: usize,
+) -> String {
+    let inner_width = panel_width.saturating_sub(4).max(12);
+
+    let mut lines = vec![
+        fit_ascii_cell("HEADER", inner_width),
+        fit_ascii_cell(&format!("id: {}", header.id), inner_width),
+        fit_ascii_cell(
+            &format!(
+                "custom_css: {}",
+                header.custom_css.as_deref().unwrap_or("(none)")
+            ),
+            inner_width,
+        ),
+        fit_ascii_cell(
+            &format!(
+                "alert: {}",
+                if header.alert.is_some() { "yes" } else { "(none)" }
+            ),
+            inner_width,
+        ),
+        fit_ascii_cell("sections:", inner_width),
+    ];
+
+    if header.sections.is_empty() {
+        lines.push(fit_ascii_cell(
+            "(no sections - press '/' to add)",
+            inner_width,
+        ));
+    } else {
+        let active_section = selected_section.min(header.sections.len().saturating_sub(1));
+        for (s_idx, section) in header.sections.iter().enumerate() {
+            let s_marker = if s_idx == active_section { "*" } else { "-" };
+            lines.push(fit_ascii_cell(
+                &format!("{s_marker} section: {}", section.id),
+                inner_width,
+            ));
+
+            if section.columns.is_empty() {
+                lines.push(fit_ascii_cell("    (no columns)", inner_width));
+            } else {
+                let active_col = if s_idx == active_section {
+                    selected_column.min(section.columns.len().saturating_sub(1))
+                } else {
+                    0
+                };
+                for (c_idx, col) in section.columns.iter().enumerate() {
+                    let c_marker = if s_idx == active_section && c_idx == active_col {
+                        "*"
+                    } else {
+                        "-"
+                    };
+                    lines.push(fit_ascii_cell(
+                        &format!("    {c_marker} column: {} [{}]", col.id, col.width_class),
+                        inner_width,
+                    ));
+                    if col.components.is_empty() {
+                        lines.push(fit_ascii_cell("        (empty)", inner_width));
+                    } else {
+                        for comp in col.components.iter() {
+                            lines.push(fit_ascii_cell(
+                                &format!("        - {}", component_label(comp)),
+                                inner_width,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let border = format!("+{}+", "-".repeat(inner_width + 2));
+    let mut out = Vec::new();
+    out.push(border.clone());
+    for line in lines {
+        out.push(format!("| {} |", line));
+    }
+    out.push(border);
+    out.join("\n")
+}
+
 fn card_items_ascii_lines(
     card: &crate::model::DdCard,
     container_inner_width: usize,
@@ -8681,7 +11757,7 @@ fn card_items_ascii_lines(
         return vec![fit_ascii_cell("(empty)", container_inner_width)];
     }
 
-    let child_inner_width = section_item_ascii_inner_width(&card.card_width, container_inner_width)
+    let child_inner_width = section_item_ascii_inner_width(&card.parent_width, container_inner_width)
         .min(container_inner_width.saturating_sub(6))
         .max(10);
     let child_border = format!("+{}+", "-".repeat(child_inner_width + 2));
@@ -8699,7 +11775,7 @@ fn card_items_ascii_lines(
                 ),
                 format!(
                     "| {} |",
-                    fit_ascii_cell(&format!("title: {}", item.card_title), child_inner_width)
+                    fit_ascii_cell(&format!("title: {}", item.child_title), child_inner_width)
                 ),
                 child_border.clone(),
             ]
@@ -8886,7 +11962,7 @@ fn hero_ascii_map(hero: &crate::model::DdHero, panel_width: usize) -> String {
             &format!(
                 "class: {}",
                 hero_image_class_to_str(
-                    hero.hero_class
+                    hero.parent_class
                         .unwrap_or(crate::model::HeroImageClass::FullFull)
                 ),
             ),
@@ -8895,36 +11971,36 @@ fn hero_ascii_map(hero: &crate::model::DdHero, panel_width: usize) -> String {
         fit_ascii_cell(
             &format!(
                 "aos: {}",
-                hero_aos_to_str(hero.hero_aos.unwrap_or(crate::model::HeroAos::FadeIn))
+                parent_data_aos_to_str(hero.parent_data_aos.unwrap_or(crate::model::HeroAos::FadeIn))
             ),
             inner_width,
         ),
         fit_ascii_cell(
             &format!(
                 "custom_css: {}",
-                hero.custom_css.as_deref().unwrap_or("(none)")
+                hero.parent_custom_css.as_deref().unwrap_or("(none)")
             ),
             inner_width,
         ),
-        fit_ascii_cell(&format!("title: {}", hero.title), inner_width),
-        fit_ascii_cell(&format!("subtitle: {}", hero.subtitle), inner_width),
+        fit_ascii_cell(&format!("title: {}", hero.parent_title), inner_width),
+        fit_ascii_cell(&format!("subtitle: {}", hero.parent_subtitle), inner_width),
         fit_ascii_cell(
             &format!(
                 "cta: {} -> {}",
-                hero.cta_text.as_deref().unwrap_or("(none)"),
-                hero.cta_link.as_deref().unwrap_or("(none)")
+                hero.link_1_label.as_deref().unwrap_or("(none)"),
+                hero.link_1_url.as_deref().unwrap_or("(none)")
             ),
             inner_width,
         ),
         fit_ascii_cell(
             &format!(
                 "cta_2: {} -> {}",
-                hero.cta_text_2.as_deref().unwrap_or("(none)"),
-                hero.cta_link_2.as_deref().unwrap_or("(none)")
+                hero.link_2_label.as_deref().unwrap_or("(none)"),
+                hero.link_2_url.as_deref().unwrap_or("(none)")
             ),
             inner_width,
         ),
-        fit_ascii_cell(&format!("image: {}", hero.image), inner_width),
+        fit_ascii_cell(&format!("image: {}", hero.parent_image_url), inner_width),
     ];
     let mut out = Vec::new();
     out.push(border.clone());
@@ -9138,14 +12214,14 @@ fn next_filmstrip_type(
     all[next_idx]
 }
 
-fn card_link_target_to_str(v: crate::model::CardLinkTarget) -> &'static str {
+fn child_link_target_to_str(v: crate::model::CardLinkTarget) -> &'static str {
     match v {
         crate::model::CardLinkTarget::SelfTarget => "_self",
         crate::model::CardLinkTarget::Blank => "_blank",
     }
 }
 
-fn parse_card_link_target(raw: &str) -> Option<crate::model::CardLinkTarget> {
+fn parse_child_link_target(raw: &str) -> Option<crate::model::CardLinkTarget> {
     match raw.trim() {
         "_self" => Some(crate::model::CardLinkTarget::SelfTarget),
         "_blank" => Some(crate::model::CardLinkTarget::Blank),
@@ -9153,7 +12229,7 @@ fn parse_card_link_target(raw: &str) -> Option<crate::model::CardLinkTarget> {
     }
 }
 
-fn next_card_link_target(
+fn next_child_link_target(
     current: crate::model::CardLinkTarget,
     forward: bool,
 ) -> crate::model::CardLinkTarget {
@@ -9284,6 +12360,76 @@ fn next_accordion_class(
     all[next_idx]
 }
 
+fn alert_type_to_str(v: crate::model::AlertType) -> &'static str {
+    match v {
+        crate::model::AlertType::Default => "-default",
+        crate::model::AlertType::Info => "-info",
+        crate::model::AlertType::Warning => "-warning",
+        crate::model::AlertType::Error => "-error",
+        crate::model::AlertType::Success => "-success",
+    }
+}
+
+fn parse_alert_type(raw: &str) -> Option<crate::model::AlertType> {
+    match raw.trim() {
+        "-default" => Some(crate::model::AlertType::Default),
+        "-info" => Some(crate::model::AlertType::Info),
+        "-warning" => Some(crate::model::AlertType::Warning),
+        "-error" => Some(crate::model::AlertType::Error),
+        "-success" => Some(crate::model::AlertType::Success),
+        _ => None,
+    }
+}
+
+fn next_alert_type(current: crate::model::AlertType, forward: bool) -> crate::model::AlertType {
+    use crate::model::AlertType;
+    let all = [
+        AlertType::Default,
+        AlertType::Info,
+        AlertType::Warning,
+        AlertType::Error,
+        AlertType::Success,
+    ];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
+}
+
+fn alert_class_to_str(v: crate::model::AlertClass) -> &'static str {
+    match v {
+        crate::model::AlertClass::Default => "-default",
+        crate::model::AlertClass::Compact => "-compact",
+    }
+}
+
+fn parse_alert_class(raw: &str) -> Option<crate::model::AlertClass> {
+    match raw.trim() {
+        "-default" => Some(crate::model::AlertClass::Default),
+        "-compact" => Some(crate::model::AlertClass::Compact),
+        _ => None,
+    }
+}
+
+fn next_alert_class(current: crate::model::AlertClass, forward: bool) -> crate::model::AlertClass {
+    use crate::model::AlertClass;
+    let all = [AlertClass::Default, AlertClass::Compact];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next_idx = if forward {
+        (idx + 1) % all.len()
+    } else if idx == 0 {
+        all.len() - 1
+    } else {
+        idx - 1
+    };
+    all[next_idx]
+}
+
 fn next_section_class(
     current: crate::model::SectionClass,
     forward: bool,
@@ -9386,19 +12532,25 @@ fn component_label(component: &crate::model::SectionComponent) -> &'static str {
         crate::model::SectionComponent::Blockquote(_) => "dd-blockquote",
         crate::model::SectionComponent::Accordion(_) => "dd-accordion",
         crate::model::SectionComponent::Alternating(_) => "dd-alternating",
+        crate::model::SectionComponent::Alert(_) => "dd-alert",
+        crate::model::SectionComponent::Image(_) => "dd-image",
+        crate::model::SectionComponent::RichText(_) => "dd-rich_text",
+        crate::model::SectionComponent::Navigation(_) => "dd-navigation",
+        crate::model::SectionComponent::HeaderSearch(_) => "dd-header-search",
+        crate::model::SectionComponent::HeaderMenu(_) => "dd-header-menu",
     }
 }
 
 fn component_blueprint_label(component: &crate::model::SectionComponent) -> String {
     match component {
         crate::model::SectionComponent::Cta(v) => {
-            format!("dd-cta | cta_title: {}", v.cta_title)
+            format!("dd-cta | parent_title: {}", v.parent_title)
         }
         crate::model::SectionComponent::Filmstrip(v) => format!(
             "dd-filmstrip | child_title: {}",
             v.items
                 .first()
-                .map(|i| i.title.as_str())
+                .map(|i| i.child_title.as_str())
                 .unwrap_or("(none)")
         ),
         crate::model::SectionComponent::Milestones(v) => format!(
@@ -9422,26 +12574,26 @@ fn component_blueprint_label(component: &crate::model::SectionComponent) -> Stri
             "dd-accordion | accordion_title: {}",
             v.items
                 .first()
-                .map(|i| i.title.as_str())
+                .map(|i| i.child_title.as_str())
                 .unwrap_or("(none)")
         ),
         crate::model::SectionComponent::Alternating(v) => format!(
             "dd-alternating | alternating_title: {}",
             v.items
                 .first()
-                .map(|i| i.title.as_str())
+                .map(|i| i.child_title.as_str())
                 .unwrap_or("(none)")
         ),
         crate::model::SectionComponent::Card(v) => format!(
-            "dd-card | card_title: {}",
+            "dd-card | child_title: {}",
             v.items
                 .first()
-                .map(|i| i.card_title.as_str())
+                .map(|i| i.child_title.as_str())
                 .unwrap_or("(none)")
         ),
         crate::model::SectionComponent::Blockquote(v) => format!(
-            "dd-blockquote | blockquote_persons_name: {} | blockquote_persons_title: {}",
-            v.blockquote_persons_name, v.blockquote_persons_title
+            "dd-blockquote | parent_name: {} | parent_role: {}",
+            v.parent_name, v.parent_role
         ),
         _ => component_label(component).to_string(),
     }
@@ -9453,19 +12605,19 @@ fn component_form(
 ) -> String {
     match component {
         crate::model::SectionComponent::Cta(v) => format!(
-            "fields:\n  cta.class: {}\n  cta_image_url: {}\n  cta_image_alt: {}\n  cta.data_aos: {}\n  cta_title: {}\n  cta_subtitle: {}\n  cta_copy: {}\n  cta_link_url: {}\n  cta_link_target: {}\n  cta_link_label: {}",
-            cta_class_to_str(v.cta_class),
-            v.cta_image_url,
-            v.cta_image_alt,
-            hero_aos_to_str(v.cta_data_aos),
-            v.cta_title,
-            v.cta_subtitle,
-            v.cta_copy,
-            v.cta_link_url.as_deref().unwrap_or("(none)"),
-            v.cta_link_target
-                .map(card_link_target_to_str)
+            "fields:\n  cta.class: {}\n  parent_image_url: {}\n  parent_image_alt: {}\n  cta.data_aos: {}\n  parent_title: {}\n  parent_subtitle: {}\n  parent_copy: {}\n  parent_link_url: {}\n  parent_link_target: {}\n  parent_link_label: {}",
+            cta_class_to_str(v.parent_class),
+            v.parent_image_url,
+            v.parent_image_alt,
+            parent_data_aos_to_str(v.parent_data_aos),
+            v.parent_title,
+            v.parent_subtitle,
+            v.parent_copy,
+            v.parent_link_url.as_deref().unwrap_or("(none)"),
+            v.parent_link_target
+                .map(child_link_target_to_str)
                 .unwrap_or("_self"),
-            v.cta_link_label.as_deref().unwrap_or("(none)")
+            v.parent_link_label.as_deref().unwrap_or("(none)")
         ),
         crate::model::SectionComponent::Filmstrip(v) => {
             let active = nested_index(v.items.len(), selected_nested_item)
@@ -9475,12 +12627,12 @@ fn component_form(
                 nested_index(v.items.len(), selected_nested_item).and_then(|i| v.items.get(i));
             format!(
                 "fields:\n  parent_type: {}\n  parent_data_aos: {}\n  active_item: {}\n  child_image_url: {}\n  child_image_alt: {}\n  child_title: {}",
-                filmstrip_type_to_str(v.filmstrip_type),
-                hero_aos_to_str(v.filmstrip_data_aos),
+                filmstrip_type_to_str(v.parent_type),
+                parent_data_aos_to_str(v.parent_data_aos),
                 active,
-                item.map(|i| i.image_url.as_str()).unwrap_or("(none)"),
-                item.map(|i| i.image_alt.as_str()).unwrap_or("(none)"),
-                item.map(|i| i.title.as_str()).unwrap_or("(none)")
+                item.map(|i| i.child_image_url.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.child_image_alt.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.child_title.as_str()).unwrap_or("(none)")
             )
         }
         crate::model::SectionComponent::Milestones(v) => {
@@ -9491,7 +12643,7 @@ fn component_form(
                 nested_index(v.items.len(), selected_nested_item).and_then(|i| v.items.get(i));
             format!(
                 "fields:\n  parent_data_aos: {}\n  parent_width: {}\n  active_item: {}\n  child_percentage: {}\n  child_title: {}\n  child_subtitle: {}\n  child_copy: {}\n  child_link_url: {}\n  child_link_target: {}\n  child_link_label: {}",
-                hero_aos_to_str(v.parent_data_aos),
+                parent_data_aos_to_str(v.parent_data_aos),
                 v.parent_width,
                 active,
                 item.map(|i| i.child_percentage.as_str())
@@ -9502,7 +12654,7 @@ fn component_form(
                 item.and_then(|i| i.child_link_url.as_deref())
                     .unwrap_or("(none)"),
                 item.and_then(|i| i.child_link_target)
-                    .map(card_link_target_to_str)
+                    .map(child_link_target_to_str)
                     .unwrap_or("_self"),
                 item.and_then(|i| i.child_link_label.as_deref())
                     .unwrap_or("(none)")
@@ -9523,7 +12675,7 @@ fn component_form(
                 item.and_then(|i| i.child_link_url.as_deref())
                     .unwrap_or("(none)"),
                 item.and_then(|i| i.child_link_target)
-                    .map(card_link_target_to_str)
+                    .map(child_link_target_to_str)
                     .unwrap_or("_self"),
                 item.and_then(|i| i.child_link_label.as_deref())
                     .unwrap_or("(none)"),
@@ -9536,11 +12688,11 @@ fn component_form(
             v.parent_title, v.parent_copy
         ),
         crate::model::SectionComponent::Banner(v) => format!(
-            "fields:\n  banner.class: {}\n  banner.data_aos: {}\n  banner_image_url: {}\n  banner_image_alt: {}",
-            banner_class_to_str(v.banner_class),
-            hero_aos_to_str(v.banner_data_aos),
-            v.banner_image_url,
-            v.banner_image_alt
+            "fields:\n  banner.class: {}\n  banner.data_aos: {}\n  parent_image_url: {}\n  parent_image_alt: {}",
+            banner_class_to_str(v.parent_class),
+            parent_data_aos_to_str(v.parent_data_aos),
+            v.parent_image_url,
+            v.parent_image_alt
         ),
         crate::model::SectionComponent::Accordion(v) => {
             let active = nested_index(v.items.len(), selected_nested_item)
@@ -9548,31 +12700,31 @@ fn component_form(
                 .unwrap_or(0);
             let title = nested_index(v.items.len(), selected_nested_item)
                 .and_then(|i| v.items.get(i))
-                .map(|i| i.title.as_str())
+                .map(|i| i.child_title.as_str())
                 .unwrap_or("(none)");
             let content = nested_index(v.items.len(), selected_nested_item)
                 .and_then(|i| v.items.get(i))
-                .map(|i| i.content.as_str())
+                .map(|i| i.child_copy.as_str())
                 .unwrap_or("(none)");
             format!(
-                "fields:\n  accordion_type: {}\n  accordion.class: {}\n  accordion.data_aos: {}\n  accordion.group_name: {}\n  active_item: {}\n  accordion_title: {}\n  accordion_copy: {}",
-                accordion_type_to_str(v.accordion_type),
-                accordion_class_to_str(v.accordion_class),
-                hero_aos_to_str(v.accordion_aos),
-                v.group_name,
+                "fields:\n  parent_type: {}\n  accordion.class: {}\n  accordion.data_aos: {}\n  accordion.parent_group_name: {}\n  active_item: {}\n  accordion_title: {}\n  accordion_copy: {}",
+                accordion_type_to_str(v.parent_type),
+                accordion_class_to_str(v.parent_class),
+                parent_data_aos_to_str(v.parent_data_aos),
+                v.parent_group_name,
                 active,
                 title,
                 content
             )
         }
         crate::model::SectionComponent::Blockquote(v) => format!(
-            "fields:\n  blockquote_data_aos: {}\n  blockquote_image_url: {}\n  blockquote_image_alt: {}\n  blockquote_persons_name: {}\n  blockquote_persons_title: {}\n  blockquote_copy: {}",
-            hero_aos_to_str(v.blockquote_data_aos),
-            v.blockquote_image_url,
-            v.blockquote_image_alt,
-            v.blockquote_persons_name,
-            v.blockquote_persons_title,
-            v.blockquote_copy
+            "fields:\n  parent_data_aos: {}\n  parent_image_url: {}\n  parent_image_alt: {}\n  parent_name: {}\n  parent_role: {}\n  parent_copy: {}",
+            parent_data_aos_to_str(v.parent_data_aos),
+            v.parent_image_url,
+            v.parent_image_alt,
+            v.parent_name,
+            v.parent_role,
+            v.parent_copy
         ),
         crate::model::SectionComponent::Alternating(v) => {
             let active = nested_index(v.items.len(), selected_nested_item)
@@ -9580,25 +12732,25 @@ fn component_form(
                 .unwrap_or(0);
             let image = nested_index(v.items.len(), selected_nested_item)
                 .and_then(|i| v.items.get(i))
-                .map(|i| i.image.as_str())
+                .map(|i| i.child_image_url.as_str())
                 .unwrap_or("(none)");
             let image_alt = nested_index(v.items.len(), selected_nested_item)
                 .and_then(|i| v.items.get(i))
-                .map(|i| i.image_alt.as_str())
+                .map(|i| i.child_image_alt.as_str())
                 .unwrap_or("(none)");
             let title = nested_index(v.items.len(), selected_nested_item)
                 .and_then(|i| v.items.get(i))
-                .map(|i| i.title.as_str())
+                .map(|i| i.child_title.as_str())
                 .unwrap_or("(none)");
             let copy = nested_index(v.items.len(), selected_nested_item)
                 .and_then(|i| v.items.get(i))
-                .map(|i| i.copy.as_str())
+                .map(|i| i.child_copy.as_str())
                 .unwrap_or("(none)");
             format!(
-                "fields:\n  alternating_type: {}\n  alternating.class: {}\n  alternating.data_aos: {}\n  active_item: {}\n  alternating_image: {}\n  alternating_image_alt: {}\n  alternating_title: {}\n  alternating_copy: {}",
-                alternating_type_to_str(v.alternating_type),
-                v.alternating_class,
-                hero_aos_to_str(v.alternating_data_aos),
+                "fields:\n  parent_type: {}\n  alternating.class: {}\n  alternating.data_aos: {}\n  active_item: {}\n  alternating_image: {}\n  alternating_image_alt: {}\n  alternating_title: {}\n  alternating_copy: {}",
+                alternating_type_to_str(v.parent_type),
+                v.parent_class,
+                parent_data_aos_to_str(v.parent_data_aos),
                 active,
                 image,
                 image_alt,
@@ -9613,25 +12765,67 @@ fn component_form(
             let item =
                 nested_index(v.items.len(), selected_nested_item).and_then(|i| v.items.get(i));
             format!(
-                "fields:\n  card_type: {}\n  card_data_aos: {}\n  card_width: {}\n  active_item: {}\n  card_image_url: {}\n  card_image_alt: {}\n  card_title: {}\n  card_subtitle: {}\n  card_copy: {}\n  card_link_url: {}\n  card_link_target: {}\n  card_link_label: {}",
-                card_type_to_str(v.card_type),
-                hero_aos_to_str(v.card_data_aos),
-                v.card_width,
+                "fields:\n  parent_type: {}\n  parent_data_aos: {}\n  parent_width: {}\n  active_item: {}\n  child_image_url: {}\n  child_image_alt: {}\n  child_title: {}\n  child_subtitle: {}\n  child_copy: {}\n  child_link_url: {}\n  child_link_target: {}\n  child_link_label: {}",
+                card_type_to_str(v.parent_type),
+                parent_data_aos_to_str(v.parent_data_aos),
+                v.parent_width,
                 active,
-                item.map(|i| i.card_image_url.as_str()).unwrap_or("(none)"),
-                item.map(|i| i.card_image_alt.as_str()).unwrap_or("(none)"),
-                item.map(|i| i.card_title.as_str()).unwrap_or("(none)"),
-                item.map(|i| i.card_subtitle.as_str()).unwrap_or("(none)"),
-                item.map(|i| i.card_copy.as_str()).unwrap_or("(none)"),
-                item.and_then(|i| i.card_link_url.as_deref())
+                item.map(|i| i.child_image_url.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.child_image_alt.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.child_title.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.child_subtitle.as_str()).unwrap_or("(none)"),
+                item.map(|i| i.child_copy.as_str()).unwrap_or("(none)"),
+                item.and_then(|i| i.child_link_url.as_deref())
                     .unwrap_or("(none)"),
-                item.and_then(|i| i.card_link_target)
-                    .map(card_link_target_to_str)
+                item.and_then(|i| i.child_link_target)
+                    .map(child_link_target_to_str)
                     .unwrap_or("_self"),
-                item.and_then(|i| i.card_link_label.as_deref())
+                item.and_then(|i| i.child_link_label.as_deref())
                     .unwrap_or("(none)")
             )
         }
+        crate::model::SectionComponent::Alert(v) => format!(
+            "fields:\n  parent_type: {}\n  parent_class: {}\n  parent_data_aos: {}\n  parent_title: {}\n  parent_copy: {}",
+            alert_type_to_str(v.parent_type),
+            alert_class_to_str(v.parent_class),
+            parent_data_aos_to_str(v.parent_data_aos),
+            v.parent_title.as_deref().unwrap_or("(none)"),
+            v.parent_copy
+        ),
+        crate::model::SectionComponent::Image(v) => format!(
+            "fields:\n  parent_data_aos: {}\n  parent_image_url: {}\n  parent_image_alt: {}\n  parent_link_url: {}\n  parent_link_target: {}",
+            parent_data_aos_to_str(v.parent_data_aos),
+            v.parent_image_url,
+            v.parent_image_alt,
+            v.parent_link_url.as_deref().unwrap_or("(none)"),
+            v.parent_link_target
+                .map(child_link_target_to_str)
+                .unwrap_or("_self"),
+        ),
+        crate::model::SectionComponent::RichText(v) => format!(
+            "fields:\n  parent_class: {}\n  parent_data_aos: {}\n  parent_copy: {}",
+            v.parent_class.as_deref().unwrap_or("(none)"),
+            parent_data_aos_to_str(v.parent_data_aos),
+            v.parent_copy
+        ),
+        crate::model::SectionComponent::Navigation(v) => format!(
+            "fields:\n  parent_type: {:?}\n  parent_class: {:?}\n  parent_data_aos: {}\n  parent_width: {}\n  items: {}",
+            v.parent_type,
+            v.parent_class,
+            parent_data_aos_to_str(v.parent_data_aos),
+            v.parent_width,
+            v.items.len()
+        ),
+        crate::model::SectionComponent::HeaderSearch(v) => format!(
+            "fields:\n  parent_width: {}\n  parent_data_aos: {}",
+            v.parent_width,
+            parent_data_aos_to_str(v.parent_data_aos),
+        ),
+        crate::model::SectionComponent::HeaderMenu(v) => format!(
+            "fields:\n  parent_width: {}\n  parent_data_aos: {}",
+            v.parent_width,
+            parent_data_aos_to_str(v.parent_data_aos),
+        ),
     }
 }
 
@@ -9651,7 +12845,7 @@ fn hero_image_class_to_str(v: crate::model::HeroImageClass) -> &'static str {
     }
 }
 
-fn hero_aos_to_str(v: crate::model::HeroAos) -> &'static str {
+fn parent_data_aos_to_str(v: crate::model::HeroAos) -> &'static str {
     match v {
         crate::model::HeroAos::FadeIn => "fade-in",
         crate::model::HeroAos::FadeUp => "fade-up",
@@ -9664,7 +12858,7 @@ fn hero_aos_to_str(v: crate::model::HeroAos) -> &'static str {
     }
 }
 
-fn cta_target_to_str(v: crate::model::CtaTarget) -> &'static str {
+fn link_1_target_to_str(v: crate::model::CtaTarget) -> &'static str {
     match v {
         crate::model::CtaTarget::SelfTarget => "_self",
         crate::model::CtaTarget::Blank => "_blank",
@@ -9691,7 +12885,7 @@ fn parse_hero_image_class(raw: &str) -> Option<crate::model::HeroImageClass> {
     }
 }
 
-fn parse_hero_aos(raw: &str) -> Option<crate::model::HeroAos> {
+fn parse_parent_data_aos(raw: &str) -> Option<crate::model::HeroAos> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "fade-in" => Some(crate::model::HeroAos::FadeIn),
         "fade-up" => Some(crate::model::HeroAos::FadeUp),
@@ -9705,7 +12899,7 @@ fn parse_hero_aos(raw: &str) -> Option<crate::model::HeroAos> {
     }
 }
 
-fn parse_cta_target(raw: &str) -> Option<crate::model::CtaTarget> {
+fn parse_link_1_target(raw: &str) -> Option<crate::model::CtaTarget> {
     match raw.trim() {
         "_self" => Some(crate::model::CtaTarget::SelfTarget),
         "_blank" => Some(crate::model::CtaTarget::Blank),
@@ -9742,7 +12936,7 @@ fn next_hero_image_class(
     all[next_idx]
 }
 
-fn next_hero_aos(current: crate::model::HeroAos, forward: bool) -> crate::model::HeroAos {
+fn next_parent_data_aos(current: crate::model::HeroAos, forward: bool) -> crate::model::HeroAos {
     use crate::model::HeroAos;
     let all = [
         HeroAos::FadeIn,
@@ -9765,7 +12959,7 @@ fn next_hero_aos(current: crate::model::HeroAos, forward: bool) -> crate::model:
     all[next_idx]
 }
 
-fn next_hero_cta_target(
+fn next_hero_link_1_target(
     current: crate::model::CtaTarget,
     forward: bool,
 ) -> crate::model::CtaTarget {
@@ -9911,7 +13105,7 @@ fn theme_file_candidates() -> Vec<PathBuf> {
             Path::new(&home)
                 .join(".config")
                 .join("ldnddev")
-                .join("dd_staticbuilder")
+                .join("dd_staticsite")
                 .join(".theme.yml"),
         );
     }
@@ -10253,7 +13447,7 @@ fn help_text() -> String {
         "Edit modal:",
         "  Any edit command opens a modal with editable fields",
         "  Tab / Shift+Tab: Next/previous editable field for selected row",
-        "  hero.copy / alternating_copy / accordion_copy / blockquote_copy / card_copy / child_copy / parent_copy: Up/Down move line, wheel scroll, Enter newline, Ctrl+S save",
+        "  hero.copy / alternating_copy / accordion_copy / parent_copy / child_copy / child_copy / parent_copy: Up/Down move line, wheel scroll, Enter newline, Ctrl+S save",
         "  Left / Right: Cycle section/hero/cta/banner/accordion/alternating/blockquote/card/filmstrip/milestones/slider option fields when active",
         "  Enter: Confirm edit",
         "  Esc: Cancel edit",
@@ -10277,6 +13471,7 @@ impl ComponentKind {
             Self::Milestones,
             Self::Modal,
             Self::Slider,
+            Self::Alert,
         ]
     }
 
@@ -10294,6 +13489,7 @@ impl ComponentKind {
             ComponentKind::Milestones => "dd-milestones",
             ComponentKind::Modal => "dd-modal",
             ComponentKind::Slider => "dd-slider",
+            ComponentKind::Alert => "dd-alert",
         }
     }
 
@@ -10303,84 +13499,84 @@ impl ComponentKind {
                 unreachable!("top-level kinds do not map to section components")
             }
             ComponentKind::Cta => crate::model::SectionComponent::Cta(crate::model::DdCta {
-                cta_class: crate::model::CtaClass::TopLeft,
-                cta_image_url: "https://dummyimage.com/1920x1080/000000/fff".to_string(),
-                cta_image_alt: "Image alt".to_string(),
-                cta_data_aos: crate::model::HeroAos::FadeIn,
-                cta_title: "Title".to_string(),
-                cta_subtitle: "Subtitle".to_string(),
-                cta_copy: "Copy".to_string(),
-                cta_link_url: Some("/path".to_string()),
-                cta_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
-                cta_link_label: Some("Learn More".to_string()),
+                parent_class: crate::model::CtaClass::TopLeft,
+                parent_image_url: "https://dummyimage.com/1920x1080/000000/fff".to_string(),
+                parent_image_alt: "Image alt".to_string(),
+                parent_data_aos: crate::model::HeroAos::FadeIn,
+                parent_title: "Title".to_string(),
+                parent_subtitle: "Subtitle".to_string(),
+                parent_copy: "Copy".to_string(),
+                parent_link_url: Some("/path".to_string()),
+                parent_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                parent_link_label: Some("Learn More".to_string()),
             }),
             ComponentKind::Banner => {
                 crate::model::SectionComponent::Banner(crate::model::DdBanner {
-                    banner_class: crate::model::BannerClass::BgCenterCenter,
-                    banner_data_aos: crate::model::HeroAos::FadeIn,
-                    banner_image_url: "https://dummyimage.com/1920x1080/000/fff".to_string(),
-                    banner_image_alt: "Banner alt text".to_string(),
+                    parent_class: crate::model::BannerClass::BgCenterCenter,
+                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    parent_image_url: "https://dummyimage.com/1920x1080/000/fff".to_string(),
+                    parent_image_alt: "Banner alt text".to_string(),
                 })
             }
             ComponentKind::Blockquote => {
                 crate::model::SectionComponent::Blockquote(crate::model::DdBlockquote {
-                    blockquote_data_aos: crate::model::HeroAos::FadeIn,
-                    blockquote_image_url: "https://dummyimage.com/512x512/000/fff".to_string(),
-                    blockquote_image_alt: "blockquote Persons Name".to_string(),
-                    blockquote_persons_name: "blockquote Persons Name".to_string(),
-                    blockquote_persons_title: "blockquote Persons Title".to_string(),
-                    blockquote_copy: "blockquote content".to_string(),
+                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    parent_image_url: "https://dummyimage.com/512x512/000/fff".to_string(),
+                    parent_image_alt: "blockquote Persons Name".to_string(),
+                    parent_name: "blockquote Persons Name".to_string(),
+                    parent_role: "blockquote Persons Title".to_string(),
+                    parent_copy: "blockquote content".to_string(),
                 })
             }
             ComponentKind::Accordion => {
                 crate::model::SectionComponent::Accordion(crate::model::DdAccordion {
-                    accordion_type: crate::model::AccordionType::Default,
-                    accordion_class: crate::model::AccordionClass::Primary,
-                    accordion_aos: crate::model::HeroAos::FadeIn,
-                    group_name: "group1".to_string(),
+                    parent_type: crate::model::AccordionType::Default,
+                    parent_class: crate::model::AccordionClass::Primary,
+                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    parent_group_name: "group1".to_string(),
                     items: vec![crate::model::AccordionItem {
-                        title: "Accordion Item".to_string(),
-                        content: "Accordion content".to_string(),
+                        child_title: "Accordion Item".to_string(),
+                        child_copy: "Accordion content".to_string(),
                     }],
                     multiple: Some(false),
                 })
             }
             ComponentKind::Alternating => {
                 crate::model::SectionComponent::Alternating(crate::model::DdAlternating {
-                    alternating_type: crate::model::AlternatingType::Default,
-                    alternating_class: "-default".to_string(),
-                    alternating_data_aos: crate::model::HeroAos::FadeIn,
+                    parent_type: crate::model::AlternatingType::Default,
+                    parent_class: "-default".to_string(),
+                    parent_data_aos: crate::model::HeroAos::FadeIn,
                     items: vec![crate::model::AlternatingItem {
-                        image: "https://dummyimage.com/600x400/000/fff".to_string(),
-                        image_alt: "Alternating image".to_string(),
-                        title: "Alternating Item".to_string(),
-                        copy: "Alternating content".to_string(),
+                        child_image_url: "https://dummyimage.com/600x400/000/fff".to_string(),
+                        child_image_alt: "Alternating image".to_string(),
+                        child_title: "Alternating Item".to_string(),
+                        child_copy: "Alternating content".to_string(),
                     }],
                 })
             }
             ComponentKind::Card => crate::model::SectionComponent::Card(crate::model::DdCard {
-                card_type: crate::model::CardType::Default,
-                card_data_aos: crate::model::HeroAos::FadeIn,
-                card_width: "dd-u-1-1 dd-u-md-12-24 dd-u-lg-8-24".to_string(),
+                parent_type: crate::model::CardType::Default,
+                parent_data_aos: crate::model::HeroAos::FadeIn,
+                parent_width: "dd-u-1-1 dd-u-md-12-24 dd-u-lg-8-24".to_string(),
                 items: vec![crate::model::CardItem {
-                    card_image_url: "https://dummyimage.com/720x720/000/fff".to_string(),
-                    card_image_alt: "Image alt text".to_string(),
-                    card_title: "Title".to_string(),
-                    card_subtitle: "Subtitle".to_string(),
-                    card_copy: "Copy".to_string(),
-                    card_link_url: Some("/front".to_string()),
-                    card_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
-                    card_link_label: Some("Learn More".to_string()),
+                    child_image_url: "https://dummyimage.com/720x720/000/fff".to_string(),
+                    child_image_alt: "Image alt text".to_string(),
+                    child_title: "Title".to_string(),
+                    child_subtitle: "Subtitle".to_string(),
+                    child_copy: "Copy".to_string(),
+                    child_link_url: Some("/front".to_string()),
+                    child_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                    child_link_label: Some("Learn More".to_string()),
                 }],
             }),
             ComponentKind::Filmstrip => {
                 crate::model::SectionComponent::Filmstrip(crate::model::DdFilmstrip {
-                    filmstrip_type: crate::model::FilmstripType::Default,
-                    filmstrip_data_aos: crate::model::HeroAos::FadeIn,
+                    parent_type: crate::model::FilmstripType::Default,
+                    parent_data_aos: crate::model::HeroAos::FadeIn,
                     items: vec![crate::model::FilmstripItem {
-                        image_url: "https://dummyimage.com/256x256/000/fff".to_string(),
-                        image_alt: "Image alt text".to_string(),
-                        title: "Title".to_string(),
+                        child_image_url: "https://dummyimage.com/256x256/000/fff".to_string(),
+                        child_image_alt: "Image alt text".to_string(),
+                        child_title: "Title".to_string(),
                     }],
                 })
             }
@@ -10417,6 +13613,13 @@ impl ComponentKind {
                     }],
                 })
             }
+            ComponentKind::Alert => crate::model::SectionComponent::Alert(crate::model::DdAlert {
+                parent_type: crate::model::AlertType::Default,
+                parent_class: crate::model::AlertClass::Default,
+                parent_data_aos: crate::model::HeroAos::FadeIn,
+                parent_title: Some("Alert Title".to_string()),
+                parent_copy: "Alert content".to_string(),
+            }),
         }
     }
 }
@@ -10500,13 +13703,13 @@ mod tests {
     #[test]
     fn dd_card_keyflow_enter_tab_backtab_and_left_right_parent_fields() {
         let mut app = app_with_card();
-        let rows = app.build_node_tree_rows();
+        let rows = app.build_page_tree_rows();
         let row_idx = rows
             .iter()
             .position(|row| {
                 matches!(
                     row.kind,
-                    NodeTreeKind::Component {
+                    TreeRowKind::Component {
                         node_idx: 1,
                         column_idx: 0,
                         component_idx: 0
@@ -10524,7 +13727,7 @@ mod tests {
         send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
         assert_eq!(app.input_buffer, "-horizontal");
         assert_eq!(
-            selected_card(&app).card_type,
+            selected_card(&app).parent_type,
             crate::model::CardType::Horizontal
         );
 
@@ -10542,10 +13745,10 @@ mod tests {
     fn dd_card_keyflow_item_row_enter_and_link_target_cycle() {
         let mut app = app_with_card();
 
-        let rows = app.build_node_tree_rows();
+        let rows = app.build_page_tree_rows();
         let row_idx = rows
             .iter()
-            .position(|row| matches!(row.kind, NodeTreeKind::CardItem { .. }))
+            .position(|row| matches!(row.kind, TreeRowKind::CardItem { .. }))
             .expect("card item row should exist");
         app.selected_tree_row = row_idx;
         app.apply_tree_row_selection(rows[row_idx]);
@@ -10556,7 +13759,7 @@ mod tests {
             Some(InputMode::EditCardItemImageUrl)
         ));
         let fields = app.current_modal_fields();
-        assert!(fields.contains("- card_title:"));
+        assert!(fields.contains("- child_title:"));
         assert!(!fields.contains("- section.id:"));
 
         send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // image_alt
@@ -10594,13 +13797,13 @@ mod tests {
     #[test]
     fn dd_cta_keyflow_enter_tab_backtab_and_left_right_cycle_fields() {
         let mut app = app_with_cta();
-        let rows = app.build_node_tree_rows();
+        let rows = app.build_page_tree_rows();
         let row_idx = rows
             .iter()
             .position(|row| {
                 matches!(
                     row.kind,
-                    NodeTreeKind::Component {
+                    TreeRowKind::Component {
                         node_idx: 1,
                         column_idx: 0,
                         component_idx: 0
@@ -10612,44 +13815,30 @@ mod tests {
         app.apply_tree_row_selection(rows[row_idx]);
 
         send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        assert!(matches!(app.input_mode, Some(InputMode::EditCtaClass)));
-        assert_eq!(app.input_buffer, "-top-left");
+        // Multi-field edit modal should be open
+        assert!(app.edit_modal.is_some());
+        let modal = app.edit_modal.as_ref().unwrap();
+        assert_eq!(modal.title, "dd-cta");
+        assert_eq!(modal.fields[0].value, "-top-left");
 
-        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
-        assert_eq!(app.input_buffer, "-top-center");
+        // Save and verify
+        app.save_edit_modal_changes();
         assert_eq!(
-            selected_cta(&app).cta_class,
-            crate::model::CtaClass::TopCenter
+            selected_cta(&app).parent_class,
+            crate::model::CtaClass::TopLeft
         );
-
-        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // image_url
-        assert!(matches!(app.input_mode, Some(InputMode::EditCtaImageUrl)));
-        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // image_alt
-        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // data_aos
-        assert!(matches!(app.input_mode, Some(InputMode::EditCtaDataAos)));
-        let prev_aos = app.input_buffer.clone();
-        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
-        assert_ne!(app.input_buffer, prev_aos);
-
-        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // title
-        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // subtitle
-        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // copy
-        assert!(matches!(app.input_mode, Some(InputMode::EditCtaCopy)));
-
-        send_key(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT);
-        assert!(matches!(app.input_mode, Some(InputMode::EditCtaSubtitle)));
     }
 
     #[test]
     fn dd_cta_keyflow_link_target_cycle_and_optional_fields() {
         let mut app = app_with_cta();
-        let rows = app.build_node_tree_rows();
+        let rows = app.build_page_tree_rows();
         let row_idx = rows
             .iter()
             .position(|row| {
                 matches!(
                     row.kind,
-                    NodeTreeKind::Component {
+                    TreeRowKind::Component {
                         node_idx: 1,
                         column_idx: 0,
                         component_idx: 0
@@ -10661,23 +13850,16 @@ mod tests {
         app.apply_tree_row_selection(rows[row_idx]);
 
         send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        for _ in 0..8 {
-            send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
-        }
-        assert!(matches!(app.input_mode, Some(InputMode::EditCtaLinkTarget)));
-        assert_eq!(app.input_buffer, "_self");
+        // Multi-field edit modal should be open
+        assert!(app.edit_modal.is_some());
+        let modal = app.edit_modal.as_ref().unwrap();
+        assert_eq!(modal.title, "dd-cta");
 
-        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
-        assert_eq!(app.input_buffer, "_blank");
-        assert_eq!(
-            selected_cta(&app).cta_link_target,
-            Some(crate::model::CardLinkTarget::Blank)
-        );
+        // Check link target field exists (field index 8)
+        assert!(modal.fields.iter().any(|f| f.label == "Link Target"));
 
-        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
-        assert!(matches!(app.input_mode, Some(InputMode::EditCtaLinkLabel)));
-        let fields = app.current_modal_fields();
-        assert!(fields.contains("cta_title"));
-        assert!(!fields.contains("section.id"));
+        // Save and verify modal closes
+        app.save_edit_modal_changes();
+        assert!(app.edit_modal.is_none());
     }
 }

@@ -4,27 +4,23 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use handlebars::Handlebars;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::model::{
-    DdAccordion, DdAlternating, DdBanner, DdBlockquote, DdCard, DdCta, DdFilmstrip, DdHero,
-    DdMilestones, DdModal, DdSection, DdSlider, Page, PageNode, SectionColumn, SectionComponent,
-    Site,
+    DdAccordion, DdAlert, DdAlternating, DdBanner, DdBlockquote, DdCard, DdCta, DdFilmstrip,
+    DdFooter, DdHead, DdHeader, DdHero, DdMilestones, DdModal, DdSection, DdSlider, Page,
+    PageNode, SectionComponent, Site,
 };
 
 const PAGE_TEMPLATE: &str = r#"<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{title}}</title>
-  {{#if meta_description}}<meta name="description" content="{{meta_description}}">{{/if}}
-  <link rel="stylesheet" href="/assets/css/style.min.css">
-</head>
+{{{head_html}}}
 <body class="dd-g">
+{{{header_html}}}
 <main>
 {{{content}}}
 </main>
+{{{footer_html}}}
 <script src="/assets/js/main.min.js"></script>
 </body>
 </html>
@@ -32,8 +28,10 @@ const PAGE_TEMPLATE: &str = r#"<!DOCTYPE html>
 
 pub fn render_site_to_dir(site: &Site, output_dir: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(output_dir).context("failed to create export directory")?;
+    let header_html = render_header(&site.header)?;
+    let footer_html = render_footer(&site.footer)?;
     for page in &site.pages {
-        let html = render_page_html(page)?;
+        let html = render_page_html_with_chrome(page, &header_html, &footer_html)?;
         let file_name = if page.slug == "index" {
             "index.html".to_string()
         } else {
@@ -47,6 +45,16 @@ pub fn render_site_to_dir(site: &Site, output_dir: &Path) -> anyhow::Result<()> 
 }
 
 pub fn render_page_html(page: &Page) -> anyhow::Result<String> {
+    // Render a single page without header/footer chrome — used by tests and callers
+    // that don't have access to the full site (e.g. previews).
+    render_page_html_with_chrome(page, "", "")
+}
+
+pub fn render_page_html_with_chrome(
+    page: &Page,
+    header_html: &str,
+    footer_html: &str,
+) -> anyhow::Result<String> {
     let mut hbs = Handlebars::new();
     hbs.register_template_string("page", PAGE_TEMPLATE)
         .context("failed to register page template")?;
@@ -60,25 +68,187 @@ pub fn render_page_html(page: &Page) -> anyhow::Result<String> {
         content.push('\n');
     }
 
+    let head_html = render_head(&page.head)?;
+
     hbs.render(
         "page",
         &json!({
-            "title": page.title,
-            "meta_description": page.meta_description,
+            "head_html": head_html,
+            "header_html": header_html,
+            "footer_html": footer_html,
             "content": content
         }),
     )
     .context("failed to render page template")
 }
 
+fn render_head(head: &DdHead) -> anyhow::Result<String> {
+    let template = r##"<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{title}}</title>
+  {{#if meta_description}}<meta name="description" content="{{meta_description}}">{{/if}}
+  {{#if canonical_url}}<link rel="canonical" href="{{canonical_url}}">{{/if}}
+  <meta name="robots" content="{{robots}}">
+  {{#if og_title}}<meta property="og:title" content="{{og_title}}">{{/if}}
+  {{#if og_description}}<meta property="og:description" content="{{og_description}}">{{/if}}
+  {{#if og_image}}<meta property="og:image" content="{{og_image}}">{{/if}}
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/favicon/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon/favicon-16x16.png" />
+  <link rel="manifest" href="/assets/favicon/site.webmanifest" />
+  <link rel="mask-icon" href="/assets/favicon/safari-pinned-tab.svg" color="#5bbad5" />
+  <link rel="shortcut icon" href="/assets/favicon/favicon.ico" />
+  <meta name="msapplication-TileColor" content="#ffffff" />
+  <meta name="msapplication-config" content="/assets/favicon/browserconfig.xml" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="stylesheet" href="/assets/css/style.min.css">
+  <script type="application/ld+json">{{{schema_json}}}</script>
+</head>"##;
+
+    let robots = robots_token(head.robots);
+    let schema_type = schema_type_token(head.schema_type);
+    let mut schema = serde_json::Map::new();
+    schema.insert(
+        "@context".to_string(),
+        Value::String("https://schema.org".to_string()),
+    );
+    schema.insert("@type".to_string(), Value::String(schema_type.to_string()));
+    schema.insert("name".to_string(), Value::String(head.title.clone()));
+    if let Some(d) = head
+        .meta_description
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        schema.insert("description".to_string(), Value::String(d.to_string()));
+    }
+    if let Some(u) = head
+        .canonical_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        schema.insert("url".to_string(), Value::String(u.to_string()));
+    }
+    if let Some(i) = head
+        .og_image
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        schema.insert("image".to_string(), Value::String(i.to_string()));
+    }
+    let schema_json = serde_json::to_string_pretty(&Value::Object(schema))
+        .unwrap_or_else(|_| "{}".to_string());
+
+    let data = json!({
+        "title": head.title,
+        "meta_description": head.meta_description,
+        "canonical_url": head.canonical_url,
+        "robots": robots,
+        "og_title": head.og_title,
+        "og_description": head.og_description,
+        "og_image": head.og_image,
+        "schema_json": schema_json,
+    });
+    render_inline(template, data)
+}
+
+fn render_header(header: &DdHeader) -> anyhow::Result<String> {
+    let custom = header
+        .custom_css
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| format!(" {}", v))
+        .unwrap_or_default();
+    let alert_html = if let Some(alert) = &header.alert {
+        render_alert(alert)?
+    } else {
+        String::new()
+    };
+    let mut sections_html = String::new();
+    for section in &header.sections {
+        sections_html.push_str(&render_section(section)?);
+        sections_html.push('\n');
+    }
+    Ok(format!(
+        r#"<header class="dd-header{custom}">
+{alert_html}
+  <div class="dd-header__top">
+{sections_html}
+  </div>
+  <div class="dd-search">
+    <button class="dd-search__close">- search</button>
+    <form action="">
+      <label for="name">Search<br />
+        <input type="text" id="name">
+      </label>
+    </form>
+  </div>
+</header>"#,
+        custom = custom,
+        alert_html = alert_html,
+        sections_html = sections_html,
+    ))
+}
+
+fn render_footer(footer: &DdFooter) -> anyhow::Result<String> {
+    let custom = footer
+        .custom_css
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| format!(" {}", v))
+        .unwrap_or_default();
+    let mut sections_html = String::new();
+    for section in &footer.sections {
+        sections_html.push_str(&render_section(section)?);
+        sections_html.push('\n');
+    }
+    Ok(format!(
+        r#"<footer class="dd-footer{custom}">
+  <div class="dd-footer__content">
+{sections_html}
+  </div>
+</footer>"#,
+        custom = custom,
+        sections_html = sections_html,
+    ))
+}
+
+fn robots_token(r: crate::model::RobotsDirective) -> &'static str {
+    match r {
+        crate::model::RobotsDirective::IndexFollow => "index, follow",
+        crate::model::RobotsDirective::NoindexFollow => "noindex, follow",
+        crate::model::RobotsDirective::IndexNofollow => "index, nofollow",
+        crate::model::RobotsDirective::NoindexNofollow => "noindex, nofollow",
+    }
+}
+
+fn schema_type_token(s: crate::model::SchemaType) -> &'static str {
+    match s {
+        crate::model::SchemaType::WebPage => "WebPage",
+        crate::model::SchemaType::Article => "Article",
+        crate::model::SchemaType::AboutPage => "AboutPage",
+        crate::model::SchemaType::ContactPage => "ContactPage",
+        crate::model::SchemaType::CollectionPage => "CollectionPage",
+        crate::model::SchemaType::Organization => "Organization",
+        crate::model::SchemaType::LocalBusiness => "LocalBusiness",
+        crate::model::SchemaType::Product => "Product",
+        crate::model::SchemaType::Service => "Service",
+    }
+}
+
 fn render_hero(hero: &DdHero) -> anyhow::Result<String> {
-    let template = r#"<section class="dd-hero{{#if hero_class}} {{hero_class}}{{/if}}{{#if custom_css}} {{custom_css}}{{/if}}" aria-label="Introduction">
-  {{#if has_image}}<div class="dd-hero__image {{image_class}}">
+    let template = r#"<section class="dd-hero{{#if parent_class}} {{parent_class}}{{/if}}{{#if parent_custom_css}} {{parent_custom_css}}{{/if}}" aria-label="Introduction">
+  {{#if has_image}}<div class="dd-hero__image {{parent_image_class}}">
     <picture>
-      {{#if image_mobile}}<source media="(max-width: 767px)" srcset="{{image_mobile}}">{{/if}}
-      {{#if image_tablet}}<source media="(max-width: 1199px)" srcset="{{image_tablet}}">{{/if}}
-      {{#if image_desktop}}<source media="(min-width: 1200px)" srcset="{{image_desktop}}">{{/if}}
-      <img src="{{image}}" alt="{{image_alt}}" class="dd-img">
+      {{#if parent_image_mobile}}<source media="(max-width: 767px)" srcset="{{parent_image_mobile}}">{{/if}}
+      {{#if parent_image_tablet}}<source media="(max-width: 1199px)" srcset="{{parent_image_tablet}}">{{/if}}
+      {{#if parent_image_desktop}}<source media="(min-width: 1200px)" srcset="{{parent_image_desktop}}">{{/if}}
+      <img src="{{parent_image_url}}" alt="{{parent_image_alt}}" class="dd-img">
     </picture>
   </div>
   <style>
@@ -91,18 +261,18 @@ fn render_hero(hero: &DdHero) -> anyhow::Result<String> {
       }
     }
   </style>{{/if}}
-  <div class="dd-hero__content dd-g" data-aos="{{hero_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+  <div class="dd-hero__content dd-g" data-aos="{{parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
     <div class="dd-hero__copy dd-u-1-1 dd-u-lg-12-24">
-      <div class="dd-hero__title"><h1>{{title}}</h1></div>
-      {{#if subtitle}}<div class="dd-hero__subtitle"><strong>{{subtitle}}</strong></div>{{/if}}
+      <div class="dd-hero__title"><h1>{{parent_title}}</h1></div>
+      {{#if parent_subtitle}}<div class="dd-hero__subtitle"><strong>{{parent_subtitle}}</strong></div>{{/if}}
       {{#if has_body}}<div class="dd-hero__body">
-        {{#if copy_html}}{{{copy_html}}}{{/if}}
+        {{#if parent_copy_html}}{{{parent_copy_html}}}{{/if}}
         {{#if has_links}}<div class="dd-hero__links dd-g">
-          {{#if has_primary_cta}}<div class="dd-hero__link">
-            <a href="{{cta_link}}" target="{{cta_target}}" class="dd-button -primary">{{cta_text}}</a>
+          {{#if has_link_1}}<div class="dd-hero__link">
+            <a href="{{link_1_url}}" target="{{link_1_target}}" class="dd-button -primary">{{link_1_label}}</a>
           </div>{{/if}}
-          {{#if has_secondary_cta}}<div class="dd-hero__link">
-            <a href="{{cta_link_2}}" target="{{cta_target_2}}" class="dd-button -ghost">{{cta_text_2}}</a>
+          {{#if has_link_2}}<div class="dd-hero__link">
+            <a href="{{link_2_url}}" target="{{link_2_target}}" class="dd-button -ghost">{{link_2_label}}</a>
           </div>{{/if}}
         </div>{{/if}}
       </div>{{/if}}
@@ -120,7 +290,7 @@ fn render_section(section: &DdSection) -> anyhow::Result<String> {
         .and_then(|v| serde_json::to_value(v).ok())
         .map(|v| stringify_json(&v))
         .unwrap_or_else(|| "l-box".to_string());
-    for column in section_columns(section) {
+    for column in &section.columns {
         let mut inner = String::new();
         for component in &column.components {
             let html = match component {
@@ -134,6 +304,12 @@ fn render_section(section: &DdSection) -> anyhow::Result<String> {
                 SectionComponent::Banner(v) => render_banner(v)?,
                 SectionComponent::Accordion(v) => render_accordion(v)?,
                 SectionComponent::Blockquote(v) => render_blockquote(v)?,
+                SectionComponent::Alert(v) => render_alert(v)?,
+                SectionComponent::Image(v) => render_image(v)?,
+                SectionComponent::RichText(v) => render_rich_text(v)?,
+                SectionComponent::Navigation(v) => render_navigation(v)?,
+                SectionComponent::HeaderSearch(v) => render_header_search(v)?,
+                SectionComponent::HeaderMenu(v) => render_header_menu(v)?,
             };
             inner.push_str(&html);
             inner.push('\n');
@@ -169,35 +345,23 @@ fn render_section(section: &DdSection) -> anyhow::Result<String> {
     )
 }
 
-fn section_columns(section: &DdSection) -> Vec<SectionColumn> {
-    if !section.columns.is_empty() {
-        section.columns.clone()
-    } else {
-        vec![SectionColumn {
-            id: format!("{}-legacy-column", section.id),
-            width_class: "dd-u-1-1".to_string(),
-            components: section.components.clone(),
-        }]
-    }
-}
-
 fn render_alternating(alternating: &DdAlternating) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-alternating {{alternating_type}} {{alternating_class}}" role="region">
+    let template = r#"<div class="dd-alternating {{parent_type}} {{parent_class}}" role="region">
   <div class="dd-alternating__items dd-g">
     {{#each items}}
     <div class="dd-alternating__item dd-u-1-1">
       <div class="dd-alternating__content dd-g">
-        <div class="dd-alternating__image dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-aos="{{../alternating_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+        <div class="dd-alternating__image dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-aos="{{../parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
           <picture>
-            <img src="{{image}}" class="dd-img" alt="{{image_alt}}" />
+            <img src="{{child_image_url}}" class="dd-img" alt="{{child_image_alt}}" />
           </picture>
         </div>
-        <div class="dd-alternating__copy l-box dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-aos="{{../alternating_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+        <div class="dd-alternating__copy l-box dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-aos="{{../parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
           <div class="dd-alternating__title">
-            <h2>{{title}}</h2>
+            <h2>{{child_title}}</h2>
           </div>
           <div class="dd-alternating__body">
-            {{copy}}
+            {{child_copy}}
           </div>
         </div>
       </div>
@@ -208,17 +372,17 @@ fn render_alternating(alternating: &DdAlternating) -> anyhow::Result<String> {
     let mut v = serde_json::to_value(alternating)?;
     if let Some(obj) = v.as_object_mut() {
         obj.insert(
-            "alternating_type".to_string(),
+            "parent_type".to_string(),
             Value::String(
-                serde_json::to_value(alternating.alternating_type)
+                serde_json::to_value(alternating.parent_type)
                     .map(|raw| stringify_json(&raw))
                     .unwrap_or_else(|_| "-default".to_string()),
             ),
         );
         obj.insert(
-            "alternating_data_aos".to_string(),
+            "parent_data_aos".to_string(),
             Value::String(
-                serde_json::to_value(alternating.alternating_data_aos)
+                serde_json::to_value(alternating.parent_data_aos)
                     .map(|raw| stringify_json(&raw))
                     .unwrap_or_else(|_| "fade-in".to_string()),
             ),
@@ -228,26 +392,26 @@ fn render_alternating(alternating: &DdAlternating) -> anyhow::Result<String> {
 }
 
 fn render_card(card: &DdCard) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-card {{card_type}}">
+    let template = r#"<div class="dd-card {{parent_type}}">
   <div class="dd-card__items dd-g">
     {{#each items}}
-    <div class="dd-card__item l-box {{../card_width}}" data-aos="{{../card_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+    <div class="dd-card__item l-box {{../parent_width}}" data-aos="{{../parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
       <div class="dd-card__body dd-g">
         <div class="dd-card__image">
-          <img src="{{card_image_url}}" alt="{{card_image_alt}}" class="dd-img" loading="lazy">
+          <img src="{{child_image_url}}" alt="{{child_image_alt}}" class="dd-img" loading="lazy">
         </div>
         <div class="dd-card__copy l-box">
           <div class="dd-card__title">
-            <h3>{{card_title}}</h3>
+            <h3>{{child_title}}</h3>
           </div>
           <div class="dd-card__subtitle">
-            <strong>{{card_subtitle}}</strong>
+            <strong>{{child_subtitle}}</strong>
           </div>
-          <p>{{card_copy}}</p>
+          <p>{{child_copy}}</p>
           {{#if has_link}}
           <div class="dd-card__links dd-g">
             <div class="dd-card__link">
-              <a href="{{card_link_url}}" target="{{card_link_target}}" class="dd-button -primary">{{card_link_label}}</a>
+              <a href="{{child_link_url}}" target="{{child_link_target}}" class="dd-button -primary">{{child_link_label}}</a>
             </div>
           </div>
           {{/if}}
@@ -260,67 +424,67 @@ fn render_card(card: &DdCard) -> anyhow::Result<String> {
     let mut items = Vec::new();
     for item in &card.items {
         let link_url = item
-            .card_link_url
+            .child_link_url
             .as_deref()
             .map(str::trim)
             .filter(|v| !v.is_empty())
             .map(str::to_string);
         let link_label = item
-            .card_link_label
+            .child_link_label
             .as_deref()
             .map(str::trim)
             .filter(|v| !v.is_empty())
             .map(str::to_string);
         let has_link = link_url.is_some() && link_label.is_some();
         let link_target = item
-            .card_link_target
+            .child_link_target
             .as_ref()
             .and_then(|v| serde_json::to_value(v).ok())
             .map(|v| stringify_json(&v))
             .unwrap_or_else(|| "_self".to_string());
         items.push(json!({
-            "card_image_url": item.card_image_url,
-            "card_image_alt": item.card_image_alt,
-            "card_title": item.card_title,
-            "card_subtitle": item.card_subtitle,
-            "card_copy": item.card_copy,
-            "card_link_url": link_url.unwrap_or_default(),
-            "card_link_target": link_target,
-            "card_link_label": link_label.unwrap_or_default(),
+            "child_image_url": item.child_image_url,
+            "child_image_alt": item.child_image_alt,
+            "child_title": item.child_title,
+            "child_subtitle": item.child_subtitle,
+            "child_copy": item.child_copy,
+            "child_link_url": link_url.unwrap_or_default(),
+            "child_link_target": link_target,
+            "child_link_label": link_label.unwrap_or_default(),
             "has_link": has_link
         }));
     }
     let data = json!({
-        "card_type": serde_json::to_value(card.card_type).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-default".to_string()),
-        "card_data_aos": serde_json::to_value(card.card_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
-        "card_width": card.card_width,
+        "parent_type": serde_json::to_value(card.parent_type).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-default".to_string()),
+        "parent_data_aos": serde_json::to_value(card.parent_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
+        "parent_width": card.parent_width,
         "items": items
     });
     render_inline(template, data)
 }
 
 fn render_banner(banner: &DdBanner) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-banner {{banner_class}}" data-aos="{{banner_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100" style="background-image: url({{banner_image_url}});">
+    let template = r#"<div class="dd-banner {{parent_class}}" data-aos="{{parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100" style="background-image: url({{parent_image_url}});">
   <div class="dd-banner__image">
     <picture>
-      <img src="{{banner_image_url}}" class="dd-img" alt="{{banner_image_alt}}" />
+      <img src="{{parent_image_url}}" class="dd-img" alt="{{parent_image_alt}}" />
     </picture>
   </div>
 </div>"#;
     let mut v = serde_json::to_value(banner)?;
     if let Some(obj) = v.as_object_mut() {
         obj.insert(
-            "banner_class".to_string(),
+            "parent_class".to_string(),
             Value::String(
-                serde_json::to_value(banner.banner_class)
+                serde_json::to_value(banner.parent_class)
                     .map(|raw| stringify_json(&raw))
                     .unwrap_or_else(|_| "-bg-center-center".to_string()),
             ),
         );
         obj.insert(
-            "banner_data_aos".to_string(),
+            "parent_data_aos".to_string(),
             Value::String(
-                serde_json::to_value(banner.banner_data_aos)
+                serde_json::to_value(banner.parent_data_aos)
                     .map(|raw| stringify_json(&raw))
                     .unwrap_or_else(|_| "fade-in".to_string()),
             ),
@@ -330,25 +494,25 @@ fn render_banner(banner: &DdBanner) -> anyhow::Result<String> {
 }
 
 fn render_cta(cta: &DdCta) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-cta {{cta_class}}">
-  <div class="dd-cta__image" style="background-image: url({{cta_image_url}});">
+    let template = r#"<div class="dd-cta {{parent_class}}">
+  <div class="dd-cta__image" style="background-image: url({{parent_image_url}});">
     <picture>
-      <img src="{{cta_image_url}}" class="dd-img" alt="{{cta_image_alt}}" />
+      <img src="{{parent_image_url}}" class="dd-img" alt="{{parent_image_alt}}" />
     </picture>
   </div>
-  <div class="dd-cta__content dd-g" data-aos="{{cta_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-center" data-aos-delay="100">
+  <div class="dd-cta__content dd-g" data-aos="{{parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-center" data-aos-delay="100">
     <div class="dd-cta__copy dd-u-1-1 dd-u-md-12-24">
       <div class="dd-cta__title">
-        <h2>{{cta_title}}</h2>
+        <h2>{{parent_title}}</h2>
       </div>
       <div class="dd-cta__subtitle">
-        <strong>{{cta_subtitle}}</strong>
+        <strong>{{parent_subtitle}}</strong>
       </div>
-      <p>{{cta_copy}}</p>
+      <p>{{parent_copy}}</p>
       {{#if has_link}}
       <div class="dd-cta__links dd-g -x-center">
         <div class="dd-cta__link">
-          <a href="{{cta_link_url}}" class="dd-button -primary" target="{{cta_link_target}}">{{cta_link_label}}</a>
+          <a href="{{parent_link_url}}" class="dd-button -primary" target="{{parent_link_target}}">{{parent_link_label}}</a>
         </div>
       </div>
       {{/if}}
@@ -357,48 +521,48 @@ fn render_cta(cta: &DdCta) -> anyhow::Result<String> {
 </div>"#;
 
     let link_url = cta
-        .cta_link_url
+        .parent_link_url
         .as_deref()
         .map(str::trim)
         .filter(|v| !v.is_empty())
         .map(str::to_string);
     let link_label = cta
-        .cta_link_label
+        .parent_link_label
         .as_deref()
         .map(str::trim)
         .filter(|v| !v.is_empty())
         .map(str::to_string);
     let has_link = link_url.is_some() && link_label.is_some();
     let link_target = cta
-        .cta_link_target
+        .parent_link_target
         .as_ref()
         .and_then(|v| serde_json::to_value(v).ok())
         .map(|v| stringify_json(&v))
         .unwrap_or_else(|| "_self".to_string());
 
     let data = json!({
-        "cta_class": serde_json::to_value(cta.cta_class).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-top-left".to_string()),
-        "cta_image_url": cta.cta_image_url,
-        "cta_image_alt": cta.cta_image_alt,
-        "cta_data_aos": serde_json::to_value(cta.cta_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
-        "cta_title": cta.cta_title,
-        "cta_subtitle": cta.cta_subtitle,
-        "cta_copy": cta.cta_copy,
-        "cta_link_url": link_url.unwrap_or_default(),
-        "cta_link_target": link_target,
-        "cta_link_label": link_label.unwrap_or_default(),
+        "parent_class": serde_json::to_value(cta.parent_class).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-top-left".to_string()),
+        "parent_image_url": cta.parent_image_url,
+        "parent_image_alt": cta.parent_image_alt,
+        "parent_data_aos": serde_json::to_value(cta.parent_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
+        "parent_title": cta.parent_title,
+        "parent_subtitle": cta.parent_subtitle,
+        "parent_copy": cta.parent_copy,
+        "parent_link_url": link_url.unwrap_or_default(),
+        "parent_link_target": link_target,
+        "parent_link_label": link_label.unwrap_or_default(),
         "has_link": has_link
     });
     render_inline(template, data)
 }
 
 fn render_filmstrip(filmstrip: &DdFilmstrip) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-filmstrip {{filmstrip_type}}" data-aos="{{filmstrip_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-center" data-aos-delay="100">
+    let template = r#"<div class="dd-filmstrip {{parent_type}}" data-aos="{{parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-center" data-aos-delay="100">
   <ul class="dd-filmstrip__content">
     {{#each items}}
     <li>
-      <img src="{{image_url}}" alt="{{image_alt}}" class="dd-img" loading="lazy">
-      <figure class="dd-filmstrip__title">{{title}}</figure>
+      <img src="{{child_image_url}}" alt="{{child_image_alt}}" class="dd-img" loading="lazy">
+      <figure class="dd-filmstrip__title">{{child_title}}</figure>
     </li>
     {{/each}}
   </ul>
@@ -406,16 +570,16 @@ fn render_filmstrip(filmstrip: &DdFilmstrip) -> anyhow::Result<String> {
   <ul aria-hidden="true" class="dd-filmstrip__content">
     {{#each items}}
     <li role="presentation">
-      <img src="{{image_url}}" alt="{{image_alt}}" class="dd-img" loading="lazy">
-      <figure class="dd-filmstrip__title">{{title}}</figure>
+      <img src="{{child_image_url}}" alt="{{child_image_alt}}" class="dd-img" loading="lazy">
+      <figure class="dd-filmstrip__title">{{child_title}}</figure>
     </li>
     {{/each}}
   </ul>
 </div>"#;
 
     let data = json!({
-        "filmstrip_type": serde_json::to_value(filmstrip.filmstrip_type).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-default".to_string()),
-        "filmstrip_data_aos": serde_json::to_value(filmstrip.filmstrip_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
+        "parent_type": serde_json::to_value(filmstrip.parent_type).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-default".to_string()),
+        "parent_data_aos": serde_json::to_value(filmstrip.parent_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
         "items": filmstrip.items
     });
     render_inline(template, data)
@@ -589,13 +753,13 @@ fn render_slider(slider: &DdSlider) -> anyhow::Result<String> {
 }
 
 fn render_accordion(accordion: &DdAccordion) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-accordion {{accordion_type}} {{accordion_class}}" data-aos="{{accordion_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+    let template = r#"<div class="dd-accordion {{parent_type}} {{parent_class}}" data-aos="{{parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
   <div class="dd-accordion__items">
-    {{#each items}}<details name="{{../group_name}}" class="dd-accordion__item">
+    {{#each items}}<details name="{{../parent_group_name}}" class="dd-accordion__item">
       <summary class="dd-accordion__header dd-g -y-center">
-        <div class="dd-accordion__title dd-u-1-1">{{title}}</div>
+        <div class="dd-accordion__title dd-u-1-1">{{child_title}}</div>
       </summary>
-      <div class="dd-accordion__copy"><p>{{content}}</p></div>
+      <div class="dd-accordion__copy"><p>{{child_copy}}</p></div>
     </details>
     {{/each}}
   </div>
@@ -608,35 +772,35 @@ fn render_accordion(accordion: &DdAccordion) -> anyhow::Result<String> {
         "mainEntity": accordion.items.iter().map(|item| {
             json!({
                 "@type": "Question",
-                "name": item.title,
+                "name": item.child_title,
                 "acceptedAnswer": {
                     "@type": "Answer",
-                    "text": item.content
+                    "text": item.child_copy
                 }
             })
         }).collect::<Vec<_>>()
     }))?;
     if let Some(obj) = v.as_object_mut() {
         obj.insert(
-            "accordion_type".to_string(),
+            "parent_type".to_string(),
             Value::String(
-                serde_json::to_value(accordion.accordion_type)
+                serde_json::to_value(accordion.parent_type)
                     .map(|v| stringify_json(&v))
                     .unwrap_or_else(|_| "-default".to_string()),
             ),
         );
         obj.insert(
-            "accordion_class".to_string(),
+            "parent_class".to_string(),
             Value::String(
-                serde_json::to_value(accordion.accordion_class)
+                serde_json::to_value(accordion.parent_class)
                     .map(|v| stringify_json(&v))
                     .unwrap_or_else(|_| "-primary".to_string()),
             ),
         );
         obj.insert(
-            "accordion_aos".to_string(),
+            "parent_data_aos".to_string(),
             Value::String(
-                serde_json::to_value(accordion.accordion_aos)
+                serde_json::to_value(accordion.parent_data_aos)
                     .map(|v| stringify_json(&v))
                     .unwrap_or_else(|_| "fade-in".to_string()),
             ),
@@ -644,7 +808,7 @@ fn render_accordion(accordion: &DdAccordion) -> anyhow::Result<String> {
         obj.insert(
             "has_faq_schema".to_string(),
             Value::Bool(matches!(
-                accordion.accordion_type,
+                accordion.parent_type,
                 crate::model::AccordionType::Faq
             )),
         );
@@ -655,20 +819,20 @@ fn render_accordion(accordion: &DdAccordion) -> anyhow::Result<String> {
 
 fn render_blockquote(blockquote: &DdBlockquote) -> anyhow::Result<String> {
     let template = r#"<blockquote class="dd-blockquote">
-  <div class="dd-blockquote__content dd-g" data-aos="{{blockquote_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+  <div class="dd-blockquote__content dd-g" data-aos="{{parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
     <div class="dd-blockquote__icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-quote-icon lucide-quote"><path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/></svg></div>
     <div class="dd-blockquote__person dd-g l-box">
       <div class="dd-blockquote__image">
         <picture>
-          <img src="{{blockquote_image_url}}" class="dd-img" alt="{{blockquote_image_alt}}" />
+          <img src="{{parent_image_url}}" class="dd-img" alt="{{parent_image_alt}}" />
         </picture>
       </div>
       <div class="dd-blockquote__name-title">
-        <span class="dd-blockquote__name">{{blockquote_persons_name}}</span>
-        <span class="dd-blockquote__title">, {{blockquote_persons_title}}</span>
+        <span class="dd-blockquote__name">{{parent_name}}</span>
+        <span class="dd-blockquote__title">, {{parent_role}}</span>
       </div>
       <div class="dd-blockquote__comment">
-        {{blockquote_copy}}
+        {{parent_copy}}
       </div>
     </div>
   </div>
@@ -681,17 +845,17 @@ fn render_blockquote(blockquote: &DdBlockquote) -> anyhow::Result<String> {
         "@type": "Person",
         "name": format!(
             "{}, {}",
-            blockquote.blockquote_persons_name, blockquote.blockquote_persons_title
+            blockquote.parent_name, blockquote.parent_role
         )
       },
-      "text": blockquote.blockquote_copy
+      "text": blockquote.parent_copy
     }))?;
     let mut v = serde_json::to_value(blockquote)?;
     if let Some(obj) = v.as_object_mut() {
         obj.insert(
-            "blockquote_data_aos".to_string(),
+            "parent_data_aos".to_string(),
             Value::String(
-                serde_json::to_value(blockquote.blockquote_data_aos)
+                serde_json::to_value(blockquote.parent_data_aos)
                     .map(|raw| stringify_json(&raw))
                     .unwrap_or_else(|_| "fade-in".to_string()),
             ),
@@ -704,6 +868,215 @@ fn render_blockquote(blockquote: &DdBlockquote) -> anyhow::Result<String> {
     render_inline(template, v)
 }
 
+fn render_alert(alert: &DdAlert) -> anyhow::Result<String> {
+    let template = r#"<div class="dd-alert {{parent_type}} {{parent_class}}" role="alert" data-aos="{{parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+  <div class="dd-alert__content dd-g">
+    <div class="dd-u-1-1">
+      <div class="l-box">
+        {{#if has_title}}<div class="dd-alert__title">{{parent_title}}</div>{{/if}}
+        <div class="dd-alert__copy">
+          <p>{{parent_copy}}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>"#;
+    let data = json!({
+        "parent_type": serde_json::to_value(alert.parent_type).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-default".to_string()),
+        "parent_class": serde_json::to_value(alert.parent_class).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-default".to_string()),
+        "parent_data_aos": serde_json::to_value(alert.parent_data_aos).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade-in".to_string()),
+        "parent_title": alert.parent_title.as_deref().unwrap_or(""),
+        "has_title": alert.parent_title.as_ref().map(|t| !t.trim().is_empty()).unwrap_or(false),
+        "parent_copy": alert.parent_copy
+    });
+    render_inline(template, data)
+}
+
+fn render_image(image: &crate::model::DdImage) -> anyhow::Result<String> {
+    let data_aos = aos_token(image.parent_data_aos);
+    let has_link = image
+        .parent_link_url
+        .as_deref()
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false);
+    let template = if has_link {
+        r#"<div class="dd-image" data-aos="{{parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+  <a href="{{parent_link_url}}" target="{{parent_link_target}}" title="{{parent_image_alt}}">
+    <img src="{{parent_image_url}}" alt="{{parent_image_alt}}" class="dd-img" loading="lazy" />
+  </a>
+</div>"#
+    } else {
+        r#"<div class="dd-image" data-aos="{{parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+  <img src="{{parent_image_url}}" alt="{{parent_image_alt}}" class="dd-img" loading="lazy" />
+</div>"#
+    };
+    let link_target = image
+        .parent_link_target
+        .as_ref()
+        .and_then(|v| serde_json::to_value(v).ok())
+        .map(|v| stringify_json(&v))
+        .unwrap_or_else(|| "_self".to_string());
+    let data = json!({
+        "parent_data_aos": data_aos,
+        "parent_image_url": image.parent_image_url,
+        "parent_image_alt": image.parent_image_alt,
+        "parent_link_url": image.parent_link_url.clone().unwrap_or_default(),
+        "parent_link_target": link_target,
+    });
+    render_inline(template, data)
+}
+
+fn render_rich_text(rt: &crate::model::DdRichText) -> anyhow::Result<String> {
+    let template = r#"<div class="dd-rich_text{{#if parent_class}} {{parent_class}}{{/if}}" data-aos="{{parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+  <div class="dd-rich_text__copy">{{{parent_copy_html}}}</div>
+</div>"#;
+    let parent_class = rt
+        .parent_class
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string);
+    let parent_copy_html = markdown_to_html(&rt.parent_copy);
+    let data = json!({
+        "parent_class": parent_class,
+        "parent_data_aos": aos_token(rt.parent_data_aos),
+        "parent_copy_html": parent_copy_html,
+    });
+    render_inline(template, data)
+}
+
+fn render_navigation(nav: &crate::model::DdNavigation) -> anyhow::Result<String> {
+    let parent_class = navigation_class_token(nav.parent_class);
+    let aria_label = match nav.parent_type {
+        crate::model::NavigationType::HeaderNav => "header navigation",
+        crate::model::NavigationType::FooterNav => "footer navigation",
+    };
+    let items_html = render_nav_items(&nav.items);
+    Ok(format!(
+        r#"<div class="dd-navigation {parent_class} -y-center" data-aos="{aos}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+  <nav itemscope itemtype="https://schema.org/SiteNavigationElement" aria-label="{aria_label}">
+    <button class="dd-menu__close fa-regular fa-times" type="button"><span class="visually-hidden">Menu</span></button>
+    <ul class="menu">
+{items_html}
+    </ul>
+  </nav>
+</div>"#,
+        parent_class = parent_class,
+        aos = aos_token(nav.parent_data_aos),
+        aria_label = aria_label,
+        items_html = items_html,
+    ))
+}
+
+fn render_nav_items(items: &[crate::model::NavigationItem]) -> String {
+    let mut out = String::new();
+    for item in items {
+        out.push_str(&render_nav_item(item));
+        out.push('\n');
+    }
+    out
+}
+
+fn render_nav_item(item: &crate::model::NavigationItem) -> String {
+    let has_children = !item.items.is_empty();
+    let has_children_cls = if has_children { " -has-children" } else { "" };
+    let css = item.child_link_css.as_deref().unwrap_or("");
+    let label = item.child_link_label.as_str();
+    let inner = match item.child_kind {
+        crate::model::NavigationKind::Link => {
+            let url = item.child_link_url.as_deref().unwrap_or("");
+            let target = item
+                .child_link_target
+                .map(link_target_token)
+                .unwrap_or("_self");
+            format!(
+                r#"<a href="{url}" target="{target}" class="{css}">{label}</a>"#,
+                url = url,
+                target = target,
+                css = css,
+                label = label,
+            )
+        }
+        crate::model::NavigationKind::Button => {
+            format!(
+                r#"<span class="{css}" role="presentation">{label}</span>"#,
+                css = css,
+                label = label,
+            )
+        }
+    };
+    let submenu = if has_children {
+        format!(
+            r#"
+        <ul class="sub-menu">
+{children}
+        </ul>"#,
+            children = render_nav_items(&item.items),
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        r#"      <li class="menu-item{has_children_cls}">
+        {inner}{submenu}
+      </li>"#,
+        has_children_cls = has_children_cls,
+        inner = inner,
+        submenu = submenu,
+    )
+}
+
+fn render_header_search(search: &crate::model::DdHeaderSearch) -> anyhow::Result<String> {
+    let template = r#"<div class="dd-header__search-icon {{parent_width}} -y-center -x-center" data-aos="{{parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+  <button class="dd-search__toggle fa-regular fa-magnifying-glass" type="button">
+    <span class="visually-hidden">Search</span>
+  </button>
+</div>"#;
+    let data = json!({
+        "parent_width": search.parent_width,
+        "parent_data_aos": aos_token(search.parent_data_aos),
+    });
+    render_inline(template, data)
+}
+
+fn render_header_menu(menu: &crate::model::DdHeaderMenu) -> anyhow::Result<String> {
+    let template = r#"<div class="dd-header__menu-icon {{parent_width}} -y-center -x-center" data-aos="{{parent_data_aos}}" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+  <button class="dd-menu__toggle fa-regular fa-bars" type="button">
+    <span class="visually-hidden">Menu</span>
+  </button>
+</div>"#;
+    let data = json!({
+        "parent_width": menu.parent_width,
+        "parent_data_aos": aos_token(menu.parent_data_aos),
+    });
+    render_inline(template, data)
+}
+
+fn aos_token(aos: crate::model::HeroAos) -> String {
+    serde_json::to_value(aos)
+        .map(|v| stringify_json(&v))
+        .unwrap_or_else(|_| "fade-in".to_string())
+}
+
+fn link_target_token(target: crate::model::CardLinkTarget) -> &'static str {
+    match target {
+        crate::model::CardLinkTarget::SelfTarget => "_self",
+        crate::model::CardLinkTarget::Blank => "_blank",
+    }
+}
+
+fn navigation_class_token(class: crate::model::NavigationClass) -> &'static str {
+    match class {
+        crate::model::NavigationClass::MainMenu => "-main-menu",
+        crate::model::NavigationClass::MenuSecondary => "-menu-secondary",
+        crate::model::NavigationClass::MenuTertiary => "-menu-tertiary",
+        crate::model::NavigationClass::FooterMenu => "-footer-menu",
+        crate::model::NavigationClass::FooterMenuSecondary => "-footer-menu-secondary",
+        crate::model::NavigationClass::FooterMenuTertiary => "-footer-menu-tertiary",
+        crate::model::NavigationClass::SocialMenu => "-social-menu",
+    }
+}
+
 fn render_inline(template: &str, data: Value) -> anyhow::Result<String> {
     let mut hbs = Handlebars::new();
     hbs.register_template_string("inline", template)
@@ -713,103 +1086,106 @@ fn render_inline(template: &str, data: Value) -> anyhow::Result<String> {
 }
 
 fn hero_to_json(hero: &DdHero) -> Value {
-    let cta_target = hero
-        .cta_target
+    let link_1_target = hero
+        .link_1_target
         .as_ref()
         .and_then(|v| serde_json::to_value(v).ok())
         .map(|v| stringify_json(&v))
         .unwrap_or_else(|| "_self".to_string());
-    let cta_target_2 = hero
-        .cta_target_2
+    let link_2_target = hero
+        .link_2_target
         .as_ref()
         .and_then(|v| serde_json::to_value(v).ok())
         .map(|v| stringify_json(&v))
         .unwrap_or_else(|| "_self".to_string());
-    let image = hero.image.trim();
-    let subtitle = hero.subtitle.trim();
-    let hero_class = hero
-        .hero_class
+    let image = hero.parent_image_url.trim();
+    let subtitle = hero.parent_subtitle.trim();
+    let parent_class = hero
+        .parent_class
         .as_ref()
         .and_then(|v| serde_json::to_value(v).ok())
         .map(|v| stringify_json(&v));
-    let hero_aos = hero
-        .hero_aos
+    let parent_data_aos = hero
+        .parent_data_aos
         .as_ref()
         .and_then(|v| serde_json::to_value(v).ok())
         .map(|v| stringify_json(&v))
         .unwrap_or_else(|| "fade-in".to_string());
-    let custom_css = hero
-        .custom_css
+    let parent_custom_css = hero
+        .parent_custom_css
         .as_deref()
         .map(str::trim)
         .filter(|v| !v.is_empty())
         .map(str::to_string);
-    let copy_html = hero
-        .copy
+    let parent_copy_html = hero
+        .parent_copy
         .as_deref()
         .filter(|v| !v.trim().is_empty())
         .map(markdown_to_html);
-    let has_primary_cta = hero
-        .cta_text
+    let has_link_1 = hero
+        .link_1_label
         .as_deref()
         .is_some_and(|v| !v.trim().is_empty())
         && hero
-            .cta_link
+            .link_1_url
             .as_deref()
             .is_some_and(|v| !v.trim().is_empty());
-    let has_secondary_cta = hero
-        .cta_text_2
+    let has_link_2 = hero
+        .link_2_label
         .as_deref()
         .is_some_and(|v| !v.trim().is_empty())
         && hero
-            .cta_link_2
+            .link_2_url
             .as_deref()
             .is_some_and(|v| !v.trim().is_empty());
     let bg_mobile = hero
-        .image_mobile
+        .parent_image_mobile
         .as_deref()
         .filter(|v| !v.trim().is_empty())
         .unwrap_or(image);
     let bg_desktop = hero
-        .image_desktop
+        .parent_image_desktop
         .as_deref()
         .filter(|v| !v.trim().is_empty())
         .unwrap_or(image);
-    let image_class = hero
-        .image_class
+    let parent_image_class = hero
+        .parent_image_class
         .as_ref()
         .and_then(|v| serde_json::to_value(v).ok())
         .map(|v| stringify_json(&v))
         .unwrap_or_else(|| "-full-full".to_string());
     let has_image = !image.is_empty();
-    let has_body = hero.copy.as_deref().is_some_and(|v| !v.trim().is_empty())
-        || has_primary_cta
-        || has_secondary_cta;
+    let has_body = hero
+        .parent_copy
+        .as_deref()
+        .is_some_and(|v| !v.trim().is_empty())
+        || has_link_1
+        || has_link_2;
 
     json!({
-        "image": hero.image,
-        "hero_class": hero_class,
-        "hero_aos": hero_aos,
-        "custom_css": custom_css,
-        "title": hero.title,
-        "subtitle": if subtitle.is_empty() { None } else { Some(hero.subtitle.clone()) },
-        "copy_html": copy_html,
-        "cta_text": hero.cta_text,
-        "cta_link": hero.cta_link,
-        "cta_target": cta_target,
-        "cta_text_2": hero.cta_text_2,
-        "cta_link_2": hero.cta_link_2,
-        "cta_target_2": cta_target_2,
-        "image_alt": hero.image_alt.clone().unwrap_or_default(),
-        "image_mobile": hero.image_mobile,
-        "image_tablet": hero.image_tablet,
-        "image_desktop": hero.image_desktop,
-        "image_class": image_class,
+        "parent_image_url": hero.parent_image_url,
+        "parent_class": parent_class,
+        "parent_data_aos": parent_data_aos,
+        "parent_custom_css": parent_custom_css,
+        "parent_title": hero.parent_title,
+        "parent_subtitle": if subtitle.is_empty() { None } else { Some(hero.parent_subtitle.clone()) },
+        "parent_copy_html": parent_copy_html,
+        "link_1_label": hero.link_1_label,
+        "link_1_url": hero.link_1_url,
+        "link_1_target": link_1_target,
+        "link_2_label": hero.link_2_label,
+        "link_2_url": hero.link_2_url,
+        "link_2_target": link_2_target,
+        "parent_image_alt": hero.parent_image_alt.clone().unwrap_or_default(),
+        "parent_image_mobile": hero.parent_image_mobile,
+        "parent_image_tablet": hero.parent_image_tablet,
+        "parent_image_desktop": hero.parent_image_desktop,
+        "parent_image_class": parent_image_class,
         "has_image": has_image,
         "has_body": has_body,
-        "has_links": has_primary_cta || has_secondary_cta,
-        "has_primary_cta": has_primary_cta,
-        "has_secondary_cta": has_secondary_cta,
+        "has_links": has_link_1 || has_link_2,
+        "has_link_1": has_link_1,
+        "has_link_2": has_link_2,
         "bg_mobile": bg_mobile,
         "bg_desktop": bg_desktop
     })

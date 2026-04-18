@@ -2,41 +2,48 @@
 component: dd-blockquote
 version: 1
 node_scope: section_item   # one of: page_node | section_item
+
 insert:
   defaults:
-    blockquote_data_aos: "fade-in"
-    blockquote_image_url: "https://dummyimage.com/512x512/000/fff"
-    blockquote_image_alt: "blockquote Persons Name"
-    blockquote_persons_name: "blockquote Persons Name"
-    blockquote_persons_title: "blockquote Persons Title"
-    blockquote_copy: "blockquote content"
+    parent_data_aos: "fade-in"
+    parent_image_url: "https://dummyimage.com/512x512/000/fff"
+    parent_image_alt: "blockquote Persons Name"
+    parent_name: "blockquote Persons Name"
+    parent_title: "blockquote Persons Title"
+    parent_copy: "Copy"
+
 fields:
-  - id: blockquote_data_aos
+  - id: parent_data_aos
     required: true
     type: enum
     options: ["fade-in","fade-up","fade-right","fade-down","fade-left","zoom-in","zoom-in-up","zoom-in-down"]
     default: "fade-in"
     maps_to: ".dd-blockquote[data-aos]"
-  - id: blockquote_image_url
+    
+  - id: parent_image_url
     required: true
     type: string
     maps_to: ".dd-blockquote__image img[src]"
-  - id: blockquote_image_alt
+
+  - id: parent_image_alt
     required: true
     type: string
     maps_to: ".dd-blockquote__image img[alt]"
-  - id: blockquote_persons_name
+
+  - id: parent_name
     required: true
     type: string
     maps_to: ".dd-blockquote__name"
-  - id: blockquote_persons_title
+
+  - id: parent_title
     required: true
     type: string
     maps_to: ".dd-blockquote__title"
-  - id: blockquote_copy
+
+  - id: parent_copy
     required: true
     type: string
-    maps_to: ".dd-blockquote__comment"
+    maps_to: ".dd-blockquote__copy"
     ui:
       control: textarea
       rows: 5
@@ -48,33 +55,36 @@ fields:
         left_right: "move cursor character"
       mouse:
         wheel: "scroll lines"
+
 edit_ui:
   tab_order:
-    - blockquote_data_aos
-    - blockquote_image_url
-    - blockquote_image_alt
-    - blockquote_persons_name
-    - blockquote_persons_title
-    - blockquote_copy
+    - parent_data_aos
+    - parent_image_url
+    - parent_image_alt
+    - parent_name
+    - parent_title
+    - parent_copy
+
   enter_behavior:
-    parent_row: "start dd-blockquote field editing"
+    parent_row: "start component field editing"
+
   modal_fields:
     parent_edit_modes:
-      - blockquote_data_aos
-      - blockquote_image_url
-      - blockquote_image_alt
-      - blockquote_persons_name
-      - blockquote_persons_title
-      - blockquote_copy
-    scope_rule: "dd-blockquote is a single component with no child rows; all editable fields are available on parent edit"
-    hide_when_editing_blockquote:
+      - parent_data_aos
+      - parent_image_url
+      - parent_image_alt
+      - parent_name
+      - parent_title
+      - parent_copy
+    hide_when_editing_component:
       - column.id
       - column.width_class
+
 blueprint:
   label: "dd-blockquote"
   show_fields:
-    - blockquote_persons_name
-    - blockquote_persons_title
+    - "parent_name"
+    - "parent_title"
 ---
 
 ## HTML Template
@@ -85,16 +95,14 @@ blueprint:
     <div class="dd-blockquote__icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-quote-icon lucide-quote"><path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/></svg></div>
     <div class="dd-blockquote__person dd-g l-box">
       <div class="dd-blockquote__image">
-        <picture>
-          <img src="[blockquote_image_url]" class="dd-img" alt="[blockquote_image_alt]" />
-        </picture>
+        <img src="[parent_image_url]" class="dd-img" alt="[parent_image_alt]" loading="lazy" />
       </div>
       <div class="dd-blockquote__name-title">
-        <span class="dd-blockquote__name">[blockquote_persons_name]</span>
-        <span class="dd-blockquote__title">, [blockquote_persons_title]</span>
+        <span class="dd-blockquote__name">[parent_name]</span>
+        <span class="dd-blockquote__title">, [parent_title]</span>
       </div>
       <div class="dd-blockquote__comment">
-        [blockquote_copy]
+        [parent_copy]
       </div>
     </div>
   </div>
@@ -105,9 +113,13 @@ blueprint:
   "@type": "Quotation",
   "creator": {
     "@type": "Person",
-    "name": "[blockquote_persons_name], [blockquote_persons_title]"
+    "name": "[parent_name], [parent_title]"
   },
-  "text": "[blockquote_copy]"
+  "text": "[parent_copy]"
 }
 </script>
 ```
+
+## Conditional Markup
+
+- none (this variant intentionally has no optional link fields)

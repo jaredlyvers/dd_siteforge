@@ -93,7 +93,7 @@ blueprint:
 ## HTML Template
 
 ```html
-<div class="dd-your-component [parent_type] [parent_class]" data-aos="[parent_data_aos]">
+<div class="dd-your-component [parent_type] [parent_class]" data-aos="[parent_data_aos]" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
   <div class="dd-your-component__title"><h3>[parent_title]</h3></div>
   <div class="dd-your-component__subtitle"><strong>[parent_subtitle]</strong></div>
   <div class="dd-your-component__copy"><p>[parent_copy]</p></div>
@@ -103,4 +103,3 @@ blueprint:
 ## Conditional Markup
 
 - none (this variant intentionally has no optional link fields)
-

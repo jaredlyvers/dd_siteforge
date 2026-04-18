@@ -18,27 +18,32 @@ fields:
     required: true
     type: string
     maps_to: "section[id reference in builder only]"
+  
   - id: section_title
     required: false
     type: string
     maps_to: ".dd-section__title"
+  
   - id: section_class
     required: true
     type: enum
     options: ["-contained", "-contained-md", "-contained-lg", "-contained-xl", "-contained-xxl", "-full-full", "-full-contained", "-full-contained-md", "-full-contained-lg", "-full-contained-xl", "-full-contained-xxl"]
     default: "-full-contained"
     maps_to: ".dd-section class token"
+  
   - id: item_box_class
     required: true
     type: enum
     options: ["l-box", "ll-box"]
     default: "l-box"
     maps_to: ".dd-section__item class token"
+  
   - id: custom_css
     required: false
     type: string
     default: ""
     maps_to: ".dd-section class token"
+  
   - id: items
     required: true
     type: array
@@ -48,10 +53,12 @@ fields:
         required: true
         type: string
         maps_to: "builder identifier"
+      
       - id: width_class
         required: true
         type: string
         maps_to: ".dd-section__item width classes (dd-u-*)"
+      
       - id: components
         required: false
         type: array

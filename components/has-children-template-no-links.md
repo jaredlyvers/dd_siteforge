@@ -154,7 +154,7 @@ blueprint:
 <div class="dd-your-component [parent_type] [parent_class]">
   <div class="dd-your-component__items dd-g">
     <!-- repeat: items -->
-    <div class="dd-your-component__item l-box [parent_width]" data-aos="[parent_data_aos]">
+    <div class="dd-your-component__item l-box [parent_width]" data-aos="[parent_data_aos]" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
       <div class="dd-your-component__body dd-g">
         <div class="dd-your-component__image">
           <img src="[child_image_url]" alt="[child_image_alt]" class="dd-img" loading="lazy">
@@ -173,4 +173,3 @@ blueprint:
 ## Conditional Markup
 
 - none (this variant intentionally has no optional link fields)
-

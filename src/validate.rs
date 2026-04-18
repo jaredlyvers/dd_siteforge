@@ -1,4 +1,4 @@
-use crate::model::{DdSection, PageNode, SectionColumn, SectionComponent, Site};
+use crate::model::{DdSection, NavigationItem, NavigationKind, PageNode, SectionComponent, Site};
 
 pub fn validate_site(site: &Site) -> Vec<String> {
     let mut errors = Vec::new();
@@ -7,6 +7,9 @@ pub fn validate_site(site: &Site) -> Vec<String> {
     if site.pages.is_empty() {
         errors.push("Site must include at least one page.".to_string());
     }
+
+    validate_header(&site.header, &mut errors);
+    validate_footer(&site.footer, &mut errors);
 
     for page in &site.pages {
         if page.slug.trim().is_empty() {
@@ -23,40 +26,42 @@ pub fn validate_site(site: &Site) -> Vec<String> {
         for node in &page.nodes {
             match node {
                 PageNode::Hero(hero) => {
-                    if hero.title.trim().is_empty() {
-                        errors.push(format!("Page '{}' hero is missing title.", page.id));
+                    if hero.parent_title.trim().is_empty() {
+                        errors.push(format!("Page '{}' hero is missing parent_title.", page.id));
                     }
-                    if !hero.image.trim().is_empty()
-                        && hero.image_alt.as_deref().unwrap_or("").trim().is_empty()
+                    if !hero.parent_image_url.trim().is_empty()
+                        && hero
+                            .parent_image_alt
+                            .as_deref()
+                            .unwrap_or("")
+                            .trim()
+                            .is_empty()
                     {
                         errors.push(format!(
-                            "Page '{}' hero image is missing image_alt text.",
+                            "Page '{}' hero image is missing parent_image_alt text.",
                             page.id
                         ));
                     }
-                    if hero.cta_text.is_some() ^ hero.cta_link.is_some() {
+                    if hero.link_1_label.is_some() ^ hero.link_1_url.is_some() {
                         errors.push(format!(
-                            "Page '{}' hero must provide both cta_text and cta_link together.",
+                            "Page '{}' hero must provide both link_1_label and link_1_url together.",
                             page.id
                         ));
                     }
-                    if let Some(link) = &hero.cta_link {
+                    if let Some(link) = &hero.link_1_url {
                         if !is_valid_url(link) {
-                            errors.push(format!("Page '{}' hero CTA link is invalid.", page.id));
+                            errors.push(format!("Page '{}' hero link_1_url is invalid.", page.id));
                         }
                     }
-                    if hero.cta_text_2.is_some() ^ hero.cta_link_2.is_some() {
+                    if hero.link_2_label.is_some() ^ hero.link_2_url.is_some() {
                         errors.push(format!(
-                            "Page '{}' hero must provide both cta_text_2 and cta_link_2 together.",
+                            "Page '{}' hero must provide both link_2_label and link_2_url together.",
                             page.id
                         ));
                     }
-                    if let Some(link) = &hero.cta_link_2 {
+                    if let Some(link) = &hero.link_2_url {
                         if !is_valid_url(link) {
-                            errors.push(format!(
-                                "Page '{}' hero secondary CTA link is invalid.",
-                                page.id
-                            ));
+                            errors.push(format!("Page '{}' hero link_2_url is invalid.", page.id));
                         }
                     }
                 }
@@ -69,12 +74,11 @@ pub fn validate_site(site: &Site) -> Vec<String> {
                             page.id, section.id
                         ));
                     }
-                    let columns = section_columns(section);
-                    if columns.is_empty() {
+                    if section.columns.is_empty() {
                         errors.push(format!("Section '{}' has no columns.", section.id));
                     }
                     let mut column_ids = std::collections::HashSet::new();
-                    for column in &columns {
+                    for column in &section.columns {
                         if column.id.trim().is_empty() {
                             errors.push(format!(
                                 "Page '{}' section '{}' has a column with empty id.",
@@ -124,10 +128,10 @@ fn validate_section_component(
                 ));
             }
             for (idx, item) in alternating.items.iter().enumerate() {
-                if item.image.trim().is_empty()
-                    || item.image_alt.trim().is_empty()
-                    || item.title.trim().is_empty()
-                    || item.copy.trim().is_empty()
+                if item.child_image_url.trim().is_empty()
+                    || item.child_image_alt.trim().is_empty()
+                    || item.child_title.trim().is_empty()
+                    || item.child_copy.trim().is_empty()
                 {
                     errors.push(format!(
                         "Page '{}' section '{}' dd-alternating item {} has missing required fields.",
@@ -139,9 +143,9 @@ fn validate_section_component(
             }
         }
         SectionComponent::Card(card) => {
-            if card.card_width.trim().is_empty() {
+            if card.parent_width.trim().is_empty() {
                 errors.push(format!(
-                    "Page '{}' section '{}' has dd-card with empty card_width.",
+                    "Page '{}' section '{}' has dd-card with empty parent_width.",
                     page_id, section_id
                 ));
             }
@@ -152,11 +156,11 @@ fn validate_section_component(
                 ));
             }
             for (idx, item) in card.items.iter().enumerate() {
-                if item.card_image_url.trim().is_empty()
-                    || item.card_image_alt.trim().is_empty()
-                    || item.card_title.trim().is_empty()
-                    || item.card_subtitle.trim().is_empty()
-                    || item.card_copy.trim().is_empty()
+                if item.child_image_url.trim().is_empty()
+                    || item.child_image_alt.trim().is_empty()
+                    || item.child_title.trim().is_empty()
+                    || item.child_subtitle.trim().is_empty()
+                    || item.child_copy.trim().is_empty()
                 {
                     errors.push(format!(
                         "Page '{}' section '{}' dd-card item {} has missing required fields.",
@@ -165,36 +169,36 @@ fn validate_section_component(
                         idx + 1
                     ));
                 }
-                if !is_valid_url(&item.card_image_url) {
+                if !is_valid_url(&item.child_image_url) {
                     errors.push(format!(
-                        "Page '{}' section '{}' dd-card item {} card_image_url is invalid.",
+                        "Page '{}' section '{}' dd-card item {} child_image_url is invalid.",
                         page_id,
                         section_id,
                         idx + 1
                     ));
                 }
                 let has_link_url = item
-                    .card_link_url
+                    .child_link_url
                     .as_deref()
                     .is_some_and(|v| !v.trim().is_empty());
                 let has_link_label = item
-                    .card_link_label
+                    .child_link_label
                     .as_deref()
                     .is_some_and(|v| !v.trim().is_empty());
                 if has_link_url ^ has_link_label {
                     errors.push(format!(
-                        "Page '{}' section '{}' dd-card item {} must provide both card_link_url and card_link_label together.",
+                        "Page '{}' section '{}' dd-card item {} must provide both child_link_url and child_link_label together.",
                         page_id,
                         section_id,
                         idx + 1
                     ));
                 }
-                if let Some(url) = item.card_link_url.as_deref()
+                if let Some(url) = item.child_link_url.as_deref()
                     && !url.trim().is_empty()
                     && !is_valid_url(url)
                 {
                     errors.push(format!(
-                        "Page '{}' section '{}' dd-card item {} card_link_url is invalid.",
+                        "Page '{}' section '{}' dd-card item {} child_link_url is invalid.",
                         page_id,
                         section_id,
                         idx + 1
@@ -203,63 +207,63 @@ fn validate_section_component(
             }
         }
         SectionComponent::Banner(banner) => {
-            if banner.banner_image_url.trim().is_empty() {
+            if banner.parent_image_url.trim().is_empty() {
                 errors.push(format!(
-                    "Page '{}' section '{}' has a dd-banner with empty banner_image_url.",
+                    "Page '{}' section '{}' has a dd-banner with empty parent_image_url.",
                     page_id, section_id
                 ));
             }
-            if banner.banner_image_alt.trim().is_empty() {
+            if banner.parent_image_alt.trim().is_empty() {
                 errors.push(format!(
-                    "Page '{}' section '{}' has a dd-banner with empty banner_image_alt.",
+                    "Page '{}' section '{}' has a dd-banner with empty parent_image_alt.",
                     page_id, section_id
                 ));
             }
-            if !is_valid_url(&banner.banner_image_url) {
+            if !is_valid_url(&banner.parent_image_url) {
                 errors.push(format!(
-                    "Page '{}' section '{}' dd-banner banner_image_url is invalid.",
+                    "Page '{}' section '{}' dd-banner parent_image_url is invalid.",
                     page_id, section_id
                 ));
             }
         }
         SectionComponent::Cta(cta) => {
-            if cta.cta_image_url.trim().is_empty()
-                || cta.cta_image_alt.trim().is_empty()
-                || cta.cta_title.trim().is_empty()
-                || cta.cta_subtitle.trim().is_empty()
-                || cta.cta_copy.trim().is_empty()
+            if cta.parent_image_url.trim().is_empty()
+                || cta.parent_image_alt.trim().is_empty()
+                || cta.parent_title.trim().is_empty()
+                || cta.parent_subtitle.trim().is_empty()
+                || cta.parent_copy.trim().is_empty()
             {
                 errors.push(format!(
                     "Page '{}' section '{}' dd-cta has missing required fields.",
                     page_id, section_id
                 ));
             }
-            if !is_valid_url(&cta.cta_image_url) {
+            if !is_valid_url(&cta.parent_image_url) {
                 errors.push(format!(
-                    "Page '{}' section '{}' dd-cta cta_image_url is invalid.",
+                    "Page '{}' section '{}' dd-cta parent_image_url is invalid.",
                     page_id, section_id
                 ));
             }
             let has_link_url = cta
-                .cta_link_url
+                .parent_link_url
                 .as_deref()
                 .is_some_and(|v| !v.trim().is_empty());
             let has_link_label = cta
-                .cta_link_label
+                .parent_link_label
                 .as_deref()
                 .is_some_and(|v| !v.trim().is_empty());
             if has_link_url ^ has_link_label {
                 errors.push(format!(
-                    "Page '{}' section '{}' dd-cta must provide both cta_link_url and cta_link_label together.",
+                    "Page '{}' section '{}' dd-cta must provide both parent_link_url and parent_link_label together.",
                     page_id, section_id
                 ));
             }
-            if let Some(url) = cta.cta_link_url.as_deref()
+            if let Some(url) = cta.parent_link_url.as_deref()
                 && !url.trim().is_empty()
                 && !is_valid_url(url)
             {
                 errors.push(format!(
-                    "Page '{}' section '{}' dd-cta cta_link_url is invalid.",
+                    "Page '{}' section '{}' dd-cta parent_link_url is invalid.",
                     page_id, section_id
                 ));
             }
@@ -272,9 +276,9 @@ fn validate_section_component(
                 ));
             }
             for (idx, item) in filmstrip.items.iter().enumerate() {
-                if item.image_url.trim().is_empty()
-                    || item.image_alt.trim().is_empty()
-                    || item.title.trim().is_empty()
+                if item.child_image_url.trim().is_empty()
+                    || item.child_image_alt.trim().is_empty()
+                    || item.child_title.trim().is_empty()
                 {
                     errors.push(format!(
                         "Page '{}' section '{}' dd-filmstrip item {} has missing required fields.",
@@ -283,9 +287,9 @@ fn validate_section_component(
                         idx + 1
                     ));
                 }
-                if !is_valid_url(&item.image_url) {
+                if !is_valid_url(&item.child_image_url) {
                     errors.push(format!(
-                        "Page '{}' section '{}' dd-filmstrip item {} image_url is invalid.",
+                        "Page '{}' section '{}' dd-filmstrip item {} child_image_url is invalid.",
                         page_id,
                         section_id,
                         idx + 1
@@ -414,9 +418,9 @@ fn validate_section_component(
             }
         }
         SectionComponent::Accordion(accordion) => {
-            if accordion.group_name.trim().is_empty() {
+            if accordion.parent_group_name.trim().is_empty() {
                 errors.push(format!(
-                    "Page '{}' section '{}' dd-accordion missing group_name.",
+                    "Page '{}' section '{}' dd-accordion missing parent_group_name.",
                     page_id, section_id
                 ));
             }
@@ -427,9 +431,9 @@ fn validate_section_component(
                 ));
             }
             for (idx, item) in accordion.items.iter().enumerate() {
-                if item.title.trim().is_empty() || item.content.trim().is_empty() {
+                if item.child_title.trim().is_empty() || item.child_copy.trim().is_empty() {
                     errors.push(format!(
-                        "Page '{}' section '{}' dd-accordion item {} has missing title/content.",
+                        "Page '{}' section '{}' dd-accordion item {} has missing child_title/child_copy.",
                         page_id,
                         section_id,
                         idx + 1
@@ -438,29 +442,244 @@ fn validate_section_component(
             }
         }
         SectionComponent::Blockquote(blockquote) => {
-            if blockquote.blockquote_image_url.trim().is_empty() {
+            if blockquote.parent_image_url.trim().is_empty() {
                 errors.push(format!(
-                    "Page '{}' section '{}' has a dd-blockquote with empty blockquote_image_url.",
+                    "Page '{}' section '{}' has a dd-blockquote with empty parent_image_url.",
                     page_id, section_id
                 ));
             }
-            if blockquote.blockquote_image_alt.trim().is_empty()
-                || blockquote.blockquote_persons_name.trim().is_empty()
-                || blockquote.blockquote_persons_title.trim().is_empty()
-                || blockquote.blockquote_copy.trim().is_empty()
+            if blockquote.parent_image_alt.trim().is_empty()
+                || blockquote.parent_name.trim().is_empty()
+                || blockquote.parent_role.trim().is_empty()
+                || blockquote.parent_copy.trim().is_empty()
             {
                 errors.push(format!(
                     "Page '{}' section '{}' dd-blockquote has missing required fields.",
                     page_id, section_id
                 ));
             }
-            if !is_valid_url(&blockquote.blockquote_image_url) {
+            if !is_valid_url(&blockquote.parent_image_url) {
                 errors.push(format!(
-                    "Page '{}' section '{}' dd-blockquote blockquote_image_url is invalid.",
+                    "Page '{}' section '{}' dd-blockquote parent_image_url is invalid.",
                     page_id, section_id
                 ));
             }
         }
+        SectionComponent::Alert(alert) => {
+            if alert.parent_copy.trim().is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-alert has missing required parent_copy.",
+                    page_id, section_id
+                ));
+            }
+        }
+        SectionComponent::Image(image) => {
+            if image.parent_image_url.trim().is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-image is missing parent_image_url.",
+                    page_id, section_id
+                ));
+            } else if !is_valid_url(&image.parent_image_url) {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-image parent_image_url is invalid.",
+                    page_id, section_id
+                ));
+            }
+            if image.parent_image_alt.trim().is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-image is missing parent_image_alt.",
+                    page_id, section_id
+                ));
+            }
+            if let Some(url) = image.parent_link_url.as_deref()
+                && !url.trim().is_empty()
+                && !is_valid_url(url)
+            {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-image parent_link_url is invalid.",
+                    page_id, section_id
+                ));
+            }
+        }
+        SectionComponent::RichText(rt) => {
+            if rt.parent_copy.trim().is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-rich_text is missing parent_copy.",
+                    page_id, section_id
+                ));
+            }
+        }
+        SectionComponent::Navigation(nav) => {
+            if nav.items.is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-navigation has no items.",
+                    page_id, section_id
+                ));
+            }
+            for (idx, item) in nav.items.iter().enumerate() {
+                validate_navigation_item(
+                    item,
+                    &format!("{}", idx + 1),
+                    page_id,
+                    section_id,
+                    errors,
+                );
+            }
+        }
+        SectionComponent::HeaderSearch(search) => {
+            if search.parent_width.trim().is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-header-search is missing parent_width.",
+                    page_id, section_id
+                ));
+            }
+        }
+        SectionComponent::HeaderMenu(menu) => {
+            if menu.parent_width.trim().is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-header-menu is missing parent_width.",
+                    page_id, section_id
+                ));
+            }
+        }
+    }
+}
+
+fn validate_navigation_item(
+    item: &NavigationItem,
+    path: &str,
+    page_id: &str,
+    section_id: &str,
+    errors: &mut Vec<String>,
+) {
+    if item.child_link_label.trim().is_empty() {
+        errors.push(format!(
+            "Page '{}' section '{}' dd-navigation item {} missing child_link_label.",
+            page_id, section_id, path
+        ));
+    }
+    match item.child_kind {
+        NavigationKind::Link => {
+            let url = item.child_link_url.as_deref().unwrap_or("");
+            if url.trim().is_empty() {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-navigation item {} kind=link requires child_link_url.",
+                    page_id, section_id, path
+                ));
+            } else if !is_valid_url(url) {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-navigation item {} child_link_url is invalid.",
+                    page_id, section_id, path
+                ));
+            }
+        }
+        NavigationKind::Button => {
+            if item
+                .child_link_url
+                .as_deref()
+                .is_some_and(|v| !v.trim().is_empty())
+            {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-navigation item {} kind=button must not provide child_link_url.",
+                    page_id, section_id, path
+                ));
+            }
+            if item.child_link_target.is_some() {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-navigation item {} kind=button must not provide child_link_target.",
+                    page_id, section_id, path
+                ));
+            }
+        }
+    }
+    for (idx, child) in item.items.iter().enumerate() {
+        validate_navigation_item(
+            child,
+            &format!("{}.{}", path, idx + 1),
+            page_id,
+            section_id,
+            errors,
+        );
+    }
+}
+
+fn validate_header(header: &crate::model::DdHeader, errors: &mut Vec<String>) {
+    if header.id.trim().is_empty() {
+        errors.push("site.header has empty id.".to_string());
+    }
+    if header.sections.is_empty() {
+        errors.push("site.header must have at least one section.".to_string());
+    }
+    for section in &header.sections {
+        validate_section_context(
+            section,
+            "header",
+            &[
+                "dd-image",
+                "dd-rich_text",
+                "dd-navigation",
+                "dd-header-search",
+                "dd-header-menu",
+            ],
+            errors,
+        );
+    }
+}
+
+fn validate_footer(footer: &crate::model::DdFooter, errors: &mut Vec<String>) {
+    if footer.id.trim().is_empty() {
+        errors.push("site.footer has empty id.".to_string());
+    }
+    if footer.sections.is_empty() {
+        errors.push("site.footer must have at least one section.".to_string());
+    }
+    for section in &footer.sections {
+        validate_section_context(
+            section,
+            "footer",
+            &["dd-image", "dd-rich_text", "dd-navigation"],
+            errors,
+        );
+    }
+}
+
+fn validate_section_context(
+    section: &DdSection,
+    scope: &str,
+    allowed_types: &[&str],
+    errors: &mut Vec<String>,
+) {
+    for column in &section.columns {
+        for component in &column.components {
+            let ty = section_component_type_name(component);
+            if !allowed_types.contains(&ty) {
+                errors.push(format!(
+                    "site.{} section '{}' column '{}' contains disallowed component type '{}'; allowed: {:?}",
+                    scope, section.id, column.id, ty, allowed_types
+                ));
+            }
+        }
+    }
+}
+
+fn section_component_type_name(component: &SectionComponent) -> &'static str {
+    match component {
+        SectionComponent::Alternating(_) => "dd-alternating",
+        SectionComponent::Card(_) => "dd-card",
+        SectionComponent::Cta(_) => "dd-cta",
+        SectionComponent::Filmstrip(_) => "dd-filmstrip",
+        SectionComponent::Milestones(_) => "dd-milestones",
+        SectionComponent::Slider(_) => "dd-slider",
+        SectionComponent::Modal(_) => "dd-modal",
+        SectionComponent::Banner(_) => "dd-banner",
+        SectionComponent::Accordion(_) => "dd-accordion",
+        SectionComponent::Blockquote(_) => "dd-blockquote",
+        SectionComponent::Alert(_) => "dd-alert",
+        SectionComponent::Image(_) => "dd-image",
+        SectionComponent::RichText(_) => "dd-rich_text",
+        SectionComponent::Navigation(_) => "dd-navigation",
+        SectionComponent::HeaderSearch(_) => "dd-header-search",
+        SectionComponent::HeaderMenu(_) => "dd-header-menu",
     }
 }
 
@@ -471,18 +690,6 @@ fn is_valid_url(url: &str) -> bool {
             || v.starts_with('#')
             || v.starts_with("http://")
             || v.starts_with("https://"))
-}
-
-fn section_columns(section: &DdSection) -> Vec<SectionColumn> {
-    if !section.columns.is_empty() {
-        section.columns.clone()
-    } else {
-        vec![SectionColumn {
-            id: format!("{}-legacy-column", section.id),
-            width_class: "dd-u-1-1".to_string(),
-            components: section.components.clone(),
-        }]
-    }
 }
 
 #[cfg(test)]
@@ -505,14 +712,16 @@ mod tests {
         let mut site = Site::starter();
         let page = &mut site.pages[0];
         if let PageNode::Hero(hero) = &mut page.nodes[0] {
-            hero.title.clear();
-            hero.subtitle.clear();
-            hero.image.clear();
+            hero.parent_title.clear();
+            hero.parent_subtitle.clear();
+            hero.parent_image_url.clear();
         }
         let errors = validate_site(&site);
-        assert!(errors.iter().any(|e| e.contains("missing title")));
-        assert!(!errors.iter().any(|e| e.contains("missing subtitle")));
-        assert!(!errors.iter().any(|e| e.contains("missing image")));
+        assert!(errors.iter().any(|e| e.contains("missing parent_title")));
+        assert!(!errors.iter().any(|e| e.contains("missing parent_subtitle")));
+        assert!(!errors
+            .iter()
+            .any(|e| e.contains("missing parent_image_url")));
     }
 
     #[test]

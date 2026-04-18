@@ -14,7 +14,7 @@ use tui::run_tui;
 use validate::validate_site;
 
 #[derive(Debug, Parser)]
-#[command(name = "dd_staticbuilder")]
+#[command(name = "dd_staticsite")]
 #[command(about = "Framework-native static page builder")]
 struct Cli {
     #[command(subcommand)]
