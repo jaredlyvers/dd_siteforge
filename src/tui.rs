@@ -22,6 +22,9 @@ use serde::Deserialize;
 use crate::model::{PageNode, SectionColumn, Site};
 use crate::storage::save_site;
 
+pub mod cursor;
+pub mod editform;
+
 pub fn run_tui(site: Site, path: Option<PathBuf>) -> anyhow::Result<()> {
     let theme = match AppTheme::load() {
         Ok(theme) => theme,
@@ -134,6 +137,14 @@ enum Modal {
         buffer: String,
         cursor: usize,
         multiline: bool,
+    },
+    /// Unified form editor: all fields of a component rendered together,
+    /// Tab moves between fields, Left/Right cycles enums, Ctrl+S saves via
+    /// `cursor::apply_edit_form_to_component`.
+    FormEdit {
+        state: editform::EditFormState,
+        cursor: cursor::Cursor,
+        cursor_pos: usize, // text cursor within focused field's string
     },
 }
 
@@ -562,8 +573,154 @@ impl App {
             } => {
                 self.render_single_field_unified(frame, *mode, buffer, *cursor, *multiline);
             }
+            Modal::FormEdit {
+                state, cursor_pos, ..
+            } => {
+                self.render_form_edit_modal(frame, state, *cursor_pos);
+            }
         }
     }
+
+    /// Render the unified component-editor modal: one row per visible field,
+    /// label on the left, value on the right, focused row highlighted.
+    fn render_form_edit_modal(
+        &self,
+        frame: &mut ratatui::Frame,
+        state: &editform::EditFormState,
+        cursor_pos: usize,
+    ) {
+        let area = centered_rect(80, 80, frame.area());
+        frame.render_widget(Clear, area);
+        let block = Block::default()
+            .title(format!("Edit — {}", state.form.title))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(self.theme.border))
+            .title_style(
+                Style::default()
+                    .fg(self.theme.title)
+                    .add_modifier(Modifier::BOLD),
+            );
+        frame.render_widget(block.clone(), area);
+        let inner = block.inner(area);
+        if inner.height < 3 {
+            return;
+        }
+
+        let label_width: u16 = 22;
+        let value_left = inner.x.saturating_add(label_width + 2);
+        let value_width = inner.width.saturating_sub(label_width + 2);
+
+        let mut cur_y = inner.y;
+        let bottom = inner.y + inner.height.saturating_sub(1);
+        let footer_height = 2u16;
+
+        for (idx, field) in state.form.fields.iter().enumerate() {
+            if !state.field_visible(field) {
+                continue;
+            }
+            if cur_y >= bottom.saturating_sub(footer_height) {
+                break;
+            }
+            let focused = idx == state.focused_field;
+            let label_style = if focused {
+                Style::default()
+                    .fg(self.theme.title)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(self.theme.foreground)
+            };
+            let label_rect = Rect::new(inner.x, cur_y, label_width, 1);
+            frame.render_widget(
+                Paragraph::new(format!("{}{}", if focused { "> " } else { "  " }, field.label))
+                    .style(label_style),
+                label_rect,
+            );
+
+            let field_height = match &field.kind {
+                editform::FieldKind::Textarea { rows, .. } => (*rows).max(1),
+                editform::FieldKind::OptionalLinkTriple { .. } => 3,
+                _ => 1,
+            };
+            if cur_y + field_height >= bottom.saturating_sub(footer_height) {
+                break;
+            }
+
+            let value_style = if focused {
+                Style::default()
+                    .fg(self.theme.input_focus)
+                    .bg(self.theme.selected_background)
+            } else {
+                Style::default().fg(self.theme.input_default)
+            };
+
+            match &field.kind {
+                editform::FieldKind::Text { .. } | editform::FieldKind::Url { .. } => {
+                    let value = state.get(field.id);
+                    let display = if focused {
+                        render_cursor_line(value, cursor_pos)
+                    } else {
+                        value.to_string()
+                    };
+                    let rect = Rect::new(value_left, cur_y, value_width, 1);
+                    frame.render_widget(Paragraph::new(display).style(value_style), rect);
+                }
+                editform::FieldKind::Textarea { rows, .. } => {
+                    let value = state.get(field.id);
+                    let rect = Rect::new(value_left, cur_y, value_width, *rows);
+                    frame.render_widget(
+                        Paragraph::new(value.to_string())
+                            .style(value_style)
+                            .wrap(Wrap { trim: false }),
+                        rect,
+                    );
+                }
+                editform::FieldKind::Enum { options, .. } => {
+                    let value = state.get(field.id);
+                    let display = format!("< {} >", value);
+                    let rect = Rect::new(value_left, cur_y, value_width, 1);
+                    let mut style = value_style;
+                    if !options.iter().any(|o| *o == value) {
+                        style = style.fg(self.theme.error);
+                    }
+                    frame.render_widget(Paragraph::new(display).style(style), rect);
+                }
+                editform::FieldKind::OptionalLinkTriple { .. } => {
+                    // Reserved for Hero migration; CTA wedge uses 3 flat fields.
+                }
+            }
+
+            cur_y = cur_y.saturating_add(field_height + 1);
+        }
+
+        let footer_rect = Rect::new(inner.x, bottom, inner.width, 1);
+        let footer = "Tab/Shift+Tab fields | Left/Right cycle enum | Ctrl+S save | Esc cancel";
+        frame.render_widget(
+            Paragraph::new(footer).style(Style::default().fg(self.theme.muted)),
+            footer_rect,
+        );
+    }
+}
+
+/// Insert a block cursor `▋` at `cursor_pos` in `value`. Used by the form
+/// editor to show where typing will land in a single-line text field.
+fn render_cursor_line(value: &str, cursor_pos: usize) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    let pos = cursor_pos.min(chars.len());
+    let mut out = String::with_capacity(value.len() + 3);
+    for (i, ch) in chars.iter().enumerate() {
+        if i == pos {
+            out.push('▋');
+        }
+        out.push(*ch);
+    }
+    if pos >= chars.len() {
+        out.push('▋');
+    }
+    out
+}
+
+impl App {
+    fn __marker_after_form_editor_helpers(&self) {}
 
     /// Unified edit modal renderer with variable-height textarea support
     fn render_edit_modal_unified(
@@ -1081,7 +1238,149 @@ impl App {
                 }
                 Modal::SavePrompt { .. } => return self.handle_save_prompt_event_unified(key),
                 Modal::SingleField { .. } => return self.handle_single_field_event_unified(key),
+                Modal::FormEdit { .. } => return self.handle_form_edit_event(key),
             }
+        }
+
+        Some(ModalResult::Continue)
+    }
+
+    /// Handle keyboard events while `Modal::FormEdit` is active.
+    fn handle_form_edit_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        // Ctrl+S saves via region-aware dispatch.
+        if matches!(key.code, KeyCode::Char('s')) && key.modifiers.contains(KeyModifiers::CONTROL) {
+            let taken = self.modal.take();
+            if let Some(Modal::FormEdit {
+                state,
+                cursor,
+                cursor_pos,
+            }) = taken
+            {
+                match cursor::apply_edit_form_to_component(&mut self.site, &cursor, &state) {
+                    Ok(()) => {
+                        self.status = format!("Saved {}.", state.form.title);
+                        return Some(ModalResult::CloseSuccess);
+                    }
+                    Err(e) => {
+                        self.status = format!("Save failed: {e}");
+                        self.modal = Some(Modal::FormEdit {
+                            state,
+                            cursor,
+                            cursor_pos,
+                        });
+                        return Some(ModalResult::Continue);
+                    }
+                }
+            }
+            return Some(ModalResult::CloseCancel);
+        }
+        if matches!(key.code, KeyCode::Esc) {
+            self.modal = None;
+            return Some(ModalResult::CloseCancel);
+        }
+
+        let Some(Modal::FormEdit {
+            state, cursor_pos, ..
+        }) = self.modal.as_mut()
+        else {
+            return Some(ModalResult::CloseCancel);
+        };
+
+        // Snapshot the focused field's id and kind (to satisfy borrow rules before mutation).
+        let focused_idx = state.focused_field;
+        let (field_id, is_enum, is_textarea, accepts_text) = match state.form.fields.get(focused_idx)
+        {
+            Some(f) => (
+                f.id,
+                matches!(f.kind, editform::FieldKind::Enum { .. }),
+                matches!(f.kind, editform::FieldKind::Textarea { .. }),
+                matches!(
+                    f.kind,
+                    editform::FieldKind::Text { .. }
+                        | editform::FieldKind::Url { .. }
+                        | editform::FieldKind::Textarea { .. }
+                ),
+            ),
+            None => return Some(ModalResult::CloseCancel),
+        };
+
+        match key.code {
+            KeyCode::Tab => {
+                state.focus_next();
+                *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
+            }
+            KeyCode::BackTab => {
+                state.focus_prev();
+                *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
+            }
+            KeyCode::Left => {
+                if is_enum {
+                    state.cycle_enum(false);
+                } else if *cursor_pos > 0 {
+                    *cursor_pos -= 1;
+                }
+            }
+            KeyCode::Right => {
+                if is_enum {
+                    state.cycle_enum(true);
+                } else {
+                    let len = state.get(field_id).len();
+                    if *cursor_pos < len {
+                        *cursor_pos += 1;
+                    }
+                }
+            }
+            KeyCode::Up => {
+                state.focus_prev();
+                *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
+            }
+            KeyCode::Down => {
+                state.focus_next();
+                *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if accepts_text {
+                    let current = state.get(field_id).to_string();
+                    let pos = (*cursor_pos).min(current.len());
+                    let mut new = String::with_capacity(current.len() + 1);
+                    new.push_str(&current[..pos]);
+                    new.push(c);
+                    new.push_str(&current[pos..]);
+                    state.set(field_id, new);
+                    *cursor_pos = pos + 1;
+                }
+            }
+            KeyCode::Backspace => {
+                if accepts_text {
+                    let current = state.get(field_id).to_string();
+                    let pos = (*cursor_pos).min(current.len());
+                    if pos > 0 {
+                        let mut new = String::with_capacity(current.len() - 1);
+                        new.push_str(&current[..pos - 1]);
+                        new.push_str(&current[pos..]);
+                        state.set(field_id, new);
+                        *cursor_pos = pos - 1;
+                    }
+                }
+            }
+            KeyCode::Enter => {
+                if is_textarea {
+                    let current = state.get(field_id).to_string();
+                    let pos = (*cursor_pos).min(current.len());
+                    let mut new = String::with_capacity(current.len() + 1);
+                    new.push_str(&current[..pos]);
+                    new.push('\n');
+                    new.push_str(&current[pos..]);
+                    state.set(field_id, new);
+                    *cursor_pos = pos + 1;
+                } else {
+                    state.focus_next();
+                    *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
+                }
+            }
+            _ => {}
         }
 
         Some(ModalResult::Continue)
@@ -7908,6 +8207,10 @@ impl App {
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        // New UX path: CTA components route through the unified form editor.
+        if self.try_open_cta_form_edit(&row) {
+            return;
+        }
         match row.kind {
             TreeRowKind::HeaderRoot { .. } => self.open_header_root_edit_modal(),
             TreeRowKind::HeaderSection { .. } => self.begin_edit_selected(),
@@ -7968,6 +8271,112 @@ impl App {
             selected: 0,
         });
         self.status = "Insert picker opened.".to_string();
+    }
+
+    /// If the selected tree row points at a `dd-cta`, open the unified form
+    /// editor for it and return true. Otherwise return false so the caller
+    /// can fall back to legacy edit flows.
+    fn try_open_cta_form_edit(&mut self, row: &TreeRow) -> bool {
+        use crate::model::SectionComponent;
+        let (maybe_cta, new_cursor) = match row.kind {
+            TreeRowKind::HeaderComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            } => {
+                let cta = self
+                    .site
+                    .header
+                    .sections
+                    .get(section_idx)
+                    .and_then(|s| s.columns.get(column_idx))
+                    .and_then(|c| c.components.get(component_idx))
+                    .and_then(|c| match c {
+                        SectionComponent::Cta(cta) => Some(cta.clone()),
+                        _ => None,
+                    });
+                (
+                    cta,
+                    cursor::Cursor::HeaderComponent {
+                        sec: section_idx,
+                        col: column_idx,
+                        comp: component_idx,
+                        items: Vec::new(),
+                    },
+                )
+            }
+            TreeRowKind::FooterComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            } => {
+                let cta = self
+                    .site
+                    .footer
+                    .sections
+                    .get(section_idx)
+                    .and_then(|s| s.columns.get(column_idx))
+                    .and_then(|c| c.components.get(component_idx))
+                    .and_then(|c| match c {
+                        SectionComponent::Cta(cta) => Some(cta.clone()),
+                        _ => None,
+                    });
+                (
+                    cta,
+                    cursor::Cursor::FooterComponent {
+                        sec: section_idx,
+                        col: column_idx,
+                        comp: component_idx,
+                        items: Vec::new(),
+                    },
+                )
+            }
+            TreeRowKind::Component {
+                node_idx,
+                column_idx,
+                component_idx,
+            } => {
+                let page_idx = self.selected_page;
+                let cta = self
+                    .site
+                    .pages
+                    .get(page_idx)
+                    .and_then(|p| p.nodes.get(node_idx))
+                    .and_then(|n| match n {
+                        PageNode::Section(s) => Some(s),
+                        _ => None,
+                    })
+                    .and_then(|s| s.columns.get(column_idx))
+                    .and_then(|c| c.components.get(component_idx))
+                    .and_then(|c| match c {
+                        SectionComponent::Cta(cta) => Some(cta.clone()),
+                        _ => None,
+                    });
+                (
+                    cta,
+                    cursor::Cursor::PageComponent {
+                        page: page_idx,
+                        node: node_idx,
+                        col: column_idx,
+                        comp: component_idx,
+                        items: Vec::new(),
+                    },
+                )
+            }
+            _ => return false,
+        };
+        let Some(cta) = maybe_cta else {
+            return false;
+        };
+        let state = cursor::cta_to_form_state(&cta);
+        let cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
+        self.modal = Some(Modal::FormEdit {
+            state,
+            cursor: new_cursor,
+            cursor_pos,
+        });
+        self.status = "Editing dd-cta.".to_string();
+        true
     }
 
     fn insert_selected_component_kind(&mut self) {
@@ -15086,7 +15495,7 @@ mod tests {
     }
 
     #[test]
-    fn dd_cta_keyflow_enter_tab_backtab_and_left_right_cycle_fields() {
+    fn dd_cta_form_edit_opens_on_enter() {
         let mut app = app_with_cta();
         let rows = app.build_page_tree_rows();
         let row_idx = rows
@@ -15106,14 +15515,40 @@ mod tests {
         app.apply_tree_row_selection(rows[row_idx]);
 
         send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        // Multi-field edit modal should be open
-        assert!(app.edit_modal.is_some());
-        let modal = app.edit_modal.as_ref().unwrap();
-        assert_eq!(modal.title, "dd-cta");
-        assert_eq!(modal.fields[0].value, "-top-left");
+        let modal = app
+            .modal
+            .as_ref()
+            .expect("Modal::FormEdit should open for CTA");
+        match modal {
+            Modal::FormEdit { state, cursor, .. } => {
+                assert_eq!(state.form.title, "dd-cta");
+                assert_eq!(state.get("parent_class"), "-top-left");
+                assert!(matches!(cursor, cursor::Cursor::PageComponent { .. }));
+            }
+            _ => panic!("expected Modal::FormEdit, got {:?}", modal.variant_name()),
+        }
+    }
 
-        // Save and verify
-        app.save_edit_modal_changes();
+    #[test]
+    fn dd_cta_form_edit_tab_and_enum_cycle() {
+        let mut app = app_with_cta();
+        open_form_edit_on_selected_cta(&mut app);
+
+        // Tab advances to next visible field (parent_image_url).
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(form_focused_field_id(&app), Some("parent_image_url"));
+
+        // BackTab goes back to parent_class.
+        send_key(&mut app, KeyCode::BackTab, KeyModifiers::NONE);
+        assert_eq!(form_focused_field_id(&app), Some("parent_class"));
+
+        // Right cycles the enum forward.
+        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        assert_eq!(form_value(&app, "parent_class"), "-top-center");
+
+        // Esc closes without applying.
+        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(app.modal.is_none());
         assert_eq!(
             selected_cta(&app).parent_class,
             crate::model::CtaClass::TopLeft
@@ -15121,8 +15556,110 @@ mod tests {
     }
 
     #[test]
-    fn dd_cta_keyflow_link_target_cycle_and_optional_fields() {
+    fn dd_cta_edits_apply_in_page_region() {
         let mut app = app_with_cta();
+        open_form_edit_on_selected_cta(&mut app);
+
+        // Cycle class from -top-left to -center-center.
+        for _ in 0..4 {
+            send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        }
+        assert_eq!(form_value(&app, "parent_class"), "-center-center");
+
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert!(app.modal.is_none(), "Ctrl+S should close the modal");
+        assert_eq!(
+            selected_cta(&app).parent_class,
+            crate::model::CtaClass::CenterCenter
+        );
+    }
+
+    #[test]
+    fn dd_cta_edits_in_header_region() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_region = SelectedRegion::Header;
+        app.header_column_expanded = true;
+        app.set_header_section_expanded(0, true);
+        app.site.header.sections[0].columns[0]
+            .components
+            .push(ComponentKind::Cta.default_component());
+        let rows = app.build_header_tree_rows();
+        let row_idx = rows
+            .iter()
+            .position(|row| {
+                matches!(
+                    row.kind,
+                    TreeRowKind::HeaderComponent {
+                        section_idx: 0,
+                        column_idx: 0,
+                        component_idx: 0,
+                    }
+                )
+            })
+            .expect("header CTA component row should exist");
+        app.selected_tree_row = row_idx;
+        app.apply_tree_row_selection(rows[row_idx]);
+
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        // Cycle class from -top-left to -top-center.
+        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+
+        let header_cta = match &app.site.header.sections[0].columns[0].components[0] {
+            crate::model::SectionComponent::Cta(cta) => cta,
+            _ => panic!("expected CTA at header.sections[0].columns[0].components[0]"),
+        };
+        assert_eq!(header_cta.parent_class, crate::model::CtaClass::TopCenter);
+
+        // Page-1 CTA (if any) should NOT have been modified.
+        if let PageNode::Section(section) = &app.site.pages[0].nodes[1]
+            && let Some(crate::model::SectionComponent::Cta(page_cta)) =
+                section.columns.first().and_then(|c| c.components.first())
+        {
+            assert_ne!(
+                page_cta.parent_class,
+                header_cta.parent_class,
+                "page CTA must not change when editing header CTA"
+            );
+        }
+    }
+
+    #[test]
+    fn dd_cta_edits_in_footer_region() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_region = SelectedRegion::Footer;
+        app.site.footer.sections[0].columns[0]
+            .components
+            .push(ComponentKind::Cta.default_component());
+        let rows = app.build_footer_tree_rows();
+        let row_idx = rows
+            .iter()
+            .position(|row| {
+                matches!(
+                    row.kind,
+                    TreeRowKind::FooterComponent {
+                        section_idx: 0,
+                        column_idx: 0,
+                        component_idx: 0,
+                    }
+                )
+            })
+            .expect("footer CTA component row should exist");
+        app.selected_tree_row = row_idx;
+        app.apply_tree_row_selection(rows[row_idx]);
+
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+
+        let footer_cta = match &app.site.footer.sections[0].columns[0].components[0] {
+            crate::model::SectionComponent::Cta(cta) => cta,
+            _ => panic!("expected CTA at footer.sections[0].columns[0].components[0]"),
+        };
+        assert_eq!(footer_cta.parent_class, crate::model::CtaClass::TopCenter);
+    }
+
+    fn open_form_edit_on_selected_cta(app: &mut App) {
         let rows = app.build_page_tree_rows();
         let row_idx = rows
             .iter()
@@ -15139,18 +15676,34 @@ mod tests {
             .expect("dd-cta component row should exist");
         app.selected_tree_row = row_idx;
         app.apply_tree_row_selection(rows[row_idx]);
+        send_key(app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(app.modal.is_some(), "FormEdit modal should open");
+    }
 
-        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        // Multi-field edit modal should be open
-        assert!(app.edit_modal.is_some());
-        let modal = app.edit_modal.as_ref().unwrap();
-        assert_eq!(modal.title, "dd-cta");
+    fn form_focused_field_id(app: &App) -> Option<&'static str> {
+        match app.modal.as_ref()? {
+            Modal::FormEdit { state, .. } => state.focused().map(|f| f.id),
+            _ => None,
+        }
+    }
 
-        // Check link target field exists (field index 8)
-        assert!(modal.fields.iter().any(|f| f.label == "Link Target"));
+    fn form_value(app: &App, id: &str) -> String {
+        match app.modal.as_ref().expect("modal must be open") {
+            Modal::FormEdit { state, .. } => state.get(id).to_string(),
+            _ => panic!("expected FormEdit modal"),
+        }
+    }
+}
 
-        // Save and verify modal closes
-        app.save_edit_modal_changes();
-        assert!(app.edit_modal.is_none());
+impl Modal {
+    #[allow(dead_code)]
+    fn variant_name(&self) -> &'static str {
+        match self {
+            Modal::Edit { .. } => "Edit",
+            Modal::ComponentPicker { .. } => "ComponentPicker",
+            Modal::SavePrompt { .. } => "SavePrompt",
+            Modal::SingleField { .. } => "SingleField",
+            Modal::FormEdit { .. } => "FormEdit",
+        }
     }
 }
