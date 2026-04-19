@@ -2795,6 +2795,12 @@ impl App {
                 }
                 KeyCode::Up => self.handle_up(),
                 KeyCode::Down => self.handle_down(),
+                KeyCode::Char('k') => self.handle_up(),
+                KeyCode::Char('j') => self.handle_down(),
+                KeyCode::Char('h') => self.vim_collapse_selected_row(),
+                KeyCode::Char('l') => self.vim_expand_selected_row(),
+                KeyCode::Char('g') => self.vim_jump_to_first_row(),
+                KeyCode::Char('G') => self.vim_jump_to_last_row(),
                 KeyCode::PageUp => self.scroll_details_by(-5),
                 KeyCode::PageDown => self.scroll_details_by(5),
                 KeyCode::Char(' ') => self.toggle_selected_tree_expanded(),
@@ -8207,8 +8213,8 @@ impl App {
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
-        // New UX path: CTA components route through the unified form editor.
-        if self.try_open_cta_form_edit(&row) {
+        // New UX path: migrated components route through the unified form editor.
+        if self.try_open_form_edit(&row) {
             return;
         }
         match row.kind {
@@ -8273,30 +8279,27 @@ impl App {
         self.status = "Insert picker opened.".to_string();
     }
 
-    /// If the selected tree row points at a `dd-cta`, open the unified form
-    /// editor for it and return true. Otherwise return false so the caller
-    /// can fall back to legacy edit flows.
-    fn try_open_cta_form_edit(&mut self, row: &TreeRow) -> bool {
-        use crate::model::SectionComponent;
-        let (maybe_cta, new_cursor) = match row.kind {
+    /// If the selected tree row points at a migrated section component
+    /// (CTA or any Tier A component), open the unified form editor for it
+    /// and return true. Otherwise return false so the caller can fall back
+    /// to legacy edit flows.
+    fn try_open_form_edit(&mut self, row: &TreeRow) -> bool {
+        let (maybe_component, new_cursor) = match row.kind {
             TreeRowKind::HeaderComponent {
                 section_idx,
                 column_idx,
                 component_idx,
             } => {
-                let cta = self
+                let component = self
                     .site
                     .header
                     .sections
                     .get(section_idx)
                     .and_then(|s| s.columns.get(column_idx))
                     .and_then(|c| c.components.get(component_idx))
-                    .and_then(|c| match c {
-                        SectionComponent::Cta(cta) => Some(cta.clone()),
-                        _ => None,
-                    });
+                    .cloned();
                 (
-                    cta,
+                    component,
                     cursor::Cursor::HeaderComponent {
                         sec: section_idx,
                         col: column_idx,
@@ -8310,19 +8313,16 @@ impl App {
                 column_idx,
                 component_idx,
             } => {
-                let cta = self
+                let component = self
                     .site
                     .footer
                     .sections
                     .get(section_idx)
                     .and_then(|s| s.columns.get(column_idx))
                     .and_then(|c| c.components.get(component_idx))
-                    .and_then(|c| match c {
-                        SectionComponent::Cta(cta) => Some(cta.clone()),
-                        _ => None,
-                    });
+                    .cloned();
                 (
-                    cta,
+                    component,
                     cursor::Cursor::FooterComponent {
                         sec: section_idx,
                         col: column_idx,
@@ -8337,7 +8337,7 @@ impl App {
                 component_idx,
             } => {
                 let page_idx = self.selected_page;
-                let cta = self
+                let component = self
                     .site
                     .pages
                     .get(page_idx)
@@ -8348,12 +8348,9 @@ impl App {
                     })
                     .and_then(|s| s.columns.get(column_idx))
                     .and_then(|c| c.components.get(component_idx))
-                    .and_then(|c| match c {
-                        SectionComponent::Cta(cta) => Some(cta.clone()),
-                        _ => None,
-                    });
+                    .cloned();
                 (
-                    cta,
+                    component,
                     cursor::Cursor::PageComponent {
                         page: page_idx,
                         node: node_idx,
@@ -8365,17 +8362,20 @@ impl App {
             }
             _ => return false,
         };
-        let Some(cta) = maybe_cta else {
+        let Some(component) = maybe_component else {
             return false;
         };
-        let state = cursor::cta_to_form_state(&cta);
+        let Some(state) = cursor::component_to_form_state(&component) else {
+            return false;
+        };
+        let title = state.form.title;
         let cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
         self.modal = Some(Modal::FormEdit {
             state,
             cursor: new_cursor,
             cursor_pos,
         });
-        self.status = "Editing dd-cta.".to_string();
+        self.status = format!("Editing {}.", title);
         true
     }
 
@@ -9956,6 +9956,65 @@ impl App {
             SidebarSection::Layouts => {
                 self.select_next();
             }
+        }
+    }
+
+    /// Vim `gg`/`G` analogue: jump to the first tree row.
+    fn vim_jump_to_first_row(&mut self) {
+        let rows = self.build_tree_rows();
+        if rows.is_empty() {
+            return;
+        }
+        self.selected_tree_row = 0;
+        self.apply_tree_row_selection(rows[0]);
+        self.details_scroll_row = 0;
+    }
+
+    /// Vim `G`: jump to the last tree row.
+    fn vim_jump_to_last_row(&mut self) {
+        let rows = self.build_tree_rows();
+        if rows.is_empty() {
+            return;
+        }
+        let last = rows.len() - 1;
+        self.selected_tree_row = last;
+        self.apply_tree_row_selection(rows[last]);
+        self.details_scroll_row = 0;
+    }
+
+    /// Vim `h`: collapse the selected expandable row (no-op when already
+    /// collapsed or the row isn't expandable).
+    fn vim_collapse_selected_row(&mut self) {
+        let rows = self.build_tree_rows();
+        if rows.is_empty() {
+            return;
+        }
+        let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        if self.tree_row_is_expanded(&row) {
+            self.toggle_selected_tree_expanded();
+        }
+    }
+
+    /// Vim `l`: expand the selected expandable row.
+    fn vim_expand_selected_row(&mut self) {
+        let rows = self.build_tree_rows();
+        if rows.is_empty() {
+            return;
+        }
+        let row = rows[self.selected_tree_row.min(rows.len() - 1)];
+        if !self.tree_row_is_expanded(&row) {
+            self.toggle_selected_tree_expanded();
+        }
+    }
+
+    /// Returns true when the row is expandable AND currently expanded.
+    fn tree_row_is_expanded(&self, row: &TreeRow) -> bool {
+        match row.kind {
+            TreeRowKind::Section { node_idx } => self.is_section_expanded(node_idx),
+            TreeRowKind::HeaderSection { section_idx } => {
+                self.is_header_section_expanded(section_idx)
+            }
+            _ => false,
         }
     }
 
@@ -15657,6 +15716,194 @@ mod tests {
             _ => panic!("expected CTA at footer.sections[0].columns[0].components[0]"),
         };
         assert_eq!(footer_cta.parent_class, crate::model::CtaClass::TopCenter);
+    }
+
+    fn open_form_edit_on_page_component(app: &mut App) {
+        let rows = app.build_page_tree_rows();
+        let row_idx = rows
+            .iter()
+            .position(|row| {
+                matches!(
+                    row.kind,
+                    TreeRowKind::Component {
+                        node_idx: 1,
+                        column_idx: 0,
+                        component_idx: 0
+                    }
+                )
+            })
+            .expect("component row at node=1,col=0,comp=0 should exist");
+        app.selected_tree_row = row_idx;
+        app.apply_tree_row_selection(rows[row_idx]);
+        send_key(app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(
+            app.modal.is_some(),
+            "FormEdit should open for migrated component"
+        );
+    }
+
+    fn app_with_component(kind: ComponentKind) -> App {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_page = 0;
+        app.selected_node = 1;
+        app.set_section_expanded(1, true);
+        if let PageNode::Section(section) = &mut app.site.pages[0].nodes[1] {
+            normalize_section_columns(section);
+            section.columns[0].components.clear();
+            section.columns[0].components.push(kind.default_component());
+        } else {
+            panic!("starter node 1 expected to be dd-section");
+        }
+        app.selected_column = 0;
+        app.selected_component = 0;
+        app.selected_nested_item = 0;
+        app.sync_tree_row_with_selection();
+        app
+    }
+
+    #[test]
+    fn tier_a_banner_form_edit_round_trip() {
+        let mut app = app_with_component(ComponentKind::Banner);
+        open_form_edit_on_page_component(&mut app);
+        // Cycle parent_class once (focused field 0).
+        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => match &s.columns[0].components[0] {
+                crate::model::SectionComponent::Banner(b) => assert_eq!(
+                    b.parent_class,
+                    crate::model::BannerClass::BgCenterRight,
+                    "banner class should advance one step from default BgCenterCenter"
+                ),
+                other => panic!("expected Banner, got {:?}", std::mem::discriminant(other)),
+            },
+            _ => panic!("expected Section node"),
+        }
+    }
+
+    #[test]
+    fn tier_a_image_form_edit_round_trip() {
+        let mut app = app_with_component(ComponentKind::Image);
+        open_form_edit_on_page_component(&mut app);
+        // Cycle parent_data_aos once (focused field 0).
+        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => match &s.columns[0].components[0] {
+                crate::model::SectionComponent::Image(i) => assert_eq!(
+                    i.parent_data_aos,
+                    crate::model::HeroAos::FadeUp,
+                    "image data_aos should advance one step from default"
+                ),
+                _ => panic!("expected Image"),
+            },
+            _ => panic!("expected Section"),
+        }
+    }
+
+    #[test]
+    fn tier_a_header_search_form_edit_round_trip() {
+        // HeaderSearch only valid in header region, so build a scenario there.
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_region = SelectedRegion::Header;
+        app.header_column_expanded = true;
+        app.set_header_section_expanded(0, true);
+        // starter already has a search in column[1]; replace column[0] instead.
+        app.site.header.sections[0].columns[0]
+            .components
+            .push(ComponentKind::HeaderSearch.default_component());
+        let rows = app.build_header_tree_rows();
+        let row_idx = rows
+            .iter()
+            .position(|row| {
+                matches!(
+                    row.kind,
+                    TreeRowKind::HeaderComponent {
+                        section_idx: 0,
+                        column_idx: 0,
+                        component_idx: 0
+                    }
+                )
+            })
+            .expect("header-search row should exist");
+        app.selected_tree_row = row_idx;
+        app.apply_tree_row_selection(rows[row_idx]);
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert!(app.modal.is_none());
+    }
+
+    #[test]
+    fn tier_a_rich_text_form_edit_round_trip() {
+        let mut app = app_with_component(ComponentKind::RichText);
+        open_form_edit_on_page_component(&mut app);
+        // parent_class is focused first (index 0, Text field). Type a letter.
+        send_key(&mut app, KeyCode::Char('x'), KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => match &s.columns[0].components[0] {
+                crate::model::SectionComponent::RichText(r) => {
+                    assert_eq!(r.parent_class.as_deref(), Some("x"));
+                }
+                _ => panic!("expected RichText"),
+            },
+            _ => panic!("expected Section"),
+        }
+    }
+
+    #[test]
+    fn tier_a_alert_form_edit_round_trip() {
+        let mut app = app_with_component(ComponentKind::Alert);
+        open_form_edit_on_page_component(&mut app);
+        // Cycle parent_type.
+        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => match &s.columns[0].components[0] {
+                crate::model::SectionComponent::Alert(a) => {
+                    assert_eq!(a.parent_type, crate::model::AlertType::Info);
+                }
+                _ => panic!("expected Alert"),
+            },
+            _ => panic!("expected Section"),
+        }
+    }
+
+    #[test]
+    fn tier_a_modal_form_edit_round_trip() {
+        let mut app = app_with_component(ComponentKind::Modal);
+        open_form_edit_on_page_component(&mut app);
+        // parent_title first: append a letter after the default value.
+        send_key(&mut app, KeyCode::Char('Z'), KeyModifiers::SHIFT);
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => match &s.columns[0].components[0] {
+                crate::model::SectionComponent::Modal(m) => {
+                    assert!(m.parent_title.ends_with('Z'));
+                }
+                _ => panic!("expected Modal"),
+            },
+            _ => panic!("expected Section"),
+        }
+    }
+
+    #[test]
+    fn tier_a_blockquote_form_edit_round_trip() {
+        let mut app = app_with_component(ComponentKind::Blockquote);
+        open_form_edit_on_page_component(&mut app);
+        // parent_data_aos first: cycle once.
+        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => match &s.columns[0].components[0] {
+                crate::model::SectionComponent::Blockquote(bq) => {
+                    assert_eq!(bq.parent_data_aos, crate::model::HeroAos::FadeUp);
+                }
+                _ => panic!("expected Blockquote"),
+            },
+            _ => panic!("expected Section"),
+        }
     }
 
     fn open_form_edit_on_selected_cta(app: &mut App) {

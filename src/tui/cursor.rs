@@ -14,10 +14,11 @@
 use anyhow::{anyhow, Context, Result};
 
 use crate::model::{
-    CardLinkTarget, CtaClass, DdCta, DdFooter, DdHead, DdHeader, DdHero, DdSection, HeroAos,
-    PageNode, SectionColumn, SectionComponent, Site,
+    AlertClass, AlertType, BannerClass, CardLinkTarget, CtaClass, DdAlert, DdBanner, DdBlockquote,
+    DdCta, DdFooter, DdHead, DdHeader, DdHeaderMenu, DdHeaderSearch, DdHero, DdImage, DdModal,
+    DdRichText, DdSection, HeroAos, PageNode, SectionColumn, SectionComponent, Site,
 };
-use crate::tui::editform::{EditFormState, FieldKind};
+use crate::tui::editform::{self, EditFormState, FieldKind};
 
 /// Address of any editable node in the site.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -202,7 +203,21 @@ pub fn apply_edit_form_to_component(
 ) -> Result<()> {
     let target = resolve_mut(site, cursor)?;
     match target {
-        CursorRef::Component(SectionComponent::Cta(cta)) => apply_cta_values(cta, state),
+        CursorRef::Component(component) => match component {
+            SectionComponent::Cta(cta) => apply_cta_values(cta, state),
+            SectionComponent::Banner(b) => apply_banner_values(b, state),
+            SectionComponent::Image(i) => apply_image_values(i, state),
+            SectionComponent::HeaderSearch(h) => apply_header_search_values(h, state),
+            SectionComponent::HeaderMenu(h) => apply_header_menu_values(h, state),
+            SectionComponent::RichText(r) => apply_rich_text_values(r, state),
+            SectionComponent::Alert(a) => apply_alert_values(a, state),
+            SectionComponent::Modal(m) => apply_modal_values(m, state),
+            SectionComponent::Blockquote(bq) => apply_blockquote_values(bq, state),
+            other => Err(anyhow!(
+                "apply_edit_form_to_component: component type not migrated to unified editor yet ({:?})",
+                std::mem::discriminant(other)
+            )),
+        },
         other => Err(anyhow!(
             "apply_edit_form_to_component: unsupported cursor target (kind index={})",
             cursor_ref_kind(&other)
@@ -250,6 +265,24 @@ fn apply_cta_values(cta: &mut DdCta, state: &EditFormState) -> Result<()> {
     Ok(())
 }
 
+/// Entry point used by the tui to turn a live component into an `EditFormState`.
+/// Returns None when the component type hasn't been migrated to the unified
+/// editor yet.
+pub fn component_to_form_state(component: &SectionComponent) -> Option<EditFormState> {
+    match component {
+        SectionComponent::Cta(c) => Some(cta_to_form_state(c)),
+        SectionComponent::Banner(b) => Some(banner_to_form_state(b)),
+        SectionComponent::Image(i) => Some(image_to_form_state(i)),
+        SectionComponent::HeaderSearch(h) => Some(header_search_to_form_state(h)),
+        SectionComponent::HeaderMenu(h) => Some(header_menu_to_form_state(h)),
+        SectionComponent::RichText(r) => Some(rich_text_to_form_state(r)),
+        SectionComponent::Alert(a) => Some(alert_to_form_state(a)),
+        SectionComponent::Modal(m) => Some(modal_to_form_state(m)),
+        SectionComponent::Blockquote(bq) => Some(blockquote_to_form_state(bq)),
+        _ => None,
+    }
+}
+
 /// Seed an `EditFormState` with current values from a `DdCta`.
 pub fn cta_to_form_state(cta: &DdCta) -> EditFormState {
     let mut state = EditFormState::new(&crate::tui::editform::CTA_FORM);
@@ -275,6 +308,165 @@ pub fn cta_to_form_state(cta: &DdCta) -> EditFormState {
         cta.parent_link_label.clone().unwrap_or_default(),
     );
     state
+}
+
+// ==================== Tier A populate + apply ====================
+
+pub fn banner_to_form_state(b: &DdBanner) -> EditFormState {
+    let mut s = EditFormState::new(&editform::BANNER_FORM);
+    s.set("parent_class", enum_serde_str(b.parent_class));
+    s.set("parent_data_aos", enum_serde_str(b.parent_data_aos));
+    s.set("parent_image_url", b.parent_image_url.clone());
+    s.set("parent_image_alt", b.parent_image_alt.clone());
+    s
+}
+fn apply_banner_values(b: &mut DdBanner, state: &EditFormState) -> Result<()> {
+    b.parent_class =
+        parse_enum::<BannerClass>(state.get("parent_class")).context("invalid parent_class")?;
+    b.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
+        .context("invalid parent_data_aos")?;
+    b.parent_image_url = state.get("parent_image_url").trim().to_string();
+    b.parent_image_alt = state.get("parent_image_alt").trim().to_string();
+    Ok(())
+}
+
+pub fn image_to_form_state(i: &DdImage) -> EditFormState {
+    let mut s = EditFormState::new(&editform::IMAGE_FORM);
+    s.set("parent_data_aos", enum_serde_str(i.parent_data_aos));
+    s.set("parent_image_url", i.parent_image_url.clone());
+    s.set("parent_image_alt", i.parent_image_alt.clone());
+    s.set(
+        "parent_link_url",
+        i.parent_link_url.clone().unwrap_or_default(),
+    );
+    s.set(
+        "parent_link_target",
+        i.parent_link_target
+            .map(enum_serde_str)
+            .unwrap_or_else(|| "_self".to_string()),
+    );
+    s
+}
+fn apply_image_values(i: &mut DdImage, state: &EditFormState) -> Result<()> {
+    i.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
+        .context("invalid parent_data_aos")?;
+    i.parent_image_url = state.get("parent_image_url").trim().to_string();
+    i.parent_image_alt = state.get("parent_image_alt").trim().to_string();
+    let link = state.get("parent_link_url").trim().to_string();
+    if link.is_empty() {
+        i.parent_link_url = None;
+        i.parent_link_target = None;
+    } else {
+        i.parent_link_url = Some(link);
+        i.parent_link_target = Some(
+            parse_enum::<CardLinkTarget>(state.get("parent_link_target"))
+                .context("invalid parent_link_target")?,
+        );
+    }
+    Ok(())
+}
+
+pub fn header_search_to_form_state(h: &DdHeaderSearch) -> EditFormState {
+    let mut s = EditFormState::new(&editform::HEADER_SEARCH_FORM);
+    s.set("parent_width", h.parent_width.clone());
+    s.set("parent_data_aos", enum_serde_str(h.parent_data_aos));
+    s
+}
+fn apply_header_search_values(h: &mut DdHeaderSearch, state: &EditFormState) -> Result<()> {
+    h.parent_width = state.get("parent_width").trim().to_string();
+    h.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
+        .context("invalid parent_data_aos")?;
+    Ok(())
+}
+
+pub fn header_menu_to_form_state(h: &DdHeaderMenu) -> EditFormState {
+    let mut s = EditFormState::new(&editform::HEADER_MENU_FORM);
+    s.set("parent_width", h.parent_width.clone());
+    s.set("parent_data_aos", enum_serde_str(h.parent_data_aos));
+    s
+}
+fn apply_header_menu_values(h: &mut DdHeaderMenu, state: &EditFormState) -> Result<()> {
+    h.parent_width = state.get("parent_width").trim().to_string();
+    h.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
+        .context("invalid parent_data_aos")?;
+    Ok(())
+}
+
+pub fn rich_text_to_form_state(r: &DdRichText) -> EditFormState {
+    let mut s = EditFormState::new(&editform::RICH_TEXT_FORM);
+    s.set(
+        "parent_class",
+        r.parent_class.clone().unwrap_or_default(),
+    );
+    s.set("parent_data_aos", enum_serde_str(r.parent_data_aos));
+    s.set("parent_copy", r.parent_copy.clone());
+    s
+}
+fn apply_rich_text_values(r: &mut DdRichText, state: &EditFormState) -> Result<()> {
+    let class = state.get("parent_class").trim().to_string();
+    r.parent_class = if class.is_empty() { None } else { Some(class) };
+    r.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
+        .context("invalid parent_data_aos")?;
+    r.parent_copy = state.get("parent_copy").to_string();
+    Ok(())
+}
+
+pub fn alert_to_form_state(a: &DdAlert) -> EditFormState {
+    let mut s = EditFormState::new(&editform::ALERT_FORM);
+    s.set("parent_type", enum_serde_str(a.parent_type));
+    s.set("parent_class", enum_serde_str(a.parent_class));
+    s.set("parent_data_aos", enum_serde_str(a.parent_data_aos));
+    s.set(
+        "parent_title",
+        a.parent_title.clone().unwrap_or_default(),
+    );
+    s.set("parent_copy", a.parent_copy.clone());
+    s
+}
+fn apply_alert_values(a: &mut DdAlert, state: &EditFormState) -> Result<()> {
+    a.parent_type =
+        parse_enum::<AlertType>(state.get("parent_type")).context("invalid parent_type")?;
+    a.parent_class =
+        parse_enum::<AlertClass>(state.get("parent_class")).context("invalid parent_class")?;
+    a.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
+        .context("invalid parent_data_aos")?;
+    let title = state.get("parent_title").trim().to_string();
+    a.parent_title = if title.is_empty() { None } else { Some(title) };
+    a.parent_copy = state.get("parent_copy").to_string();
+    Ok(())
+}
+
+pub fn modal_to_form_state(m: &DdModal) -> EditFormState {
+    let mut s = EditFormState::new(&editform::MODAL_FORM);
+    s.set("parent_title", m.parent_title.clone());
+    s.set("parent_copy", m.parent_copy.clone());
+    s
+}
+fn apply_modal_values(m: &mut DdModal, state: &EditFormState) -> Result<()> {
+    m.parent_title = state.get("parent_title").to_string();
+    m.parent_copy = state.get("parent_copy").to_string();
+    Ok(())
+}
+
+pub fn blockquote_to_form_state(bq: &DdBlockquote) -> EditFormState {
+    let mut s = EditFormState::new(&editform::BLOCKQUOTE_FORM);
+    s.set("parent_data_aos", enum_serde_str(bq.parent_data_aos));
+    s.set("parent_image_url", bq.parent_image_url.clone());
+    s.set("parent_image_alt", bq.parent_image_alt.clone());
+    s.set("parent_name", bq.parent_name.clone());
+    s.set("parent_role", bq.parent_role.clone());
+    s.set("parent_copy", bq.parent_copy.clone());
+    s
+}
+fn apply_blockquote_values(bq: &mut DdBlockquote, state: &EditFormState) -> Result<()> {
+    bq.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
+        .context("invalid parent_data_aos")?;
+    bq.parent_image_url = state.get("parent_image_url").trim().to_string();
+    bq.parent_image_alt = state.get("parent_image_alt").trim().to_string();
+    bq.parent_name = state.get("parent_name").to_string();
+    bq.parent_role = state.get("parent_role").to_string();
+    bq.parent_copy = state.get("parent_copy").to_string();
+    Ok(())
 }
 
 /// Serialize a serde enum to its `#[serde(rename = ...)]` string form.
