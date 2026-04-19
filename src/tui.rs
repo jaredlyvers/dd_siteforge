@@ -290,6 +290,39 @@ enum InputMode {
     EditHeaderColumnId,
     EditHeaderColumnWidthClass,
     EditHeaderPlaceholderContent,
+    // New section components (dd-image, dd-rich_text, dd-navigation, dd-header-search, dd-header-menu)
+    EditImageUrl,
+    EditImageAlt,
+    EditImageLinkUrl,
+    EditImageLinkTarget,
+    EditImageDataAos,
+    EditRichTextClass,
+    EditRichTextCopy,
+    EditRichTextDataAos,
+    EditNavigationType,
+    EditNavigationClass,
+    EditNavigationWidth,
+    EditNavigationDataAos,
+    EditNavigationItemKind,
+    EditNavigationItemLabel,
+    EditNavigationItemUrl,
+    EditNavigationItemTarget,
+    EditNavigationItemCss,
+    EditHeaderSearchWidth,
+    EditHeaderSearchDataAos,
+    EditHeaderMenuWidth,
+    EditHeaderMenuDataAos,
+    // Global chrome (footer + page head)
+    EditFooterId,
+    EditFooterCustomCss,
+    EditHeadTitle,
+    EditHeadMetaDescription,
+    EditHeadCanonicalUrl,
+    EditHeadRobots,
+    EditHeadSchemaType,
+    EditHeadOgTitle,
+    EditHeadOgDescription,
+    EditHeadOgImage,
 }
 
 #[derive(Clone, Copy)]
@@ -307,6 +340,11 @@ enum ComponentKind {
     Modal,
     Slider,
     Alert,
+    Image,
+    RichText,
+    Navigation,
+    HeaderSearch,
+    HeaderMenu,
 }
 
 #[derive(Clone, Copy)]
@@ -392,6 +430,20 @@ enum TreeRowKind {
         column_idx: usize,
         component_idx: usize,
     },
+    FooterRoot,
+    FooterSection {
+        section_idx: usize,
+    },
+    FooterColumn {
+        section_idx: usize,
+        column_idx: usize,
+    },
+    FooterComponent {
+        section_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+    },
+    PageHead,
     Hero {
         node_idx: usize,
     },
@@ -3758,6 +3810,22 @@ impl App {
             self.save_filmstrip_changes(&modal.fields)
         } else if modal.title == "dd-accordion" {
             self.save_accordion_changes(&modal.fields)
+        } else if modal.title == "dd-image" {
+            self.save_image_changes(&modal.fields)
+        } else if modal.title == "dd-rich_text" {
+            self.save_rich_text_changes(&modal.fields)
+        } else if modal.title == "dd-navigation" {
+            self.save_navigation_changes(&modal.fields)
+        } else if modal.title == "dd-header-search" {
+            self.save_header_search_changes(&modal.fields)
+        } else if modal.title == "dd-header-menu" {
+            self.save_header_menu_changes(&modal.fields)
+        } else if modal.title == "page-head" {
+            self.save_page_head_changes(&modal.fields)
+        } else if modal.title == "dd-footer" {
+            self.save_footer_changes(&modal.fields)
+        } else if modal.title == "dd-header-root" {
+            self.save_header_root_changes(&modal.fields)
         } else {
             false
         };
@@ -3953,6 +4021,434 @@ impl App {
             self.status = "Failed to save: selected node is not a section.".to_string();
             false
         }
+    }
+
+    fn save_image_changes(&mut self, fields: &[EditField]) -> bool {
+        let selected_node = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let selected_region = self.selected_region;
+        let selected_header_section = self.selected_header_section;
+        let selected_header_column = self.selected_header_column;
+        let selected_header_component = self.selected_header_component;
+        let apply_image = |image: &mut crate::model::DdImage, fields: &[EditField]| {
+            for field in fields {
+                match field.label.as_str() {
+                    "Data AOS" => {
+                        if let Some(v) = parse_parent_data_aos(&field.value) {
+                            image.parent_data_aos = v;
+                        }
+                    }
+                    "Image URL" => image.parent_image_url = field.value.clone(),
+                    "Image Alt" => image.parent_image_alt = field.value.clone(),
+                    "Link URL" => {
+                        image.parent_link_url = if field.value.is_empty() {
+                            None
+                        } else {
+                            Some(field.value.clone())
+                        };
+                    }
+                    "Link Target" => {
+                        image.parent_link_target = parse_child_link_target(&field.value);
+                    }
+                    _ => {}
+                }
+            }
+        };
+        if selected_region == SelectedRegion::Header {
+            if let Some(section) = self
+                .site
+                .header
+                .sections
+                .get_mut(selected_header_section)
+            {
+                if let Some(col) = section.columns.get_mut(selected_header_column) {
+                    if let Some(comp) = col.components.get_mut(selected_header_component) {
+                        if let crate::model::SectionComponent::Image(image) = comp {
+                            apply_image(image, fields);
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+        let Some(page) = self.current_page_mut() else {
+            self.status = "Failed to save: no page.".to_string();
+            return false;
+        };
+        let ni = selected_node.min(page.nodes.len().saturating_sub(1));
+        if let PageNode::Section(section) = &mut page.nodes[ni] {
+            normalize_section_columns(section);
+            let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+            let ci =
+                selected_component.min(section.columns[col_i].components.len().saturating_sub(1));
+            if let crate::model::SectionComponent::Image(image) =
+                &mut section.columns[col_i].components[ci]
+            {
+                apply_image(image, fields);
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    fn save_rich_text_changes(&mut self, fields: &[EditField]) -> bool {
+        let selected_node = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let selected_region = self.selected_region;
+        let selected_header_section = self.selected_header_section;
+        let selected_header_column = self.selected_header_column;
+        let selected_header_component = self.selected_header_component;
+        let apply_rt = |rt: &mut crate::model::DdRichText, fields: &[EditField]| {
+            for field in fields {
+                match field.label.as_str() {
+                    "Parent Class" => {
+                        rt.parent_class = if field.value.is_empty() {
+                            None
+                        } else {
+                            Some(field.value.clone())
+                        };
+                    }
+                    "Data AOS" => {
+                        if let Some(v) = parse_parent_data_aos(&field.value) {
+                            rt.parent_data_aos = v;
+                        }
+                    }
+                    "Copy" => rt.parent_copy = field.value.clone(),
+                    _ => {}
+                }
+            }
+        };
+        if selected_region == SelectedRegion::Header {
+            if let Some(section) = self
+                .site
+                .header
+                .sections
+                .get_mut(selected_header_section)
+            {
+                if let Some(col) = section.columns.get_mut(selected_header_column) {
+                    if let Some(comp) = col.components.get_mut(selected_header_component) {
+                        if let crate::model::SectionComponent::RichText(rt) = comp {
+                            apply_rt(rt, fields);
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+        let Some(page) = self.current_page_mut() else {
+            self.status = "Failed to save: no page.".to_string();
+            return false;
+        };
+        let ni = selected_node.min(page.nodes.len().saturating_sub(1));
+        if let PageNode::Section(section) = &mut page.nodes[ni] {
+            normalize_section_columns(section);
+            let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+            let ci =
+                selected_component.min(section.columns[col_i].components.len().saturating_sub(1));
+            if let crate::model::SectionComponent::RichText(rt) =
+                &mut section.columns[col_i].components[ci]
+            {
+                apply_rt(rt, fields);
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    fn save_navigation_changes(&mut self, fields: &[EditField]) -> bool {
+        let selected_node = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let selected_region = self.selected_region;
+        let selected_header_section = self.selected_header_section;
+        let selected_header_column = self.selected_header_column;
+        let selected_header_component = self.selected_header_component;
+        let apply_nav = |nav: &mut crate::model::DdNavigation, fields: &[EditField]| {
+            for field in fields {
+                match field.label.as_str() {
+                    "Nav Type" => {
+                        if let Some(v) = parse_navigation_type(&field.value) {
+                            nav.parent_type = v;
+                        }
+                    }
+                    "Nav Class" => {
+                        if let Some(v) = parse_navigation_class(&field.value) {
+                            nav.parent_class = v;
+                        }
+                    }
+                    "Data AOS" => {
+                        if let Some(v) = parse_parent_data_aos(&field.value) {
+                            nav.parent_data_aos = v;
+                        }
+                    }
+                    "Parent Width" => nav.parent_width = field.value.clone(),
+                    _ => {}
+                }
+            }
+        };
+        if selected_region == SelectedRegion::Header {
+            if let Some(section) = self
+                .site
+                .header
+                .sections
+                .get_mut(selected_header_section)
+            {
+                if let Some(col) = section.columns.get_mut(selected_header_column) {
+                    if let Some(comp) = col.components.get_mut(selected_header_component) {
+                        if let crate::model::SectionComponent::Navigation(nav) = comp {
+                            apply_nav(nav, fields);
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+        let Some(page) = self.current_page_mut() else {
+            self.status = "Failed to save: no page.".to_string();
+            return false;
+        };
+        let ni = selected_node.min(page.nodes.len().saturating_sub(1));
+        if let PageNode::Section(section) = &mut page.nodes[ni] {
+            normalize_section_columns(section);
+            let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+            let ci =
+                selected_component.min(section.columns[col_i].components.len().saturating_sub(1));
+            if let crate::model::SectionComponent::Navigation(nav) =
+                &mut section.columns[col_i].components[ci]
+            {
+                apply_nav(nav, fields);
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    fn save_header_search_changes(&mut self, fields: &[EditField]) -> bool {
+        let selected_node = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let selected_region = self.selected_region;
+        let selected_header_section = self.selected_header_section;
+        let selected_header_column = self.selected_header_column;
+        let selected_header_component = self.selected_header_component;
+        let apply_hs = |hs: &mut crate::model::DdHeaderSearch, fields: &[EditField]| {
+            for field in fields {
+                match field.label.as_str() {
+                    "Parent Width" => hs.parent_width = field.value.clone(),
+                    "Data AOS" => {
+                        if let Some(v) = parse_parent_data_aos(&field.value) {
+                            hs.parent_data_aos = v;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        };
+        if selected_region == SelectedRegion::Header {
+            if let Some(section) = self
+                .site
+                .header
+                .sections
+                .get_mut(selected_header_section)
+            {
+                if let Some(col) = section.columns.get_mut(selected_header_column) {
+                    if let Some(comp) = col.components.get_mut(selected_header_component) {
+                        if let crate::model::SectionComponent::HeaderSearch(hs) = comp {
+                            apply_hs(hs, fields);
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+        let Some(page) = self.current_page_mut() else {
+            return false;
+        };
+        let ni = selected_node.min(page.nodes.len().saturating_sub(1));
+        if let PageNode::Section(section) = &mut page.nodes[ni] {
+            normalize_section_columns(section);
+            let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+            let ci =
+                selected_component.min(section.columns[col_i].components.len().saturating_sub(1));
+            if let crate::model::SectionComponent::HeaderSearch(hs) =
+                &mut section.columns[col_i].components[ci]
+            {
+                apply_hs(hs, fields);
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    fn save_header_menu_changes(&mut self, fields: &[EditField]) -> bool {
+        let selected_node = self.selected_node;
+        let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
+        let selected_region = self.selected_region;
+        let selected_header_section = self.selected_header_section;
+        let selected_header_column = self.selected_header_column;
+        let selected_header_component = self.selected_header_component;
+        let apply_hm = |hm: &mut crate::model::DdHeaderMenu, fields: &[EditField]| {
+            for field in fields {
+                match field.label.as_str() {
+                    "Parent Width" => hm.parent_width = field.value.clone(),
+                    "Data AOS" => {
+                        if let Some(v) = parse_parent_data_aos(&field.value) {
+                            hm.parent_data_aos = v;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        };
+        if selected_region == SelectedRegion::Header {
+            if let Some(section) = self
+                .site
+                .header
+                .sections
+                .get_mut(selected_header_section)
+            {
+                if let Some(col) = section.columns.get_mut(selected_header_column) {
+                    if let Some(comp) = col.components.get_mut(selected_header_component) {
+                        if let crate::model::SectionComponent::HeaderMenu(hm) = comp {
+                            apply_hm(hm, fields);
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+        let Some(page) = self.current_page_mut() else {
+            return false;
+        };
+        let ni = selected_node.min(page.nodes.len().saturating_sub(1));
+        if let PageNode::Section(section) = &mut page.nodes[ni] {
+            normalize_section_columns(section);
+            let col_i = selected_column.min(section.columns.len().saturating_sub(1));
+            let ci =
+                selected_component.min(section.columns[col_i].components.len().saturating_sub(1));
+            if let crate::model::SectionComponent::HeaderMenu(hm) =
+                &mut section.columns[col_i].components[ci]
+            {
+                apply_hm(hm, fields);
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    fn save_page_head_changes(&mut self, fields: &[EditField]) -> bool {
+        let Some(page) = self.current_page_mut() else {
+            return false;
+        };
+        for field in fields {
+            match field.label.as_str() {
+                "Title" => page.head.title = field.value.clone(),
+                "Meta Description" => {
+                    page.head.meta_description = if field.value.is_empty() {
+                        None
+                    } else {
+                        Some(field.value.clone())
+                    };
+                }
+                "Canonical URL" => {
+                    page.head.canonical_url = if field.value.is_empty() {
+                        None
+                    } else {
+                        Some(field.value.clone())
+                    };
+                }
+                "Robots" => {
+                    if let Some(v) = parse_robots_directive(&field.value) {
+                        page.head.robots = v;
+                    }
+                }
+                "Schema Type" => {
+                    if let Some(v) = parse_schema_type(&field.value) {
+                        page.head.schema_type = v;
+                    }
+                }
+                "OG Title" => {
+                    page.head.og_title = if field.value.is_empty() {
+                        None
+                    } else {
+                        Some(field.value.clone())
+                    };
+                }
+                "OG Description" => {
+                    page.head.og_description = if field.value.is_empty() {
+                        None
+                    } else {
+                        Some(field.value.clone())
+                    };
+                }
+                "OG Image" => {
+                    page.head.og_image = if field.value.is_empty() {
+                        None
+                    } else {
+                        Some(field.value.clone())
+                    };
+                }
+                _ => {}
+            }
+        }
+        true
+    }
+
+    fn save_footer_changes(&mut self, fields: &[EditField]) -> bool {
+        for field in fields {
+            match field.label.as_str() {
+                "Footer ID" => self.site.footer.id = field.value.clone(),
+                "Custom CSS" => {
+                    self.site.footer.custom_css = if field.value.is_empty() {
+                        None
+                    } else {
+                        Some(field.value.clone())
+                    };
+                }
+                _ => {}
+            }
+        }
+        true
+    }
+
+    fn save_header_root_changes(&mut self, fields: &[EditField]) -> bool {
+        for field in fields {
+            match field.label.as_str() {
+                "Header ID" => self.site.header.id = field.value.clone(),
+                "Custom CSS" => {
+                    self.site.header.custom_css = if field.value.is_empty() {
+                        None
+                    } else {
+                        Some(field.value.clone())
+                    };
+                }
+                _ => {}
+            }
+        }
+        true
     }
 
     fn save_accordion_changes(&mut self, fields: &[EditField]) -> bool {
@@ -4530,6 +5026,7 @@ impl App {
             InputMode::EditHeaderPlaceholderContent => {
                 "Editing header placeholder content. Enter to save, esc to cancel.".to_string()
             }
+            _ => "Editing field. Enter/Ctrl+S to save, esc to cancel.".to_string(),
         };
     }
 
@@ -6073,14 +6570,49 @@ impl App {
     fn build_tree_rows(&self) -> Vec<TreeRow> {
         match self.selected_region {
             SelectedRegion::Header => self.build_header_tree_rows(),
-            SelectedRegion::Footer => Vec::new(),
+            SelectedRegion::Footer => self.build_footer_tree_rows(),
             SelectedRegion::Page => self.build_page_tree_rows(),
         }
+    }
+
+    fn build_footer_tree_rows(&self) -> Vec<TreeRow> {
+        let mut rows = Vec::new();
+        rows.push(TreeRow {
+            kind: TreeRowKind::FooterRoot,
+        });
+        for (section_idx, section) in self.site.footer.sections.iter().enumerate() {
+            rows.push(TreeRow {
+                kind: TreeRowKind::FooterSection { section_idx },
+            });
+            for (column_idx, _) in section.columns.iter().enumerate() {
+                rows.push(TreeRow {
+                    kind: TreeRowKind::FooterColumn {
+                        section_idx,
+                        column_idx,
+                    },
+                });
+                for (component_idx, _) in
+                    section.columns[column_idx].components.iter().enumerate()
+                {
+                    rows.push(TreeRow {
+                        kind: TreeRowKind::FooterComponent {
+                            section_idx,
+                            column_idx,
+                            component_idx,
+                        },
+                    });
+                }
+            }
+        }
+        rows
     }
 
     fn build_page_tree_rows(&self) -> Vec<TreeRow> {
         let page = self.current_page();
         let mut rows = Vec::new();
+        rows.push(TreeRow {
+            kind: TreeRowKind::PageHead,
+        });
         for (node_idx, node) in page.nodes.iter().enumerate() {
             match node {
                 PageNode::Hero(_) => rows.push(TreeRow {
@@ -6342,6 +6874,50 @@ impl App {
                 let component = &section.columns[col_i].components[comp_i];
                 let label = component_label(component);
                 format!("            - {} {}", comp_i + 1, label)
+            }
+            TreeRowKind::FooterRoot => {
+                format!("1. [FOOTER] dd-footer ({})", self.site.footer.id)
+            }
+            TreeRowKind::FooterSection { section_idx } => {
+                let section_i =
+                    (*section_idx).min(self.site.footer.sections.len().saturating_sub(1));
+                let section = &self.site.footer.sections[section_i];
+                format!("    {} dd-section ({})", section_i + 1, section.id)
+            }
+            TreeRowKind::FooterColumn {
+                section_idx,
+                column_idx,
+            } => {
+                let section_i =
+                    (*section_idx).min(self.site.footer.sections.len().saturating_sub(1));
+                let section = &self.site.footer.sections[section_i];
+                let col_i = (*column_idx).min(section.columns.len().saturating_sub(1));
+                let col = &section.columns[col_i];
+                format!(
+                    "        |- column {} ({}) [{}]",
+                    col_i + 1,
+                    col.id,
+                    col.width_class
+                )
+            }
+            TreeRowKind::FooterComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            } => {
+                let section_i =
+                    (*section_idx).min(self.site.footer.sections.len().saturating_sub(1));
+                let section = &self.site.footer.sections[section_i];
+                let col_i = (*column_idx).min(section.columns.len().saturating_sub(1));
+                let comp_i =
+                    (*component_idx).min(section.columns[col_i].components.len().saturating_sub(1));
+                let component = &section.columns[col_i].components[comp_i];
+                let label = component_label(component);
+                format!("            - {} {}", comp_i + 1, label)
+            }
+            TreeRowKind::PageHead => {
+                let page = self.current_page();
+                format!("[HEAD] {}", page.head.title)
             }
             TreeRowKind::Hero { node_idx } => format!("{}. dd-hero", node_idx + 1),
             TreeRowKind::Section { node_idx } => {
@@ -6623,6 +7199,36 @@ impl App {
                 self.selected_header_column = column_idx;
                 self.selected_header_component = component_idx;
             }
+            TreeRowKind::FooterRoot => {
+                self.selected_header_section = 0;
+                self.selected_header_column = 0;
+                self.selected_header_component = 0;
+            }
+            TreeRowKind::FooterSection { section_idx } => {
+                self.selected_header_section = section_idx;
+                self.selected_header_column = 0;
+                self.selected_header_component = 0;
+            }
+            TreeRowKind::FooterColumn {
+                section_idx,
+                column_idx,
+            } => {
+                self.selected_header_section = section_idx;
+                self.selected_header_column = column_idx;
+                self.selected_header_component = 0;
+            }
+            TreeRowKind::FooterComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            } => {
+                self.selected_header_section = section_idx;
+                self.selected_header_column = column_idx;
+                self.selected_header_component = component_idx;
+            }
+            TreeRowKind::PageHead => {
+                // head row; selection stays pinned but nothing specific
+            }
             TreeRowKind::Hero { node_idx } => {
                 self.selected_node = node_idx;
                 self.selected_column = 0;
@@ -6832,6 +7438,27 @@ impl App {
                     && component_idx == self.selected_component
                     && item_idx == self.selected_nested_item
             }
+            TreeRowKind::FooterRoot => true,
+            TreeRowKind::FooterSection { section_idx } => {
+                section_idx == self.selected_header_section
+            }
+            TreeRowKind::FooterColumn {
+                section_idx,
+                column_idx,
+            } => {
+                section_idx == self.selected_header_section
+                    && column_idx == self.selected_header_column
+            }
+            TreeRowKind::FooterComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            } => {
+                section_idx == self.selected_header_section
+                    && column_idx == self.selected_header_column
+                    && component_idx == self.selected_header_component
+            }
+            TreeRowKind::PageHead => false,
         };
 
         if let Some(current) = rows.get(self.selected_tree_row) {
@@ -7231,6 +7858,17 @@ impl App {
                 self.status = "Press Enter to edit.".to_string();
                 return;
             }
+            TreeRowKind::FooterRoot
+            | TreeRowKind::FooterSection { .. }
+            | TreeRowKind::FooterColumn { .. }
+            | TreeRowKind::FooterComponent { .. } => {
+                self.status = "Press Enter to edit.".to_string();
+                return;
+            }
+            TreeRowKind::PageHead => {
+                self.status = "Press Enter to edit page head.".to_string();
+                return;
+            }
             TreeRowKind::Section { node_idx } => node_idx,
             TreeRowKind::Column { node_idx, .. } => node_idx,
             TreeRowKind::Component { node_idx, .. } => node_idx,
@@ -7271,10 +7909,15 @@ impl App {
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
         match row.kind {
-            TreeRowKind::HeaderRoot { .. } => self.begin_edit_header(),
+            TreeRowKind::HeaderRoot { .. } => self.open_header_root_edit_modal(),
             TreeRowKind::HeaderSection { .. } => self.begin_edit_selected(),
             TreeRowKind::HeaderColumn { .. } => self.begin_edit_selected_column_width_class(),
             TreeRowKind::HeaderComponent { .. } => self.begin_edit_selected_component_primary(),
+            TreeRowKind::FooterRoot => self.open_footer_edit_modal(),
+            TreeRowKind::FooterSection { .. } => self.begin_edit_selected(),
+            TreeRowKind::FooterColumn { .. } => self.begin_edit_selected_column_width_class(),
+            TreeRowKind::FooterComponent { .. } => self.begin_edit_selected_component_primary(),
+            TreeRowKind::PageHead => self.open_page_head_edit_modal(),
             TreeRowKind::Section { .. } => self.begin_edit_selected(),
             TreeRowKind::Hero { .. } => self.begin_edit_selected(),
             TreeRowKind::Column { .. } => self.begin_edit_selected_column_width_class(),
@@ -7417,12 +8060,22 @@ impl App {
 
     fn filtered_component_kinds(&self, query: &str) -> Vec<ComponentKind> {
         let all = ComponentKind::all();
+        let in_header = self.selected_region == SelectedRegion::Header;
+        // Gate header-only components: only show dd-header-search/dd-header-menu when in header region.
+        let allowed: Vec<ComponentKind> = all
+            .iter()
+            .copied()
+            .filter(|k| match k {
+                ComponentKind::HeaderSearch | ComponentKind::HeaderMenu => in_header,
+                _ => true,
+            })
+            .collect();
         let q = query.trim().to_ascii_lowercase();
         if q.is_empty() {
-            return all.to_vec();
+            return allowed;
         }
         let mut scored = Vec::new();
-        for kind in all.iter().copied() {
+        for kind in allowed.iter().copied() {
             let hay = component_search_haystack(kind);
             if let Some(score) = fuzzy_score(&q, hay.as_str()) {
                 scored.push((kind, score));
@@ -7569,6 +8222,37 @@ impl App {
             Some(InputMode::EditHeaderColumnId) => "header.column.id",
             Some(InputMode::EditHeaderColumnWidthClass) => "header.column.width_class",
             Some(InputMode::EditHeaderPlaceholderContent) => "header.placeholder.content",
+            Some(InputMode::EditImageUrl) => "dd-image.parent_image_url",
+            Some(InputMode::EditImageAlt) => "dd-image.parent_image_alt",
+            Some(InputMode::EditImageLinkUrl) => "dd-image.parent_link_url",
+            Some(InputMode::EditImageLinkTarget) => "dd-image.parent_link_target",
+            Some(InputMode::EditImageDataAos) => "dd-image.parent_data_aos",
+            Some(InputMode::EditRichTextClass) => "dd-rich_text.parent_class",
+            Some(InputMode::EditRichTextCopy) => "dd-rich_text.parent_copy",
+            Some(InputMode::EditRichTextDataAos) => "dd-rich_text.parent_data_aos",
+            Some(InputMode::EditNavigationType) => "dd-navigation.parent_type",
+            Some(InputMode::EditNavigationClass) => "dd-navigation.parent_class",
+            Some(InputMode::EditNavigationWidth) => "dd-navigation.parent_width",
+            Some(InputMode::EditNavigationDataAos) => "dd-navigation.parent_data_aos",
+            Some(InputMode::EditNavigationItemKind) => "dd-navigation.item.child_kind",
+            Some(InputMode::EditNavigationItemLabel) => "dd-navigation.item.child_link_label",
+            Some(InputMode::EditNavigationItemUrl) => "dd-navigation.item.child_link_url",
+            Some(InputMode::EditNavigationItemTarget) => "dd-navigation.item.child_link_target",
+            Some(InputMode::EditNavigationItemCss) => "dd-navigation.item.child_link_css",
+            Some(InputMode::EditHeaderSearchWidth) => "dd-header-search.parent_width",
+            Some(InputMode::EditHeaderSearchDataAos) => "dd-header-search.parent_data_aos",
+            Some(InputMode::EditHeaderMenuWidth) => "dd-header-menu.parent_width",
+            Some(InputMode::EditHeaderMenuDataAos) => "dd-header-menu.parent_data_aos",
+            Some(InputMode::EditFooterId) => "footer.id",
+            Some(InputMode::EditFooterCustomCss) => "footer.custom_css",
+            Some(InputMode::EditHeadTitle) => "head.title",
+            Some(InputMode::EditHeadMetaDescription) => "head.meta_description",
+            Some(InputMode::EditHeadCanonicalUrl) => "head.canonical_url",
+            Some(InputMode::EditHeadRobots) => "head.robots",
+            Some(InputMode::EditHeadSchemaType) => "head.schema_type",
+            Some(InputMode::EditHeadOgTitle) => "head.og_title",
+            Some(InputMode::EditHeadOgDescription) => "head.og_description",
+            Some(InputMode::EditHeadOgImage) => "head.og_image",
             None => "field",
         }
     }
@@ -10962,6 +11646,163 @@ impl App {
         self.status = result.1;
     }
 
+    // TODO(rock-19-followup): add row-scoped Left/Right enum cycling for the new
+    // component edit flows (dd-image link_target, dd-rich_text/dd-image/dd-navigation
+    // data_aos, dd-navigation parent_type/parent_class, dd-header-search/dd-header-menu
+    // data_aos, page head robots/schema_type). Current flow uses the multi-field modal
+    // which accepts typed enum strings; helpers `next_navigation_type`, `next_navigation_class`,
+    // `next_navigation_kind`, `next_robots_directive`, `next_schema_type` are defined and
+    // unused, ready to wire up.
+    // TODO(rock-19-followup): navigation item/sub-item recursive tree editing (A/Shift+A/X).
+    // First-pass stores items[] flat on the DdNavigation; editing of items (kind, label,
+    // url, target, css) not yet exposed in the TUI - drop into JSON to edit.
+    fn open_page_head_edit_modal(&mut self) {
+        let head = &self.site.pages[self.selected_page].head;
+        let robots = robots_directive_to_str(head.robots).to_string();
+        let schema = schema_type_to_str(head.schema_type).to_string();
+        let meta = head.meta_description.clone().unwrap_or_default();
+        let canon = head.canonical_url.clone().unwrap_or_default();
+        let og_t = head.og_title.clone().unwrap_or_default();
+        let og_d = head.og_description.clone().unwrap_or_default();
+        let og_i = head.og_image.clone().unwrap_or_default();
+        let fields = vec![
+            EditField {
+                label: "Title".to_string(),
+                value: head.title.clone(),
+                buffer: head.title.clone(),
+                cursor: head.title.len(),
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "Meta Description".to_string(),
+                value: meta.clone(),
+                buffer: meta.clone(),
+                cursor: meta.len(),
+                is_multiline: true,
+                rows: 3,
+            },
+            EditField {
+                label: "Canonical URL".to_string(),
+                value: canon.clone(),
+                buffer: canon.clone(),
+                cursor: canon.len(),
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "Robots".to_string(),
+                value: robots.clone(),
+                buffer: robots.clone(),
+                cursor: robots.len(),
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "Schema Type".to_string(),
+                value: schema.clone(),
+                buffer: schema.clone(),
+                cursor: schema.len(),
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "OG Title".to_string(),
+                value: og_t.clone(),
+                buffer: og_t.clone(),
+                cursor: og_t.len(),
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "OG Description".to_string(),
+                value: og_d.clone(),
+                buffer: og_d.clone(),
+                cursor: og_d.len(),
+                is_multiline: true,
+                rows: 3,
+            },
+            EditField {
+                label: "OG Image".to_string(),
+                value: og_i.clone(),
+                buffer: og_i.clone(),
+                cursor: og_i.len(),
+                is_multiline: false,
+                rows: 1,
+            },
+        ];
+        self.edit_modal = Some(EditModalState {
+            title: "page-head".to_string(),
+            fields,
+            selected_field: 0,
+            scroll_offset: 0,
+            visible_fields: 6,
+        });
+        self.status = "Editing page head. Tab to navigate, Ctrl+S to save, Esc to cancel."
+            .to_string();
+    }
+
+    fn open_footer_edit_modal(&mut self) {
+        let custom = self.site.footer.custom_css.clone().unwrap_or_default();
+        let fields = vec![
+            EditField {
+                label: "Footer ID".to_string(),
+                value: self.site.footer.id.clone(),
+                buffer: self.site.footer.id.clone(),
+                cursor: self.site.footer.id.len(),
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "Custom CSS".to_string(),
+                value: custom.clone(),
+                buffer: custom.clone(),
+                cursor: custom.len(),
+                is_multiline: false,
+                rows: 1,
+            },
+        ];
+        self.edit_modal = Some(EditModalState {
+            title: "dd-footer".to_string(),
+            fields,
+            selected_field: 0,
+            scroll_offset: 0,
+            visible_fields: 4,
+        });
+        self.status = "Editing footer. Tab to navigate, Ctrl+S to save, Esc to cancel.".to_string();
+    }
+
+    fn open_header_root_edit_modal(&mut self) {
+        let custom = self.site.header.custom_css.clone().unwrap_or_default();
+        let fields = vec![
+            EditField {
+                label: "Header ID".to_string(),
+                value: self.site.header.id.clone(),
+                buffer: self.site.header.id.clone(),
+                cursor: self.site.header.id.len(),
+                is_multiline: false,
+                rows: 1,
+            },
+            EditField {
+                label: "Custom CSS".to_string(),
+                value: custom.clone(),
+                buffer: custom.clone(),
+                cursor: custom.len(),
+                is_multiline: false,
+                rows: 1,
+            },
+        ];
+        self.edit_modal = Some(EditModalState {
+            title: "dd-header-root".to_string(),
+            fields,
+            selected_field: 0,
+            scroll_offset: 0,
+            visible_fields: 4,
+        });
+        self.status = "Editing header root. Tab to navigate, Ctrl+S to save, Esc to cancel."
+            .to_string();
+    }
+
     fn begin_edit_selected_component_primary(&mut self) {
         let page = self.current_page();
         if page.nodes.is_empty() {
@@ -11338,6 +12179,202 @@ impl App {
                             ];
                             Some(EditModalState {
                                 title: "dd-accordion".to_string(),
+                                fields,
+                                selected_field: 0,
+                                scroll_offset: 0,
+                                visible_fields: 6,
+                            })
+                        }
+                        crate::model::SectionComponent::Image(image) => {
+                            let url = image.parent_link_url.clone().unwrap_or_default();
+                            let target = image
+                                .parent_link_target
+                                .map(child_link_target_to_str)
+                                .unwrap_or("_self")
+                                .to_string();
+                            let fields = vec![
+                                EditField {
+                                    label: "Data AOS".to_string(),
+                                    value: parent_data_aos_to_str(image.parent_data_aos).to_string(),
+                                    buffer: parent_data_aos_to_str(image.parent_data_aos).to_string(),
+                                    cursor: parent_data_aos_to_str(image.parent_data_aos).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Image URL".to_string(),
+                                    value: image.parent_image_url.clone(),
+                                    buffer: image.parent_image_url.clone(),
+                                    cursor: image.parent_image_url.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Image Alt".to_string(),
+                                    value: image.parent_image_alt.clone(),
+                                    buffer: image.parent_image_alt.clone(),
+                                    cursor: image.parent_image_alt.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Link URL".to_string(),
+                                    value: url.clone(),
+                                    buffer: url.clone(),
+                                    cursor: url.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Link Target".to_string(),
+                                    value: target.clone(),
+                                    buffer: target.clone(),
+                                    cursor: target.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                            ];
+                            Some(EditModalState {
+                                title: "dd-image".to_string(),
+                                fields,
+                                selected_field: 0,
+                                scroll_offset: 0,
+                                visible_fields: 6,
+                            })
+                        }
+                        crate::model::SectionComponent::RichText(rt) => {
+                            let class = rt.parent_class.clone().unwrap_or_default();
+                            let fields = vec![
+                                EditField {
+                                    label: "Parent Class".to_string(),
+                                    value: class.clone(),
+                                    buffer: class.clone(),
+                                    cursor: class.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Data AOS".to_string(),
+                                    value: parent_data_aos_to_str(rt.parent_data_aos).to_string(),
+                                    buffer: parent_data_aos_to_str(rt.parent_data_aos).to_string(),
+                                    cursor: parent_data_aos_to_str(rt.parent_data_aos).len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Copy".to_string(),
+                                    value: rt.parent_copy.clone(),
+                                    buffer: rt.parent_copy.clone(),
+                                    cursor: rt.parent_copy.len(),
+                                    is_multiline: true,
+                                    rows: 5,
+                                },
+                            ];
+                            Some(EditModalState {
+                                title: "dd-rich_text".to_string(),
+                                fields,
+                                selected_field: 0,
+                                scroll_offset: 0,
+                                visible_fields: 6,
+                            })
+                        }
+                        crate::model::SectionComponent::Navigation(nav) => {
+                            let type_str = navigation_type_to_str(nav.parent_type).to_string();
+                            let class_str = navigation_class_to_str(nav.parent_class).to_string();
+                            let aos_str =
+                                parent_data_aos_to_str(nav.parent_data_aos).to_string();
+                            let fields = vec![
+                                EditField {
+                                    label: "Nav Type".to_string(),
+                                    value: type_str.clone(),
+                                    buffer: type_str.clone(),
+                                    cursor: type_str.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Nav Class".to_string(),
+                                    value: class_str.clone(),
+                                    buffer: class_str.clone(),
+                                    cursor: class_str.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Data AOS".to_string(),
+                                    value: aos_str.clone(),
+                                    buffer: aos_str.clone(),
+                                    cursor: aos_str.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Parent Width".to_string(),
+                                    value: nav.parent_width.clone(),
+                                    buffer: nav.parent_width.clone(),
+                                    cursor: nav.parent_width.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                            ];
+                            Some(EditModalState {
+                                title: "dd-navigation".to_string(),
+                                fields,
+                                selected_field: 0,
+                                scroll_offset: 0,
+                                visible_fields: 6,
+                            })
+                        }
+                        crate::model::SectionComponent::HeaderSearch(hs) => {
+                            let aos = parent_data_aos_to_str(hs.parent_data_aos).to_string();
+                            let fields = vec![
+                                EditField {
+                                    label: "Parent Width".to_string(),
+                                    value: hs.parent_width.clone(),
+                                    buffer: hs.parent_width.clone(),
+                                    cursor: hs.parent_width.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Data AOS".to_string(),
+                                    value: aos.clone(),
+                                    buffer: aos.clone(),
+                                    cursor: aos.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                            ];
+                            Some(EditModalState {
+                                title: "dd-header-search".to_string(),
+                                fields,
+                                selected_field: 0,
+                                scroll_offset: 0,
+                                visible_fields: 6,
+                            })
+                        }
+                        crate::model::SectionComponent::HeaderMenu(hm) => {
+                            let aos = parent_data_aos_to_str(hm.parent_data_aos).to_string();
+                            let fields = vec![
+                                EditField {
+                                    label: "Parent Width".to_string(),
+                                    value: hm.parent_width.clone(),
+                                    buffer: hm.parent_width.clone(),
+                                    cursor: hm.parent_width.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                                EditField {
+                                    label: "Data AOS".to_string(),
+                                    value: aos.clone(),
+                                    buffer: aos.clone(),
+                                    cursor: aos.len(),
+                                    is_multiline: false,
+                                    rows: 1,
+                                },
+                            ];
+                            Some(EditModalState {
+                                title: "dd-header-menu".to_string(),
                                 fields,
                                 selected_field: 0,
                                 scroll_offset: 0,
@@ -12907,6 +13944,208 @@ fn parse_link_1_target(raw: &str) -> Option<crate::model::CtaTarget> {
     }
 }
 
+fn navigation_type_to_str(v: crate::model::NavigationType) -> &'static str {
+    match v {
+        crate::model::NavigationType::HeaderNav => "dd-header__navigation",
+        crate::model::NavigationType::FooterNav => "dd-footer__navigation",
+    }
+}
+
+fn parse_navigation_type(raw: &str) -> Option<crate::model::NavigationType> {
+    match raw.trim() {
+        "dd-header__navigation" | "header" | "HeaderNav" => {
+            Some(crate::model::NavigationType::HeaderNav)
+        }
+        "dd-footer__navigation" | "footer" | "FooterNav" => {
+            Some(crate::model::NavigationType::FooterNav)
+        }
+        _ => None,
+    }
+}
+
+fn next_navigation_type(
+    current: crate::model::NavigationType,
+    forward: bool,
+) -> crate::model::NavigationType {
+    use crate::model::NavigationType;
+    let all = [NavigationType::HeaderNav, NavigationType::FooterNav];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next = if forward {
+        (idx + 1) % all.len()
+    } else {
+        (idx + all.len() - 1) % all.len()
+    };
+    all[next]
+}
+
+fn navigation_class_to_str(v: crate::model::NavigationClass) -> &'static str {
+    match v {
+        crate::model::NavigationClass::MainMenu => "-main-menu",
+        crate::model::NavigationClass::MenuSecondary => "-menu-secondary",
+        crate::model::NavigationClass::MenuTertiary => "-menu-tertiary",
+        crate::model::NavigationClass::FooterMenu => "-footer-menu",
+        crate::model::NavigationClass::FooterMenuSecondary => "-footer-menu-secondary",
+        crate::model::NavigationClass::FooterMenuTertiary => "-footer-menu-tertiary",
+        crate::model::NavigationClass::SocialMenu => "-social-menu",
+    }
+}
+
+fn parse_navigation_class(raw: &str) -> Option<crate::model::NavigationClass> {
+    match raw.trim() {
+        "-main-menu" => Some(crate::model::NavigationClass::MainMenu),
+        "-menu-secondary" => Some(crate::model::NavigationClass::MenuSecondary),
+        "-menu-tertiary" => Some(crate::model::NavigationClass::MenuTertiary),
+        "-footer-menu" => Some(crate::model::NavigationClass::FooterMenu),
+        "-footer-menu-secondary" => Some(crate::model::NavigationClass::FooterMenuSecondary),
+        "-footer-menu-tertiary" => Some(crate::model::NavigationClass::FooterMenuTertiary),
+        "-social-menu" => Some(crate::model::NavigationClass::SocialMenu),
+        _ => None,
+    }
+}
+
+fn next_navigation_class(
+    current: crate::model::NavigationClass,
+    forward: bool,
+) -> crate::model::NavigationClass {
+    use crate::model::NavigationClass;
+    let all = [
+        NavigationClass::MainMenu,
+        NavigationClass::MenuSecondary,
+        NavigationClass::MenuTertiary,
+        NavigationClass::FooterMenu,
+        NavigationClass::FooterMenuSecondary,
+        NavigationClass::FooterMenuTertiary,
+        NavigationClass::SocialMenu,
+    ];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next = if forward {
+        (idx + 1) % all.len()
+    } else {
+        (idx + all.len() - 1) % all.len()
+    };
+    all[next]
+}
+
+fn navigation_kind_to_str(v: crate::model::NavigationKind) -> &'static str {
+    match v {
+        crate::model::NavigationKind::Link => "link",
+        crate::model::NavigationKind::Button => "button",
+    }
+}
+
+fn parse_navigation_kind(raw: &str) -> Option<crate::model::NavigationKind> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "link" => Some(crate::model::NavigationKind::Link),
+        "button" => Some(crate::model::NavigationKind::Button),
+        _ => None,
+    }
+}
+
+fn next_navigation_kind(
+    current: crate::model::NavigationKind,
+    forward: bool,
+) -> crate::model::NavigationKind {
+    let _ = forward;
+    match current {
+        crate::model::NavigationKind::Link => crate::model::NavigationKind::Button,
+        crate::model::NavigationKind::Button => crate::model::NavigationKind::Link,
+    }
+}
+
+fn robots_directive_to_str(v: crate::model::RobotsDirective) -> &'static str {
+    match v {
+        crate::model::RobotsDirective::IndexFollow => "index, follow",
+        crate::model::RobotsDirective::NoindexFollow => "noindex, follow",
+        crate::model::RobotsDirective::IndexNofollow => "index, nofollow",
+        crate::model::RobotsDirective::NoindexNofollow => "noindex, nofollow",
+    }
+}
+
+fn parse_robots_directive(raw: &str) -> Option<crate::model::RobotsDirective> {
+    let normalized: String = raw.trim().to_ascii_lowercase().replace(' ', "");
+    match normalized.as_str() {
+        "index,follow" => Some(crate::model::RobotsDirective::IndexFollow),
+        "noindex,follow" => Some(crate::model::RobotsDirective::NoindexFollow),
+        "index,nofollow" => Some(crate::model::RobotsDirective::IndexNofollow),
+        "noindex,nofollow" => Some(crate::model::RobotsDirective::NoindexNofollow),
+        _ => None,
+    }
+}
+
+fn next_robots_directive(
+    current: crate::model::RobotsDirective,
+    forward: bool,
+) -> crate::model::RobotsDirective {
+    use crate::model::RobotsDirective;
+    let all = [
+        RobotsDirective::IndexFollow,
+        RobotsDirective::NoindexFollow,
+        RobotsDirective::IndexNofollow,
+        RobotsDirective::NoindexNofollow,
+    ];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next = if forward {
+        (idx + 1) % all.len()
+    } else {
+        (idx + all.len() - 1) % all.len()
+    };
+    all[next]
+}
+
+fn schema_type_to_str(v: crate::model::SchemaType) -> &'static str {
+    match v {
+        crate::model::SchemaType::WebPage => "WebPage",
+        crate::model::SchemaType::Article => "Article",
+        crate::model::SchemaType::AboutPage => "AboutPage",
+        crate::model::SchemaType::ContactPage => "ContactPage",
+        crate::model::SchemaType::CollectionPage => "CollectionPage",
+        crate::model::SchemaType::Organization => "Organization",
+        crate::model::SchemaType::LocalBusiness => "LocalBusiness",
+        crate::model::SchemaType::Product => "Product",
+        crate::model::SchemaType::Service => "Service",
+    }
+}
+
+fn parse_schema_type(raw: &str) -> Option<crate::model::SchemaType> {
+    match raw.trim() {
+        "WebPage" => Some(crate::model::SchemaType::WebPage),
+        "Article" => Some(crate::model::SchemaType::Article),
+        "AboutPage" => Some(crate::model::SchemaType::AboutPage),
+        "ContactPage" => Some(crate::model::SchemaType::ContactPage),
+        "CollectionPage" => Some(crate::model::SchemaType::CollectionPage),
+        "Organization" => Some(crate::model::SchemaType::Organization),
+        "LocalBusiness" => Some(crate::model::SchemaType::LocalBusiness),
+        "Product" => Some(crate::model::SchemaType::Product),
+        "Service" => Some(crate::model::SchemaType::Service),
+        _ => None,
+    }
+}
+
+fn next_schema_type(
+    current: crate::model::SchemaType,
+    forward: bool,
+) -> crate::model::SchemaType {
+    use crate::model::SchemaType;
+    let all = [
+        SchemaType::WebPage,
+        SchemaType::Article,
+        SchemaType::AboutPage,
+        SchemaType::ContactPage,
+        SchemaType::CollectionPage,
+        SchemaType::Organization,
+        SchemaType::LocalBusiness,
+        SchemaType::Product,
+        SchemaType::Service,
+    ];
+    let idx = all.iter().position(|v| *v == current).unwrap_or(0);
+    let next = if forward {
+        (idx + 1) % all.len()
+    } else {
+        (idx + all.len() - 1) % all.len()
+    };
+    all[next]
+}
+
 fn next_hero_image_class(
     current: crate::model::HeroImageClass,
     forward: bool,
@@ -13472,6 +14711,11 @@ impl ComponentKind {
             Self::Modal,
             Self::Slider,
             Self::Alert,
+            Self::Image,
+            Self::RichText,
+            Self::Navigation,
+            Self::HeaderSearch,
+            Self::HeaderMenu,
         ]
     }
 
@@ -13490,6 +14734,11 @@ impl ComponentKind {
             ComponentKind::Modal => "dd-modal",
             ComponentKind::Slider => "dd-slider",
             ComponentKind::Alert => "dd-alert",
+            ComponentKind::Image => "dd-image",
+            ComponentKind::RichText => "dd-rich_text",
+            ComponentKind::Navigation => "dd-navigation",
+            ComponentKind::HeaderSearch => "dd-header-search",
+            ComponentKind::HeaderMenu => "dd-header-menu",
         }
     }
 
@@ -13620,6 +14869,48 @@ impl ComponentKind {
                 parent_title: Some("Alert Title".to_string()),
                 parent_copy: "Alert content".to_string(),
             }),
+            ComponentKind::Image => crate::model::SectionComponent::Image(crate::model::DdImage {
+                parent_data_aos: crate::model::HeroAos::FadeIn,
+                parent_image_url: "https://dummyimage.com/1200x600/000/fff".to_string(),
+                parent_image_alt: "Image alt text".to_string(),
+                parent_link_url: None,
+                parent_link_target: None,
+            }),
+            ComponentKind::RichText => {
+                crate::model::SectionComponent::RichText(crate::model::DdRichText {
+                    parent_class: None,
+                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    parent_copy: "Copy".to_string(),
+                })
+            }
+            ComponentKind::Navigation => {
+                crate::model::SectionComponent::Navigation(crate::model::DdNavigation {
+                    parent_type: crate::model::NavigationType::HeaderNav,
+                    parent_class: crate::model::NavigationClass::MainMenu,
+                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    parent_width: "dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-18-24".to_string(),
+                    items: vec![crate::model::NavigationItem {
+                        child_kind: crate::model::NavigationKind::Link,
+                        child_link_label: "Home".to_string(),
+                        child_link_url: Some("/".to_string()),
+                        child_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+                        child_link_css: None,
+                        items: Vec::new(),
+                    }],
+                })
+            }
+            ComponentKind::HeaderSearch => {
+                crate::model::SectionComponent::HeaderSearch(crate::model::DdHeaderSearch {
+                    parent_width: "dd-u-3-24 dd-u-sm-3-24 dd-u-md-3-24 dd-u-lg-4-24".to_string(),
+                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                })
+            }
+            ComponentKind::HeaderMenu => {
+                crate::model::SectionComponent::HeaderMenu(crate::model::DdHeaderMenu {
+                    parent_width: "dd-u-3-24 dd-u-sm-3-24 dd-u-md-3-24".to_string(),
+                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                })
+            }
         }
     }
 }
