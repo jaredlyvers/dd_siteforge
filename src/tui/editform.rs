@@ -55,7 +55,16 @@ pub enum FieldKind {
         target_id: &'static str,
         label_id: &'static str,
     },
-    // SubForm { template: &'static EditForm, min_items: usize } — added in Tier B.
+    /// Collection of sub-items. Each item follows `template`'s shape. The
+    /// editor renders the collection as a summary list and drills into a
+    /// nested FormEdit for individual-item editing. `summary_field_id` tells
+    /// the parent renderer which field of the item to surface as the row
+    /// summary (usually `child_title` or equivalent).
+    SubForm {
+        template: &'static EditForm,
+        min_items: usize,
+        summary_field_id: &'static str,
+    },
 }
 
 /// Predicate that gates whether a field is visible. The editor skips hidden
@@ -74,6 +83,14 @@ pub enum FieldPredicate {
 pub struct EditFormState {
     pub form: &'static EditForm,
     pub values: HashMap<String, String>,
+    /// For each `SubForm` field (keyed by its id), the live state of every
+    /// item in the collection. Each item is itself an `EditFormState` whose
+    /// `form` is the SubForm's item template.
+    pub sub_state: HashMap<String, Vec<EditFormState>>,
+    /// For each `SubForm` field, which item index is currently highlighted
+    /// in the summary list (used by Up/Down/A/X/Enter when focus is on the
+    /// SubForm field).
+    pub selected_sub_item: HashMap<String, usize>,
     pub focused_field: usize,
     /// (row, col) cursor inside a `Textarea` field; only meaningful when
     /// `focused_field` points at a Textarea.
@@ -84,6 +101,8 @@ impl EditFormState {
     /// Build a fresh state with every field initialised to its declared default.
     pub fn new(form: &'static EditForm) -> Self {
         let mut values = HashMap::new();
+        let mut sub_state: HashMap<String, Vec<EditFormState>> = HashMap::new();
+        let mut selected_sub_item: HashMap<String, usize> = HashMap::new();
         for field in form.fields {
             match &field.kind {
                 FieldKind::Text { default } | FieldKind::Url { default } => {
@@ -104,14 +123,33 @@ impl EditFormState {
                     values.insert(target_id.to_string(), "_self".to_string());
                     values.insert(label_id.to_string(), String::new());
                 }
+                FieldKind::SubForm { .. } => {
+                    sub_state.insert(field.id.to_string(), Vec::new());
+                    selected_sub_item.insert(field.id.to_string(), 0);
+                }
             }
         }
         Self {
             form,
             values,
+            sub_state,
+            selected_sub_item,
             focused_field: 0,
             textarea_cursor: (0, 0),
         }
+    }
+
+    /// Make an item-level state for adding a new item to the given SubForm.
+    /// Returns None if the field isn't a SubForm.
+    pub fn new_sub_item(&self, subform_field_id: &str) -> Option<EditFormState> {
+        for field in self.form.fields {
+            if field.id == subform_field_id {
+                if let FieldKind::SubForm { template, .. } = &field.kind {
+                    return Some(EditFormState::new(*template));
+                }
+            }
+        }
+        None
     }
 
     pub fn get(&self, id: &str) -> &str {
@@ -577,6 +615,477 @@ pub static MODAL_FORM: EditForm = EditForm {
             kind: FieldKind::Textarea {
                 rows: 5,
                 default: "",
+            },
+            required: true,
+            visible_when: None,
+        },
+    ],
+};
+
+// ==================== Tier B item templates ====================
+// Item templates are defined before the parent forms that reference them.
+
+pub static CARD_ITEM_FORM: EditForm = EditForm {
+    title: "dd-card item",
+    fields: &[
+        FormField {
+            id: "child_image_url",
+            label: "Image URL",
+            kind: FieldKind::Url { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_image_alt",
+            label: "Image Alt",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_title",
+            label: "Title",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_subtitle",
+            label: "Subtitle",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_copy",
+            label: "Copy",
+            kind: FieldKind::Textarea { rows: 4, default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_link_url",
+            label: "Link URL (optional)",
+            kind: FieldKind::Url { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_link_target",
+            label: "Link Target",
+            kind: FieldKind::Enum { options: LINK_TARGET_OPTIONS, default: "_self" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_link_label",
+            label: "Link Label (optional)",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static FILMSTRIP_ITEM_FORM: EditForm = EditForm {
+    title: "dd-filmstrip item",
+    fields: &[
+        FormField {
+            id: "child_image_url",
+            label: "Image URL",
+            kind: FieldKind::Url { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_image_alt",
+            label: "Image Alt",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_title",
+            label: "Title",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static MILESTONES_ITEM_FORM: EditForm = EditForm {
+    title: "dd-milestones item",
+    fields: &[
+        FormField {
+            id: "child_percentage",
+            label: "Percentage",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_title",
+            label: "Title",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_subtitle",
+            label: "Subtitle",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_copy",
+            label: "Copy",
+            kind: FieldKind::Textarea { rows: 4, default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_link_url",
+            label: "Link URL (optional)",
+            kind: FieldKind::Url { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_link_target",
+            label: "Link Target",
+            kind: FieldKind::Enum { options: LINK_TARGET_OPTIONS, default: "_self" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_link_label",
+            label: "Link Label (optional)",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static SLIDER_ITEM_FORM: EditForm = EditForm {
+    title: "dd-slider item",
+    fields: &[
+        FormField {
+            id: "child_title",
+            label: "Title",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_copy",
+            label: "Copy",
+            kind: FieldKind::Textarea { rows: 4, default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_image_url",
+            label: "Image URL",
+            kind: FieldKind::Url { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_image_alt",
+            label: "Image Alt",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_link_url",
+            label: "Link URL (optional)",
+            kind: FieldKind::Url { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_link_target",
+            label: "Link Target",
+            kind: FieldKind::Enum { options: LINK_TARGET_OPTIONS, default: "_self" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_link_label",
+            label: "Link Label (optional)",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static ACCORDION_ITEM_FORM: EditForm = EditForm {
+    title: "dd-accordion item",
+    fields: &[
+        FormField {
+            id: "child_title",
+            label: "Title",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_copy",
+            label: "Content",
+            kind: FieldKind::Textarea { rows: 5, default: "" },
+            required: true,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static ALTERNATING_ITEM_FORM: EditForm = EditForm {
+    title: "dd-alternating item",
+    fields: &[
+        FormField {
+            id: "child_image_url",
+            label: "Image URL",
+            kind: FieldKind::Url { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_image_alt",
+            label: "Image Alt",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_title",
+            label: "Title",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_copy",
+            label: "Copy",
+            kind: FieldKind::Textarea { rows: 5, default: "" },
+            required: true,
+            visible_when: None,
+        },
+    ],
+};
+
+// ==================== Tier B parent forms ====================
+
+pub static CARD_FORM: EditForm = EditForm {
+    title: "dd-card",
+    fields: &[
+        FormField {
+            id: "parent_type",
+            label: "Layout",
+            kind: FieldKind::Enum { options: &["-default", "-horizontal"], default: "-default" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_data_aos",
+            label: "Animation",
+            kind: FieldKind::Enum { options: AOS_OPTIONS, default: "fade-in" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_width",
+            label: "Width Classes",
+            kind: FieldKind::Text { default: "dd-u-1-1 dd-u-md-12-24 dd-u-lg-8-24" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "items",
+            label: "Items",
+            kind: FieldKind::SubForm {
+                template: &CARD_ITEM_FORM,
+                min_items: 1,
+                summary_field_id: "child_title",
+            },
+            required: true,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static FILMSTRIP_FORM: EditForm = EditForm {
+    title: "dd-filmstrip",
+    fields: &[
+        FormField {
+            id: "parent_type",
+            label: "Direction",
+            kind: FieldKind::Enum { options: &["-default", "-reverse"], default: "-default" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_data_aos",
+            label: "Animation",
+            kind: FieldKind::Enum { options: AOS_OPTIONS, default: "fade-in" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "items",
+            label: "Items",
+            kind: FieldKind::SubForm {
+                template: &FILMSTRIP_ITEM_FORM,
+                min_items: 1,
+                summary_field_id: "child_title",
+            },
+            required: true,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static MILESTONES_FORM: EditForm = EditForm {
+    title: "dd-milestones",
+    fields: &[
+        FormField {
+            id: "parent_data_aos",
+            label: "Animation",
+            kind: FieldKind::Enum { options: AOS_OPTIONS, default: "fade-in" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_width",
+            label: "Width Classes",
+            kind: FieldKind::Text { default: "dd-u-1-1 dd-u-md-12-24" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "items",
+            label: "Items",
+            kind: FieldKind::SubForm {
+                template: &MILESTONES_ITEM_FORM,
+                min_items: 1,
+                summary_field_id: "child_title",
+            },
+            required: true,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static SLIDER_FORM: EditForm = EditForm {
+    title: "dd-slider",
+    fields: &[
+        FormField {
+            id: "parent_title",
+            label: "Slider Title",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "items",
+            label: "Items",
+            kind: FieldKind::SubForm {
+                template: &SLIDER_ITEM_FORM,
+                min_items: 1,
+                summary_field_id: "child_title",
+            },
+            required: true,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static ACCORDION_FORM: EditForm = EditForm {
+    title: "dd-accordion",
+    fields: &[
+        FormField {
+            id: "parent_type",
+            label: "Type",
+            kind: FieldKind::Enum { options: &["-default", "-faq"], default: "-default" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_class",
+            label: "Variant",
+            kind: FieldKind::Enum {
+                options: &["-borderless", "-compact", "-primary", "-secondary", "-tertiary"],
+                default: "-primary",
+            },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_data_aos",
+            label: "Animation",
+            kind: FieldKind::Enum { options: AOS_OPTIONS, default: "fade-in" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_group_name",
+            label: "Group Name",
+            kind: FieldKind::Text { default: "group1" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "items",
+            label: "Items",
+            kind: FieldKind::SubForm {
+                template: &ACCORDION_ITEM_FORM,
+                min_items: 1,
+                summary_field_id: "child_title",
+            },
+            required: true,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static ALTERNATING_FORM: EditForm = EditForm {
+    title: "dd-alternating",
+    fields: &[
+        FormField {
+            id: "parent_type",
+            label: "Alternation",
+            kind: FieldKind::Enum {
+                options: &["-default", "-reverse", "-no-alternate"],
+                default: "-default",
+            },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_class",
+            label: "CSS Class",
+            kind: FieldKind::Text { default: "-default" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_data_aos",
+            label: "Animation",
+            kind: FieldKind::Enum { options: AOS_OPTIONS, default: "fade-in" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "items",
+            label: "Items",
+            kind: FieldKind::SubForm {
+                template: &ALTERNATING_ITEM_FORM,
+                min_items: 1,
+                summary_field_id: "child_title",
             },
             required: true,
             visible_when: None,

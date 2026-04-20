@@ -141,11 +141,27 @@ enum Modal {
     /// Unified form editor: all fields of a component rendered together,
     /// Tab moves between fields, Left/Right cycles enums, Ctrl+S saves via
     /// `cursor::apply_edit_form_to_component`.
+    ///
+    /// When `drill_stack` is non-empty, the editor is currently inside a
+    /// nested SubForm item; Ctrl+S/Esc return to the outer parent rather
+    /// than committing to the model.
     FormEdit {
         state: editform::EditFormState,
         cursor: cursor::Cursor,
         cursor_pos: usize, // text cursor within focused field's string
+        drill_stack: Vec<DrillFrame>,
     },
+}
+
+/// One frame of drill-down context: parent form state plus the (subform id,
+/// item idx) we entered from. When we return, we copy the current state into
+/// `parent_state.sub_state[subform_field_id][item_idx]` and make the parent
+/// the active state again.
+struct DrillFrame {
+    parent_state: editform::EditFormState,
+    parent_cursor_pos: usize,
+    subform_field_id: String,
+    item_idx: usize,
 }
 
 /// Common modal result returned from event handling
@@ -639,6 +655,15 @@ impl App {
             let field_height = match &field.kind {
                 editform::FieldKind::Textarea { rows, .. } => (*rows).max(1),
                 editform::FieldKind::OptionalLinkTriple { .. } => 3,
+                editform::FieldKind::SubForm { .. } => {
+                    let items_len = state
+                        .sub_state
+                        .get(field.id)
+                        .map(|v| v.len())
+                        .unwrap_or(0);
+                    // 1 header line + 1 row per item (or 1 empty hint if none)
+                    (1 + items_len.max(1)) as u16
+                }
                 _ => 1,
             };
             if cur_y + field_height >= bottom.saturating_sub(footer_height) {
@@ -686,6 +711,44 @@ impl App {
                 }
                 editform::FieldKind::OptionalLinkTriple { .. } => {
                     // Reserved for Hero migration; CTA wedge uses 3 flat fields.
+                }
+                editform::FieldKind::SubForm {
+                    summary_field_id, ..
+                } => {
+                    let items = state
+                        .sub_state
+                        .get(field.id)
+                        .cloned()
+                        .unwrap_or_default();
+                    let selected = state
+                        .selected_sub_item
+                        .get(field.id)
+                        .copied()
+                        .unwrap_or(0);
+                    let rect = Rect::new(value_left, cur_y, value_width, field_height);
+                    let mut lines: Vec<String> = Vec::new();
+                    lines.push(format!(
+                        "{} item(s)  —  A add · X remove · Enter edit",
+                        items.len()
+                    ));
+                    if items.is_empty() {
+                        lines.push("  (no items; press A to add)".to_string());
+                    } else {
+                        for (i, item) in items.iter().enumerate() {
+                            let summary = item.values.get(*summary_field_id).cloned().unwrap_or_default();
+                            let summary = if summary.trim().is_empty() {
+                                "(untitled)".to_string()
+                            } else {
+                                summary
+                            };
+                            let marker = if focused && i == selected { ">" } else { " " };
+                            lines.push(format!("  {} {}. {}", marker, i + 1, summary));
+                        }
+                    }
+                    frame.render_widget(
+                        Paragraph::new(lines.join("\n")).style(value_style),
+                        rect,
+                    );
                 }
             }
 
@@ -1249,15 +1312,40 @@ impl App {
     fn handle_form_edit_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
         use crossterm::event::{KeyCode, KeyModifiers};
 
-        // Ctrl+S saves via region-aware dispatch.
+        // Ctrl+S: drilled-down form returns to its parent; top-level form
+        // commits to the model.
         if matches!(key.code, KeyCode::Char('s')) && key.modifiers.contains(KeyModifiers::CONTROL) {
             let taken = self.modal.take();
             if let Some(Modal::FormEdit {
                 state,
                 cursor,
                 cursor_pos,
+                mut drill_stack,
             }) = taken
             {
+                if let Some(frame) = drill_stack.pop() {
+                    // Returning from a drilled-in item — write current state back
+                    // into the parent's sub_state and make the parent the active form.
+                    let mut parent = frame.parent_state;
+                    let items = parent
+                        .sub_state
+                        .entry(frame.subform_field_id.clone())
+                        .or_default();
+                    if frame.item_idx < items.len() {
+                        items[frame.item_idx] = state;
+                    } else {
+                        items.push(state);
+                    }
+                    self.status = "Item saved — editing parent.".to_string();
+                    self.modal = Some(Modal::FormEdit {
+                        state: parent,
+                        cursor,
+                        cursor_pos: frame.parent_cursor_pos,
+                        drill_stack,
+                    });
+                    return Some(ModalResult::Continue);
+                }
+                // Top-level save: commit to the model.
                 match cursor::apply_edit_form_to_component(&mut self.site, &cursor, &state) {
                     Ok(()) => {
                         self.status = format!("Saved {}.", state.form.title);
@@ -1269,6 +1357,7 @@ impl App {
                             state,
                             cursor,
                             cursor_pos,
+                            drill_stack,
                         });
                         return Some(ModalResult::Continue);
                     }
@@ -1276,7 +1365,27 @@ impl App {
             }
             return Some(ModalResult::CloseCancel);
         }
+        // Esc: drilled-down discards and returns; top-level closes.
         if matches!(key.code, KeyCode::Esc) {
+            let taken = self.modal.take();
+            if let Some(Modal::FormEdit {
+                state: _,
+                cursor,
+                cursor_pos: _,
+                mut drill_stack,
+            }) = taken
+            {
+                if let Some(frame) = drill_stack.pop() {
+                    self.status = "Item edit cancelled.".to_string();
+                    self.modal = Some(Modal::FormEdit {
+                        state: frame.parent_state,
+                        cursor,
+                        cursor_pos: frame.parent_cursor_pos,
+                        drill_stack,
+                    });
+                    return Some(ModalResult::Continue);
+                }
+            }
             self.modal = None;
             return Some(ModalResult::CloseCancel);
         }
@@ -1290,12 +1399,16 @@ impl App {
 
         // Snapshot the focused field's id and kind (to satisfy borrow rules before mutation).
         let focused_idx = state.focused_field;
-        let (field_id, is_enum, is_textarea, accepts_text) = match state.form.fields.get(focused_idx)
+        let (field_id, is_enum, is_textarea, is_subform, accepts_text) = match state
+            .form
+            .fields
+            .get(focused_idx)
         {
             Some(f) => (
                 f.id,
                 matches!(f.kind, editform::FieldKind::Enum { .. }),
                 matches!(f.kind, editform::FieldKind::Textarea { .. }),
+                matches!(f.kind, editform::FieldKind::SubForm { .. }),
                 matches!(
                     f.kind,
                     editform::FieldKind::Text { .. }
@@ -1305,6 +1418,168 @@ impl App {
             ),
             None => return Some(ModalResult::CloseCancel),
         };
+
+        // SubForm collection handling: A/X/Enter/Up/Down operate on items list.
+        if is_subform {
+            match key.code {
+                KeyCode::Char('A') => {
+                    if let Some(new_item) = state.new_sub_item(field_id) {
+                        let items = state.sub_state.entry(field_id.to_string()).or_default();
+                        let selected = state
+                            .selected_sub_item
+                            .get(field_id)
+                            .copied()
+                            .unwrap_or(0);
+                        let insert_at = if items.is_empty() {
+                            0
+                        } else {
+                            (selected + 1).min(items.len())
+                        };
+                        items.insert(insert_at, new_item);
+                        state
+                            .selected_sub_item
+                            .insert(field_id.to_string(), insert_at);
+                        self.status = "Item added.".to_string();
+                    }
+                    return Some(ModalResult::Continue);
+                }
+                KeyCode::Char('X') => {
+                    let min_items = match state.form.fields[focused_idx].kind {
+                        editform::FieldKind::SubForm { min_items, .. } => min_items,
+                        _ => 0,
+                    };
+                    let items = state.sub_state.entry(field_id.to_string()).or_default();
+                    if items.len() > min_items {
+                        let selected = state
+                            .selected_sub_item
+                            .get(field_id)
+                            .copied()
+                            .unwrap_or(0);
+                        if selected < items.len() {
+                            items.remove(selected);
+                            let new_sel = selected.min(items.len().saturating_sub(1));
+                            state
+                                .selected_sub_item
+                                .insert(field_id.to_string(), new_sel);
+                            self.status = "Item removed.".to_string();
+                        }
+                    } else {
+                        self.status = format!("Must keep at least {min_items} item(s).");
+                    }
+                    return Some(ModalResult::Continue);
+                }
+                KeyCode::Up => {
+                    let selected = state
+                        .selected_sub_item
+                        .get(field_id)
+                        .copied()
+                        .unwrap_or(0);
+                    let items_len = state
+                        .sub_state
+                        .get(field_id)
+                        .map(|v| v.len())
+                        .unwrap_or(0);
+                    if items_len == 0 {
+                        state.focus_prev();
+                        *cursor_pos =
+                            state.get(state.form.fields[state.focused_field].id).len();
+                    } else if selected == 0 {
+                        state.focus_prev();
+                        *cursor_pos =
+                            state.get(state.form.fields[state.focused_field].id).len();
+                    } else {
+                        state
+                            .selected_sub_item
+                            .insert(field_id.to_string(), selected - 1);
+                    }
+                    return Some(ModalResult::Continue);
+                }
+                KeyCode::Down => {
+                    let selected = state
+                        .selected_sub_item
+                        .get(field_id)
+                        .copied()
+                        .unwrap_or(0);
+                    let items_len = state
+                        .sub_state
+                        .get(field_id)
+                        .map(|v| v.len())
+                        .unwrap_or(0);
+                    if selected + 1 < items_len {
+                        state
+                            .selected_sub_item
+                            .insert(field_id.to_string(), selected + 1);
+                    } else {
+                        state.focus_next();
+                        *cursor_pos =
+                            state.get(state.form.fields[state.focused_field].id).len();
+                    }
+                    return Some(ModalResult::Continue);
+                }
+                KeyCode::Enter => {
+                    // Drill into the selected item by taking ownership of the modal.
+                    let taken = self.modal.take();
+                    if let Some(Modal::FormEdit {
+                        mut state,
+                        cursor,
+                        cursor_pos,
+                        mut drill_stack,
+                    }) = taken
+                    {
+                        let selected = state
+                            .selected_sub_item
+                            .get(field_id)
+                            .copied()
+                            .unwrap_or(0);
+                        let items_len = state
+                            .sub_state
+                            .get(field_id)
+                            .map(|v| v.len())
+                            .unwrap_or(0);
+                        if selected < items_len {
+                            let template = match &state.form.fields[focused_idx].kind {
+                                editform::FieldKind::SubForm { template, .. } => *template,
+                                _ => unreachable!(
+                                    "is_subform was true but kind is not SubForm"
+                                ),
+                            };
+                            let placeholder = editform::EditFormState::new(template);
+                            let items = state
+                                .sub_state
+                                .get_mut(field_id)
+                                .expect("sub_state present for SubForm field");
+                            let item_state = std::mem::replace(&mut items[selected], placeholder);
+                            let item_cursor_pos = item_state
+                                .get(item_state.form.fields[item_state.focused_field].id)
+                                .len();
+                            drill_stack.push(DrillFrame {
+                                parent_state: state,
+                                parent_cursor_pos: cursor_pos,
+                                subform_field_id: field_id.to_string(),
+                                item_idx: selected,
+                            });
+                            self.modal = Some(Modal::FormEdit {
+                                state: item_state,
+                                cursor,
+                                cursor_pos: item_cursor_pos,
+                                drill_stack,
+                            });
+                            self.status = "Editing item. Ctrl+S returns to parent.".to_string();
+                        } else {
+                            // Nothing to drill into; restore modal unchanged.
+                            self.modal = Some(Modal::FormEdit {
+                                state,
+                                cursor,
+                                cursor_pos,
+                                drill_stack,
+                            });
+                        }
+                    }
+                    return Some(ModalResult::Continue);
+                }
+                _ => {}
+            }
+        }
 
         match key.code {
             KeyCode::Tab => {
@@ -8374,6 +8649,7 @@ impl App {
             state,
             cursor: new_cursor,
             cursor_pos,
+            drill_stack: Vec::new(),
         });
         self.status = format!("Editing {}.", title);
         true
@@ -15460,84 +15736,6 @@ mod tests {
     }
 
     #[test]
-    fn dd_card_keyflow_enter_tab_backtab_and_left_right_parent_fields() {
-        let mut app = app_with_card();
-        let rows = app.build_page_tree_rows();
-        let row_idx = rows
-            .iter()
-            .position(|row| {
-                matches!(
-                    row.kind,
-                    TreeRowKind::Component {
-                        node_idx: 1,
-                        column_idx: 0,
-                        component_idx: 0
-                    }
-                )
-            })
-            .expect("dd-card component row should exist");
-        app.selected_tree_row = row_idx;
-        app.apply_tree_row_selection(rows[row_idx]);
-
-        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        assert!(matches!(app.input_mode, Some(InputMode::EditCardType)));
-        assert_eq!(app.input_buffer, "-default");
-
-        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
-        assert_eq!(app.input_buffer, "-horizontal");
-        assert_eq!(
-            selected_card(&app).parent_type,
-            crate::model::CardType::Horizontal
-        );
-
-        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
-        assert!(matches!(app.input_mode, Some(InputMode::EditCardDataAos)));
-        let prev_aos = app.input_buffer.clone();
-        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
-        assert_ne!(app.input_buffer, prev_aos);
-
-        send_key(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT);
-        assert!(matches!(app.input_mode, Some(InputMode::EditCardType)));
-    }
-
-    #[test]
-    fn dd_card_keyflow_item_row_enter_and_link_target_cycle() {
-        let mut app = app_with_card();
-
-        let rows = app.build_page_tree_rows();
-        let row_idx = rows
-            .iter()
-            .position(|row| matches!(row.kind, TreeRowKind::CardItem { .. }))
-            .expect("card item row should exist");
-        app.selected_tree_row = row_idx;
-        app.apply_tree_row_selection(rows[row_idx]);
-
-        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        assert!(matches!(
-            app.input_mode,
-            Some(InputMode::EditCardItemImageUrl)
-        ));
-        let fields = app.current_modal_fields();
-        assert!(fields.contains("- child_title:"));
-        assert!(!fields.contains("- section.id:"));
-
-        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // image_alt
-        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // title
-        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // subtitle
-        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // copy
-        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // link_url
-        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE); // link_target
-        assert!(matches!(
-            app.input_mode,
-            Some(InputMode::EditCardItemLinkTarget)
-        ));
-        assert_eq!(app.input_buffer, "_self");
-
-        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
-        assert_eq!(app.input_buffer, "_blank");
-    }
-
-    #[test]
     fn dd_card_keyflow_add_remove_items_with_min_guard() {
         let mut app = app_with_card();
         assert_eq!(selected_card(&app).items.len(), 1);
@@ -15904,6 +16102,127 @@ mod tests {
             },
             _ => panic!("expected Section"),
         }
+    }
+
+    fn tab_to_items_field(app: &mut App) {
+        for _ in 0..20 {
+            if form_focused_field_id(app) == Some("items") {
+                return;
+            }
+            send_key(app, KeyCode::Tab, KeyModifiers::NONE);
+        }
+        panic!("never reached items field after 20 tabs");
+    }
+
+    fn drill_stack_len(app: &App) -> usize {
+        match app.modal.as_ref() {
+            Some(Modal::FormEdit { drill_stack, .. }) => drill_stack.len(),
+            _ => 0,
+        }
+    }
+
+    /// Drill into first item, edit nothing, return, verify round-trip.
+    fn tier_b_drill_round_trip(component: ComponentKind) {
+        let mut app = app_with_component(component);
+        open_form_edit_on_page_component(&mut app);
+        tab_to_items_field(&mut app);
+        assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+
+        // Drill into first item.
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(drill_stack_len(&app), 1, "drill stack should have 1 frame");
+
+        // Ctrl+S to return to parent.
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert_eq!(drill_stack_len(&app), 0, "drill stack should be empty");
+        assert!(app.modal.is_some(), "parent modal should remain open");
+
+        // Ctrl+S at parent commits to model and closes.
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert!(app.modal.is_none(), "top-level save should close modal");
+    }
+
+    #[test]
+    fn tier_b_card_drill_round_trip() {
+        tier_b_drill_round_trip(ComponentKind::Card);
+    }
+
+    #[test]
+    fn tier_b_filmstrip_drill_round_trip() {
+        tier_b_drill_round_trip(ComponentKind::Filmstrip);
+    }
+
+    #[test]
+    fn tier_b_milestones_drill_round_trip() {
+        tier_b_drill_round_trip(ComponentKind::Milestones);
+    }
+
+    #[test]
+    fn tier_b_slider_drill_round_trip() {
+        tier_b_drill_round_trip(ComponentKind::Slider);
+    }
+
+    #[test]
+    fn tier_b_accordion_drill_round_trip() {
+        tier_b_drill_round_trip(ComponentKind::Accordion);
+    }
+
+    #[test]
+    fn tier_b_alternating_drill_round_trip() {
+        tier_b_drill_round_trip(ComponentKind::Alternating);
+    }
+
+    #[test]
+    fn tier_b_accordion_item_edit_persists() {
+        // Full round-trip with an actual field change on an item.
+        let mut app = app_with_component(ComponentKind::Accordion);
+        open_form_edit_on_page_component(&mut app);
+        tab_to_items_field(&mut app);
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        // Inside item editor; first field is child_title (Text). Type a char.
+        send_key(&mut app, KeyCode::Char('!'), KeyModifiers::NONE);
+        // Return to parent (Ctrl+S), then commit to model.
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => match &s.columns[0].components[0] {
+                crate::model::SectionComponent::Accordion(acc) => {
+                    assert!(
+                        acc.items[0].child_title.contains('!'),
+                        "first accordion item title should contain inserted char, got {:?}",
+                        acc.items[0].child_title
+                    );
+                }
+                _ => panic!("expected Accordion"),
+            },
+            _ => panic!("expected Section"),
+        }
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn tier_b_add_item_via_A_key() {
+        let mut app = app_with_component(ComponentKind::Accordion);
+        open_form_edit_on_page_component(&mut app);
+        tab_to_items_field(&mut app);
+        let before = match app.modal.as_ref() {
+            Some(Modal::FormEdit { state, .. }) => state
+                .sub_state
+                .get("items")
+                .map(|v| v.len())
+                .unwrap_or(0),
+            _ => panic!("expected FormEdit"),
+        };
+        send_key(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT);
+        let after = match app.modal.as_ref() {
+            Some(Modal::FormEdit { state, .. }) => state
+                .sub_state
+                .get("items")
+                .map(|v| v.len())
+                .unwrap_or(0),
+            _ => panic!("expected FormEdit"),
+        };
+        assert_eq!(after, before + 1, "A should add one item");
     }
 
     fn open_form_edit_on_selected_cta(app: &mut App) {

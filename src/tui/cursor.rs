@@ -14,9 +14,12 @@
 use anyhow::{anyhow, Context, Result};
 
 use crate::model::{
-    AlertClass, AlertType, BannerClass, CardLinkTarget, CtaClass, DdAlert, DdBanner, DdBlockquote,
-    DdCta, DdFooter, DdHead, DdHeader, DdHeaderMenu, DdHeaderSearch, DdHero, DdImage, DdModal,
-    DdRichText, DdSection, HeroAos, PageNode, SectionColumn, SectionComponent, Site,
+    AccordionClass, AccordionItem, AccordionType, AlertClass, AlertType, AlternatingItem,
+    AlternatingType, BannerClass, CardItem, CardLinkTarget, CardType, CtaClass, DdAccordion,
+    DdAlert, DdAlternating, DdBanner, DdBlockquote, DdCard, DdCta, DdFilmstrip, DdFooter, DdHead,
+    DdHeader, DdHeaderMenu, DdHeaderSearch, DdHero, DdImage, DdMilestones, DdModal, DdRichText,
+    DdSection, DdSlider, FilmstripItem, FilmstripType, HeroAos, MilestonesItem, PageNode,
+    SectionColumn, SectionComponent, Site, SliderItem,
 };
 use crate::tui::editform::{self, EditFormState, FieldKind};
 
@@ -213,6 +216,12 @@ pub fn apply_edit_form_to_component(
             SectionComponent::Alert(a) => apply_alert_values(a, state),
             SectionComponent::Modal(m) => apply_modal_values(m, state),
             SectionComponent::Blockquote(bq) => apply_blockquote_values(bq, state),
+            SectionComponent::Card(c) => apply_card_values(c, state),
+            SectionComponent::Filmstrip(f) => apply_filmstrip_values(f, state),
+            SectionComponent::Milestones(m) => apply_milestones_values(m, state),
+            SectionComponent::Slider(s) => apply_slider_values(s, state),
+            SectionComponent::Accordion(a) => apply_accordion_values(a, state),
+            SectionComponent::Alternating(a) => apply_alternating_values(a, state),
             other => Err(anyhow!(
                 "apply_edit_form_to_component: component type not migrated to unified editor yet ({:?})",
                 std::mem::discriminant(other)
@@ -279,6 +288,12 @@ pub fn component_to_form_state(component: &SectionComponent) -> Option<EditFormS
         SectionComponent::Alert(a) => Some(alert_to_form_state(a)),
         SectionComponent::Modal(m) => Some(modal_to_form_state(m)),
         SectionComponent::Blockquote(bq) => Some(blockquote_to_form_state(bq)),
+        SectionComponent::Card(c) => Some(card_to_form_state(c)),
+        SectionComponent::Filmstrip(f) => Some(filmstrip_to_form_state(f)),
+        SectionComponent::Milestones(m) => Some(milestones_to_form_state(m)),
+        SectionComponent::Slider(s) => Some(slider_to_form_state(s)),
+        SectionComponent::Accordion(a) => Some(accordion_to_form_state(a)),
+        SectionComponent::Alternating(a) => Some(alternating_to_form_state(a)),
         _ => None,
     }
 }
@@ -466,6 +481,301 @@ fn apply_blockquote_values(bq: &mut DdBlockquote, state: &EditFormState) -> Resu
     bq.parent_name = state.get("parent_name").to_string();
     bq.parent_role = state.get("parent_role").to_string();
     bq.parent_copy = state.get("parent_copy").to_string();
+    Ok(())
+}
+
+// ==================== Tier B populate + apply ====================
+
+pub fn card_to_form_state(c: &DdCard) -> EditFormState {
+    let mut s = EditFormState::new(&editform::CARD_FORM);
+    s.set("parent_type", enum_serde_str(c.parent_type));
+    s.set("parent_data_aos", enum_serde_str(c.parent_data_aos));
+    s.set("parent_width", c.parent_width.clone());
+    let mut items = Vec::new();
+    for it in &c.items {
+        let mut item = EditFormState::new(&editform::CARD_ITEM_FORM);
+        item.set("child_image_url", it.child_image_url.clone());
+        item.set("child_image_alt", it.child_image_alt.clone());
+        item.set("child_title", it.child_title.clone());
+        item.set("child_subtitle", it.child_subtitle.clone());
+        item.set("child_copy", it.child_copy.clone());
+        item.set(
+            "child_link_url",
+            it.child_link_url.clone().unwrap_or_default(),
+        );
+        item.set(
+            "child_link_target",
+            it.child_link_target
+                .map(enum_serde_str)
+                .unwrap_or_else(|| "_self".to_string()),
+        );
+        item.set(
+            "child_link_label",
+            it.child_link_label.clone().unwrap_or_default(),
+        );
+        items.push(item);
+    }
+    s.sub_state.insert("items".to_string(), items);
+    s.selected_sub_item.insert("items".to_string(), 0);
+    s
+}
+fn apply_card_values(c: &mut DdCard, state: &EditFormState) -> Result<()> {
+    c.parent_type = parse_enum::<CardType>(state.get("parent_type"))?;
+    c.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))?;
+    c.parent_width = state.get("parent_width").trim().to_string();
+    c.items.clear();
+    if let Some(items) = state.sub_state.get("items") {
+        for item_s in items {
+            let link_url = item_s.get("child_link_url").trim().to_string();
+            let link_label = item_s.get("child_link_label").trim().to_string();
+            let (link_url_opt, link_target_opt, link_label_opt) =
+                if link_url.is_empty() && link_label.is_empty() {
+                    (None, None, None)
+                } else {
+                    (
+                        Some(link_url),
+                        Some(parse_enum::<CardLinkTarget>(item_s.get("child_link_target"))?),
+                        Some(link_label),
+                    )
+                };
+            c.items.push(CardItem {
+                child_image_url: item_s.get("child_image_url").trim().to_string(),
+                child_image_alt: item_s.get("child_image_alt").trim().to_string(),
+                child_title: item_s.get("child_title").to_string(),
+                child_subtitle: item_s.get("child_subtitle").to_string(),
+                child_copy: item_s.get("child_copy").to_string(),
+                child_link_url: link_url_opt,
+                child_link_target: link_target_opt,
+                child_link_label: link_label_opt,
+            });
+        }
+    }
+    Ok(())
+}
+
+pub fn filmstrip_to_form_state(f: &DdFilmstrip) -> EditFormState {
+    let mut s = EditFormState::new(&editform::FILMSTRIP_FORM);
+    s.set("parent_type", enum_serde_str(f.parent_type));
+    s.set("parent_data_aos", enum_serde_str(f.parent_data_aos));
+    let mut items = Vec::new();
+    for it in &f.items {
+        let mut item = EditFormState::new(&editform::FILMSTRIP_ITEM_FORM);
+        item.set("child_image_url", it.child_image_url.clone());
+        item.set("child_image_alt", it.child_image_alt.clone());
+        item.set("child_title", it.child_title.clone());
+        items.push(item);
+    }
+    s.sub_state.insert("items".to_string(), items);
+    s.selected_sub_item.insert("items".to_string(), 0);
+    s
+}
+fn apply_filmstrip_values(f: &mut DdFilmstrip, state: &EditFormState) -> Result<()> {
+    f.parent_type = parse_enum::<FilmstripType>(state.get("parent_type"))?;
+    f.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))?;
+    f.items.clear();
+    if let Some(items) = state.sub_state.get("items") {
+        for item_s in items {
+            f.items.push(FilmstripItem {
+                child_image_url: item_s.get("child_image_url").trim().to_string(),
+                child_image_alt: item_s.get("child_image_alt").trim().to_string(),
+                child_title: item_s.get("child_title").to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+pub fn milestones_to_form_state(m: &DdMilestones) -> EditFormState {
+    let mut s = EditFormState::new(&editform::MILESTONES_FORM);
+    s.set("parent_data_aos", enum_serde_str(m.parent_data_aos));
+    s.set("parent_width", m.parent_width.clone());
+    let mut items = Vec::new();
+    for it in &m.items {
+        let mut item = EditFormState::new(&editform::MILESTONES_ITEM_FORM);
+        item.set("child_percentage", it.child_percentage.clone());
+        item.set("child_title", it.child_title.clone());
+        item.set("child_subtitle", it.child_subtitle.clone());
+        item.set("child_copy", it.child_copy.clone());
+        item.set(
+            "child_link_url",
+            it.child_link_url.clone().unwrap_or_default(),
+        );
+        item.set(
+            "child_link_target",
+            it.child_link_target
+                .map(enum_serde_str)
+                .unwrap_or_else(|| "_self".to_string()),
+        );
+        item.set(
+            "child_link_label",
+            it.child_link_label.clone().unwrap_or_default(),
+        );
+        items.push(item);
+    }
+    s.sub_state.insert("items".to_string(), items);
+    s.selected_sub_item.insert("items".to_string(), 0);
+    s
+}
+fn apply_milestones_values(m: &mut DdMilestones, state: &EditFormState) -> Result<()> {
+    m.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))?;
+    m.parent_width = state.get("parent_width").trim().to_string();
+    m.items.clear();
+    if let Some(items) = state.sub_state.get("items") {
+        for item_s in items {
+            let link_url = item_s.get("child_link_url").trim().to_string();
+            let link_label = item_s.get("child_link_label").trim().to_string();
+            let (link_url_opt, link_target_opt, link_label_opt) =
+                if link_url.is_empty() && link_label.is_empty() {
+                    (None, None, None)
+                } else {
+                    (
+                        Some(link_url),
+                        Some(parse_enum::<CardLinkTarget>(item_s.get("child_link_target"))?),
+                        Some(link_label),
+                    )
+                };
+            m.items.push(MilestonesItem {
+                child_percentage: item_s.get("child_percentage").trim().to_string(),
+                child_title: item_s.get("child_title").to_string(),
+                child_subtitle: item_s.get("child_subtitle").to_string(),
+                child_copy: item_s.get("child_copy").to_string(),
+                child_link_url: link_url_opt,
+                child_link_target: link_target_opt,
+                child_link_label: link_label_opt,
+            });
+        }
+    }
+    Ok(())
+}
+
+pub fn slider_to_form_state(sl: &DdSlider) -> EditFormState {
+    let mut s = EditFormState::new(&editform::SLIDER_FORM);
+    s.set("parent_title", sl.parent_title.clone());
+    let mut items = Vec::new();
+    for it in &sl.items {
+        let mut item = EditFormState::new(&editform::SLIDER_ITEM_FORM);
+        item.set("child_title", it.child_title.clone());
+        item.set("child_copy", it.child_copy.clone());
+        item.set("child_image_url", it.child_image_url.clone());
+        item.set("child_image_alt", it.child_image_alt.clone());
+        item.set(
+            "child_link_url",
+            it.child_link_url.clone().unwrap_or_default(),
+        );
+        item.set(
+            "child_link_target",
+            it.child_link_target
+                .map(enum_serde_str)
+                .unwrap_or_else(|| "_self".to_string()),
+        );
+        item.set(
+            "child_link_label",
+            it.child_link_label.clone().unwrap_or_default(),
+        );
+        items.push(item);
+    }
+    s.sub_state.insert("items".to_string(), items);
+    s.selected_sub_item.insert("items".to_string(), 0);
+    s
+}
+fn apply_slider_values(sl: &mut DdSlider, state: &EditFormState) -> Result<()> {
+    sl.parent_title = state.get("parent_title").to_string();
+    sl.items.clear();
+    if let Some(items) = state.sub_state.get("items") {
+        for item_s in items {
+            let link_url = item_s.get("child_link_url").trim().to_string();
+            let link_label = item_s.get("child_link_label").trim().to_string();
+            let (link_url_opt, link_target_opt, link_label_opt) =
+                if link_url.is_empty() && link_label.is_empty() {
+                    (None, None, None)
+                } else {
+                    (
+                        Some(link_url),
+                        Some(parse_enum::<CardLinkTarget>(item_s.get("child_link_target"))?),
+                        Some(link_label),
+                    )
+                };
+            sl.items.push(SliderItem {
+                child_title: item_s.get("child_title").to_string(),
+                child_copy: item_s.get("child_copy").to_string(),
+                child_image_url: item_s.get("child_image_url").trim().to_string(),
+                child_image_alt: item_s.get("child_image_alt").trim().to_string(),
+                child_link_url: link_url_opt,
+                child_link_target: link_target_opt,
+                child_link_label: link_label_opt,
+            });
+        }
+    }
+    Ok(())
+}
+
+pub fn accordion_to_form_state(a: &DdAccordion) -> EditFormState {
+    let mut s = EditFormState::new(&editform::ACCORDION_FORM);
+    s.set("parent_type", enum_serde_str(a.parent_type));
+    s.set("parent_class", enum_serde_str(a.parent_class));
+    s.set("parent_data_aos", enum_serde_str(a.parent_data_aos));
+    s.set("parent_group_name", a.parent_group_name.clone());
+    let mut items = Vec::new();
+    for it in &a.items {
+        let mut item = EditFormState::new(&editform::ACCORDION_ITEM_FORM);
+        item.set("child_title", it.child_title.clone());
+        item.set("child_copy", it.child_copy.clone());
+        items.push(item);
+    }
+    s.sub_state.insert("items".to_string(), items);
+    s.selected_sub_item.insert("items".to_string(), 0);
+    s
+}
+fn apply_accordion_values(a: &mut DdAccordion, state: &EditFormState) -> Result<()> {
+    a.parent_type = parse_enum::<AccordionType>(state.get("parent_type"))?;
+    a.parent_class = parse_enum::<AccordionClass>(state.get("parent_class"))?;
+    a.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))?;
+    a.parent_group_name = state.get("parent_group_name").trim().to_string();
+    a.items.clear();
+    if let Some(items) = state.sub_state.get("items") {
+        for item_s in items {
+            a.items.push(AccordionItem {
+                child_title: item_s.get("child_title").to_string(),
+                child_copy: item_s.get("child_copy").to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+pub fn alternating_to_form_state(a: &DdAlternating) -> EditFormState {
+    let mut s = EditFormState::new(&editform::ALTERNATING_FORM);
+    s.set("parent_type", enum_serde_str(a.parent_type));
+    s.set("parent_class", a.parent_class.clone());
+    s.set("parent_data_aos", enum_serde_str(a.parent_data_aos));
+    let mut items = Vec::new();
+    for it in &a.items {
+        let mut item = EditFormState::new(&editform::ALTERNATING_ITEM_FORM);
+        item.set("child_image_url", it.child_image_url.clone());
+        item.set("child_image_alt", it.child_image_alt.clone());
+        item.set("child_title", it.child_title.clone());
+        item.set("child_copy", it.child_copy.clone());
+        items.push(item);
+    }
+    s.sub_state.insert("items".to_string(), items);
+    s.selected_sub_item.insert("items".to_string(), 0);
+    s
+}
+fn apply_alternating_values(a: &mut DdAlternating, state: &EditFormState) -> Result<()> {
+    a.parent_type = parse_enum::<AlternatingType>(state.get("parent_type"))?;
+    a.parent_class = state.get("parent_class").to_string();
+    a.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))?;
+    a.items.clear();
+    if let Some(items) = state.sub_state.get("items") {
+        for item_s in items {
+            a.items.push(AlternatingItem {
+                child_image_url: item_s.get("child_image_url").trim().to_string(),
+                child_image_alt: item_s.get("child_image_alt").trim().to_string(),
+                child_title: item_s.get("child_title").to_string(),
+                child_copy: item_s.get("child_copy").to_string(),
+            });
+        }
+    }
     Ok(())
 }
 
