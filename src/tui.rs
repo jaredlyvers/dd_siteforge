@@ -8559,6 +8559,19 @@ impl App {
     /// and return true. Otherwise return false so the caller can fall back
     /// to legacy edit flows.
     fn try_open_form_edit(&mut self, row: &TreeRow) -> bool {
+        // Hero and Section tree rows get the unified form too.
+        if let Some((state, new_cursor, title)) = self.try_open_hero_or_section(row) {
+            let cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
+            self.modal = Some(Modal::FormEdit {
+                state,
+                cursor: new_cursor,
+                cursor_pos,
+                drill_stack: Vec::new(),
+            });
+            self.status = format!("Editing {}.", title);
+            return true;
+        }
+
         let (maybe_component, new_cursor) = match row.kind {
             TreeRowKind::HeaderComponent {
                 section_idx,
@@ -8653,6 +8666,57 @@ impl App {
         });
         self.status = format!("Editing {}.", title);
         true
+    }
+
+    /// Route Hero / Section tree rows (page, header, or footer scope) to the
+    /// unified form editor. Returns `(state, cursor, title)` on match.
+    fn try_open_hero_or_section(
+        &self,
+        row: &TreeRow,
+    ) -> Option<(editform::EditFormState, cursor::Cursor, &'static str)> {
+        match row.kind {
+            TreeRowKind::Hero { node_idx } => {
+                let page_idx = self.selected_page;
+                let node = self.site.pages.get(page_idx)?.nodes.get(node_idx)?;
+                if let PageNode::Hero(hero) = node {
+                    let state = cursor::hero_to_form_state(hero);
+                    let cur = cursor::Cursor::PageHero {
+                        page: page_idx,
+                        node: node_idx,
+                    };
+                    Some((state, cur, "dd-hero"))
+                } else {
+                    None
+                }
+            }
+            TreeRowKind::Section { node_idx } => {
+                let page_idx = self.selected_page;
+                let node = self.site.pages.get(page_idx)?.nodes.get(node_idx)?;
+                if let PageNode::Section(section) = node {
+                    let state = cursor::section_to_form_state(section);
+                    let cur = cursor::Cursor::PageSection {
+                        page: page_idx,
+                        node: node_idx,
+                    };
+                    Some((state, cur, "dd-section"))
+                } else {
+                    None
+                }
+            }
+            TreeRowKind::HeaderSection { section_idx } => {
+                let section = self.site.header.sections.get(section_idx)?;
+                let state = cursor::section_to_form_state(section);
+                let cur = cursor::Cursor::HeaderSection { sec: section_idx };
+                Some((state, cur, "dd-section (header)"))
+            }
+            TreeRowKind::FooterSection { section_idx } => {
+                let section = self.site.footer.sections.get(section_idx)?;
+                let state = cursor::section_to_form_state(section);
+                let cur = cursor::Cursor::FooterSection { sec: section_idx };
+                Some((state, cur, "dd-section (footer)"))
+            }
+            _ => None,
+        }
     }
 
     fn insert_selected_component_kind(&mut self) {
@@ -16200,6 +16264,119 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn tier_c_hero_form_edit_round_trip() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_page = 0;
+        app.selected_node = 0;
+        app.sync_tree_row_with_selection();
+        let rows = app.build_page_tree_rows();
+        let row_idx = rows
+            .iter()
+            .position(|row| matches!(row.kind, TreeRowKind::Hero { node_idx: 0 }))
+            .expect("hero row");
+        app.selected_tree_row = row_idx;
+        app.apply_tree_row_selection(rows[row_idx]);
+
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        let title_is_hero = matches!(
+            app.modal.as_ref(),
+            Some(Modal::FormEdit { state, .. }) if state.form.title == "dd-hero"
+        );
+        assert!(title_is_hero, "hero form should open");
+
+        // First field is parent_title (Text). Type a char then Ctrl+S.
+        send_key(&mut app, KeyCode::Char('!'), KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert!(app.modal.is_none(), "top-level save closes modal");
+        if let PageNode::Hero(h) = &app.site.pages[0].nodes[0] {
+            assert!(h.parent_title.contains('!'));
+        } else {
+            panic!("expected Hero");
+        }
+    }
+
+    #[test]
+    fn tier_c_section_form_edit_preserves_components() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_page = 0;
+        app.selected_node = 1;
+        app.set_section_expanded(1, true);
+        // Put a CTA into the first column so we can verify it survives a column rename.
+        if let PageNode::Section(s) = &mut app.site.pages[0].nodes[1] {
+            s.columns[0]
+                .components
+                .push(ComponentKind::Cta.default_component());
+        } else {
+            panic!("expected Section at node 1");
+        }
+        app.sync_tree_row_with_selection();
+        let rows = app.build_page_tree_rows();
+        let row_idx = rows
+            .iter()
+            .position(|row| matches!(row.kind, TreeRowKind::Section { node_idx: 1 }))
+            .expect("section row");
+        app.selected_tree_row = row_idx;
+        app.apply_tree_row_selection(rows[row_idx]);
+
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(
+            app.modal,
+            Some(Modal::FormEdit { ref state, .. }) if state.form.title == "dd-section"
+        ));
+        // Top-level Ctrl+S without changes — should just round-trip.
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        if let PageNode::Section(s) = &app.site.pages[0].nodes[1] {
+            assert_eq!(s.columns.len(), 1);
+            assert_eq!(
+                s.columns[0].components.len(),
+                1,
+                "CTA must survive section round-trip"
+            );
+        } else {
+            panic!("expected Section");
+        }
+    }
+
+    #[test]
+    fn tier_d_navigation_drill_round_trip() {
+        let mut app = app_with_component(ComponentKind::Navigation);
+        open_form_edit_on_page_component(&mut app);
+        assert!(matches!(
+            app.modal,
+            Some(Modal::FormEdit { ref state, .. }) if state.form.title == "dd-navigation"
+        ));
+        tab_to_items_field(&mut app);
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(drill_stack_len(&app), 1);
+        // Inside nav item; Ctrl+S returns to parent.
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert_eq!(drill_stack_len(&app), 0);
+        // Top-level save.
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert!(app.modal.is_none());
+    }
+
+    #[test]
+    fn tier_d_navigation_button_hides_link_fields() {
+        let mut app = app_with_component(ComponentKind::Navigation);
+        open_form_edit_on_page_component(&mut app);
+        tab_to_items_field(&mut app);
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        // Now in nav-item editor; child_kind is the first field, default "link".
+        // Cycle to "button" via Right.
+        send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        assert_eq!(form_value(&app, "child_kind"), "button");
+
+        // The visible-field count should drop by 2 (child_link_url and child_link_target).
+        let visible_count = match app.modal.as_ref() {
+            Some(Modal::FormEdit { state, .. }) => state.visible_field_indices().len(),
+            _ => panic!("expected FormEdit"),
+        };
+        // Template has 6 fields; button hides 2 → 4 visible.
+        assert_eq!(visible_count, 4);
+    }
+
     #[allow(non_snake_case)]
     fn tier_b_add_item_via_A_key() {
         let mut app = app_with_component(ComponentKind::Accordion);

@@ -15,11 +15,13 @@ use anyhow::{anyhow, Context, Result};
 
 use crate::model::{
     AccordionClass, AccordionItem, AccordionType, AlertClass, AlertType, AlternatingItem,
-    AlternatingType, BannerClass, CardItem, CardLinkTarget, CardType, CtaClass, DdAccordion,
-    DdAlert, DdAlternating, DdBanner, DdBlockquote, DdCard, DdCta, DdFilmstrip, DdFooter, DdHead,
-    DdHeader, DdHeaderMenu, DdHeaderSearch, DdHero, DdImage, DdMilestones, DdModal, DdRichText,
-    DdSection, DdSlider, FilmstripItem, FilmstripType, HeroAos, MilestonesItem, PageNode,
-    SectionColumn, SectionComponent, Site, SliderItem,
+    AlternatingType, BannerClass, CardItem, CardLinkTarget, CardType, CtaClass, CtaTarget,
+    DdAccordion, DdAlert, DdAlternating, DdBanner, DdBlockquote, DdCard, DdCta, DdFilmstrip,
+    DdFooter, DdHead, DdHeader, DdHeaderMenu, DdHeaderSearch, DdHero, DdImage, DdMilestones,
+    DdModal, DdNavigation, DdRichText, DdSection, DdSlider, FilmstripItem, FilmstripType,
+    HeroAos, HeroImageClass, MilestonesItem, NavigationClass, NavigationItem, NavigationKind,
+    NavigationType, PageNode, SectionClass, SectionColumn, SectionComponent, SectionItemBoxClass,
+    Site, SliderItem,
 };
 use crate::tui::editform::{self, EditFormState, FieldKind};
 
@@ -222,11 +224,14 @@ pub fn apply_edit_form_to_component(
             SectionComponent::Slider(s) => apply_slider_values(s, state),
             SectionComponent::Accordion(a) => apply_accordion_values(a, state),
             SectionComponent::Alternating(a) => apply_alternating_values(a, state),
+            SectionComponent::Navigation(n) => apply_navigation_values(n, state),
             other => Err(anyhow!(
                 "apply_edit_form_to_component: component type not migrated to unified editor yet ({:?})",
                 std::mem::discriminant(other)
             )),
         },
+        CursorRef::Hero(hero) => apply_hero_values(hero, state),
+        CursorRef::Section(section) => apply_section_values(section, state),
         other => Err(anyhow!(
             "apply_edit_form_to_component: unsupported cursor target (kind index={})",
             cursor_ref_kind(&other)
@@ -294,7 +299,7 @@ pub fn component_to_form_state(component: &SectionComponent) -> Option<EditFormS
         SectionComponent::Slider(s) => Some(slider_to_form_state(s)),
         SectionComponent::Accordion(a) => Some(accordion_to_form_state(a)),
         SectionComponent::Alternating(a) => Some(alternating_to_form_state(a)),
-        _ => None,
+        SectionComponent::Navigation(n) => Some(navigation_to_form_state(n)),
     }
 }
 
@@ -777,6 +782,285 @@ fn apply_alternating_values(a: &mut DdAlternating, state: &EditFormState) -> Res
         }
     }
     Ok(())
+}
+
+// ==================== Tier C: Hero + Section ====================
+
+pub fn hero_to_form_state(hero: &DdHero) -> EditFormState {
+    let mut s = EditFormState::new(&editform::HERO_FORM);
+    s.set("parent_title", hero.parent_title.clone());
+    s.set("parent_subtitle", hero.parent_subtitle.clone());
+    s.set(
+        "parent_copy",
+        hero.parent_copy.clone().unwrap_or_default(),
+    );
+    s.set(
+        "parent_class",
+        hero.parent_class
+            .map(enum_serde_str)
+            .unwrap_or_else(|| "-full-full".to_string()),
+    );
+    s.set(
+        "parent_data_aos",
+        hero.parent_data_aos
+            .map(enum_serde_str)
+            .unwrap_or_else(|| "fade-in".to_string()),
+    );
+    s.set(
+        "parent_custom_css",
+        hero.parent_custom_css.clone().unwrap_or_default(),
+    );
+    s.set("parent_image_url", hero.parent_image_url.clone());
+    s.set(
+        "parent_image_alt",
+        hero.parent_image_alt.clone().unwrap_or_default(),
+    );
+    s.set(
+        "parent_image_class",
+        hero.parent_image_class
+            .map(enum_serde_str)
+            .unwrap_or_else(|| "-full-full".to_string()),
+    );
+    s.set(
+        "parent_image_mobile",
+        hero.parent_image_mobile.clone().unwrap_or_default(),
+    );
+    s.set(
+        "parent_image_tablet",
+        hero.parent_image_tablet.clone().unwrap_or_default(),
+    );
+    s.set(
+        "parent_image_desktop",
+        hero.parent_image_desktop.clone().unwrap_or_default(),
+    );
+    s.set("link_1_label", hero.link_1_label.clone().unwrap_or_default());
+    s.set("link_1_url", hero.link_1_url.clone().unwrap_or_default());
+    s.set(
+        "link_1_target",
+        hero.link_1_target
+            .map(enum_serde_str)
+            .unwrap_or_else(|| "_self".to_string()),
+    );
+    s.set("link_2_label", hero.link_2_label.clone().unwrap_or_default());
+    s.set("link_2_url", hero.link_2_url.clone().unwrap_or_default());
+    s.set(
+        "link_2_target",
+        hero.link_2_target
+            .map(enum_serde_str)
+            .unwrap_or_else(|| "_self".to_string()),
+    );
+    s
+}
+fn apply_hero_values(hero: &mut DdHero, state: &EditFormState) -> Result<()> {
+    hero.parent_title = state.get("parent_title").to_string();
+    hero.parent_subtitle = state.get("parent_subtitle").to_string();
+    let copy = state.get("parent_copy").to_string();
+    hero.parent_copy = if copy.trim().is_empty() {
+        None
+    } else {
+        Some(copy)
+    };
+    hero.parent_class = Some(parse_enum::<HeroImageClass>(state.get("parent_class"))?);
+    hero.parent_data_aos = Some(parse_enum::<HeroAos>(state.get("parent_data_aos"))?);
+    let css = state.get("parent_custom_css").trim().to_string();
+    hero.parent_custom_css = if css.is_empty() { None } else { Some(css) };
+    hero.parent_image_url = state.get("parent_image_url").trim().to_string();
+    let alt = state.get("parent_image_alt").trim().to_string();
+    hero.parent_image_alt = if alt.is_empty() { None } else { Some(alt) };
+    hero.parent_image_class = Some(parse_enum::<HeroImageClass>(state.get("parent_image_class"))?);
+    for (field_id, slot) in [
+        ("parent_image_mobile", &mut hero.parent_image_mobile),
+        ("parent_image_tablet", &mut hero.parent_image_tablet),
+        ("parent_image_desktop", &mut hero.parent_image_desktop),
+    ] {
+        let v = state.get(field_id).trim().to_string();
+        *slot = if v.is_empty() { None } else { Some(v) };
+    }
+    apply_hero_link(state, "link_1_label", "link_1_url", "link_1_target", &mut hero.link_1_label, &mut hero.link_1_url, &mut hero.link_1_target)?;
+    apply_hero_link(state, "link_2_label", "link_2_url", "link_2_target", &mut hero.link_2_label, &mut hero.link_2_url, &mut hero.link_2_target)?;
+    Ok(())
+}
+fn apply_hero_link(
+    state: &EditFormState,
+    label_id: &str,
+    url_id: &str,
+    target_id: &str,
+    label_slot: &mut Option<String>,
+    url_slot: &mut Option<String>,
+    target_slot: &mut Option<CtaTarget>,
+) -> Result<()> {
+    let label = state.get(label_id).trim().to_string();
+    let url = state.get(url_id).trim().to_string();
+    let target = state.get(target_id).to_string();
+    if label.is_empty() && url.is_empty() {
+        *label_slot = None;
+        *url_slot = None;
+        *target_slot = None;
+    } else {
+        *label_slot = Some(label);
+        *url_slot = Some(url);
+        *target_slot = Some(parse_enum::<CtaTarget>(&target)?);
+    }
+    Ok(())
+}
+
+pub fn section_to_form_state(section: &DdSection) -> EditFormState {
+    let mut s = EditFormState::new(&editform::SECTION_FORM);
+    s.set("id", section.id.clone());
+    s.set(
+        "section_title",
+        section.section_title.clone().unwrap_or_default(),
+    );
+    s.set(
+        "section_class",
+        section
+            .section_class
+            .map(enum_serde_str)
+            .unwrap_or_else(|| "-full-contained".to_string()),
+    );
+    s.set(
+        "item_box_class",
+        section
+            .item_box_class
+            .map(enum_serde_str)
+            .unwrap_or_else(|| "l-box".to_string()),
+    );
+    let mut columns = Vec::new();
+    for col in &section.columns {
+        let mut item = EditFormState::new(&editform::COLUMN_ITEM_FORM);
+        item.set("id", col.id.clone());
+        item.set("width_class", col.width_class.clone());
+        columns.push(item);
+    }
+    s.sub_state.insert("columns".to_string(), columns);
+    s.selected_sub_item.insert("columns".to_string(), 0);
+    s
+}
+fn apply_section_values(section: &mut DdSection, state: &EditFormState) -> Result<()> {
+    section.id = state.get("id").trim().to_string();
+    let title = state.get("section_title").trim().to_string();
+    section.section_title = if title.is_empty() { None } else { Some(title) };
+    section.section_class = Some(parse_enum::<SectionClass>(state.get("section_class"))?);
+    section.item_box_class = Some(parse_enum::<SectionItemBoxClass>(
+        state.get("item_box_class"),
+    )?);
+
+    // Reconcile columns: match existing columns by ID so components aren't
+    // dropped when columns are merely renamed or reordered.
+    let form_items = state.sub_state.get("columns").cloned().unwrap_or_default();
+    let mut new_columns: Vec<SectionColumn> = Vec::with_capacity(form_items.len());
+    for form_col in form_items {
+        let new_id = form_col.get("id").trim().to_string();
+        let new_width = form_col.get("width_class").trim().to_string();
+        // Try to find an existing column with the same ID and steal its components.
+        let existing = section.columns.iter().position(|c| c.id == new_id);
+        let components = match existing {
+            Some(pos) => section.columns.remove(pos).components,
+            None => Vec::new(),
+        };
+        new_columns.push(SectionColumn {
+            id: new_id,
+            width_class: new_width,
+            components,
+        });
+    }
+    section.columns = new_columns;
+    Ok(())
+}
+
+// ==================== Tier D: dd-navigation (recursive) ====================
+
+pub fn navigation_to_form_state(nav: &DdNavigation) -> EditFormState {
+    let mut s = EditFormState::new(&editform::NAVIGATION_FORM);
+    s.set("parent_type", enum_serde_str(nav.parent_type));
+    s.set("parent_class", enum_serde_str(nav.parent_class));
+    s.set("parent_data_aos", enum_serde_str(nav.parent_data_aos));
+    s.set("parent_width", nav.parent_width.clone());
+    let mut items = Vec::new();
+    for it in &nav.items {
+        items.push(nav_item_to_form_state(it));
+    }
+    s.sub_state.insert("items".to_string(), items);
+    s.selected_sub_item.insert("items".to_string(), 0);
+    s
+}
+
+fn nav_item_to_form_state(item: &NavigationItem) -> EditFormState {
+    let mut s = EditFormState::new(&editform::NAV_ITEM_FORM);
+    s.set("child_kind", enum_serde_str(item.child_kind));
+    s.set("child_link_label", item.child_link_label.clone());
+    s.set(
+        "child_link_url",
+        item.child_link_url.clone().unwrap_or_default(),
+    );
+    s.set(
+        "child_link_target",
+        item.child_link_target
+            .map(enum_serde_str)
+            .unwrap_or_else(|| "_self".to_string()),
+    );
+    s.set(
+        "child_link_css",
+        item.child_link_css.clone().unwrap_or_default(),
+    );
+    let mut nested = Vec::new();
+    for inner in &item.items {
+        nested.push(nav_item_to_form_state(inner));
+    }
+    s.sub_state.insert("items".to_string(), nested);
+    s.selected_sub_item.insert("items".to_string(), 0);
+    s
+}
+
+fn apply_navigation_values(nav: &mut DdNavigation, state: &EditFormState) -> Result<()> {
+    nav.parent_type = parse_enum::<NavigationType>(state.get("parent_type"))?;
+    nav.parent_class = parse_enum::<NavigationClass>(state.get("parent_class"))?;
+    nav.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))?;
+    nav.parent_width = state.get("parent_width").trim().to_string();
+    nav.items.clear();
+    if let Some(items) = state.sub_state.get("items") {
+        for item_s in items {
+            nav.items.push(apply_nav_item(item_s)?);
+        }
+    }
+    Ok(())
+}
+
+fn apply_nav_item(state: &EditFormState) -> Result<NavigationItem> {
+    let kind = parse_enum::<NavigationKind>(state.get("child_kind"))?;
+    let label = state.get("child_link_label").to_string();
+    let url = state.get("child_link_url").trim().to_string();
+    let target = state.get("child_link_target").to_string();
+    let css = state.get("child_link_css").trim().to_string();
+
+    let (child_link_url, child_link_target) = match kind {
+        NavigationKind::Link => {
+            let url_opt = if url.is_empty() { None } else { Some(url) };
+            let target_opt = if url_opt.is_some() {
+                Some(parse_enum::<CardLinkTarget>(&target)?)
+            } else {
+                None
+            };
+            (url_opt, target_opt)
+        }
+        NavigationKind::Button => (None, None),
+    };
+
+    let mut nested = Vec::new();
+    if let Some(children) = state.sub_state.get("items") {
+        for child in children {
+            nested.push(apply_nav_item(child)?);
+        }
+    }
+
+    Ok(NavigationItem {
+        child_kind: kind,
+        child_link_label: label,
+        child_link_url,
+        child_link_target,
+        child_link_css: if css.is_empty() { None } else { Some(css) },
+        items: nested,
+    })
 }
 
 /// Serialize a serde enum to its `#[serde(rename = ...)]` string form.

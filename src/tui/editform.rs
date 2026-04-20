@@ -259,6 +259,26 @@ const AOS_OPTIONS: &[&str] = &[
 
 const LINK_TARGET_OPTIONS: &[&str] = &["_self", "_blank"];
 
+const HERO_TARGET_OPTIONS: &[&str] = &["_self", "_blank", "_parent"];
+
+const HERO_CLASS_OPTIONS: &[&str] = &[
+    "-contained",
+    "-contained-md",
+    "-contained-lg",
+    "-contained-xl",
+    "-contained-xxl",
+    "-full-full",
+    "-full-contained",
+    "-full-contained-md",
+    "-full-contained-lg",
+    "-full-contained-xl",
+    "-full-contained-xxl",
+];
+
+const SECTION_CLASS_OPTIONS: &[&str] = HERO_CLASS_OPTIONS;
+
+const ITEM_BOX_CLASS_OPTIONS: &[&str] = &["l-box", "ll-box"];
+
 // ==================== CTA form (wedge) ====================
 
 pub static CTA_FORM: EditForm = EditForm {
@@ -1086,6 +1106,332 @@ pub static ALTERNATING_FORM: EditForm = EditForm {
                 template: &ALTERNATING_ITEM_FORM,
                 min_items: 1,
                 summary_field_id: "child_title",
+            },
+            required: true,
+            visible_when: None,
+        },
+    ],
+};
+
+// ==================== Tier C: dd-hero ====================
+
+pub static HERO_FORM: EditForm = EditForm {
+    title: "dd-hero",
+    fields: &[
+        FormField {
+            id: "parent_title",
+            label: "Title",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_subtitle",
+            label: "Subtitle",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_copy",
+            label: "Copy (Markdown)",
+            kind: FieldKind::Textarea { rows: 5, default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_class",
+            label: "Hero Class",
+            kind: FieldKind::Enum { options: HERO_CLASS_OPTIONS, default: "-full-full" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_data_aos",
+            label: "Animation",
+            kind: FieldKind::Enum { options: AOS_OPTIONS, default: "fade-in" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_custom_css",
+            label: "Custom CSS (optional)",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_image_url",
+            label: "Image URL",
+            kind: FieldKind::Url { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_image_alt",
+            label: "Image Alt (optional)",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_image_class",
+            label: "Image Class",
+            kind: FieldKind::Enum { options: HERO_CLASS_OPTIONS, default: "-full-full" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_image_mobile",
+            label: "Image (mobile, optional)",
+            kind: FieldKind::Url { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_image_tablet",
+            label: "Image (tablet, optional)",
+            kind: FieldKind::Url { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_image_desktop",
+            label: "Image (desktop, optional)",
+            kind: FieldKind::Url { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "link_1_label",
+            label: "Link 1 Label (optional)",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "link_1_url",
+            label: "Link 1 URL (optional)",
+            kind: FieldKind::Url { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "link_1_target",
+            label: "Link 1 Target",
+            kind: FieldKind::Enum { options: HERO_TARGET_OPTIONS, default: "_self" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "link_2_label",
+            label: "Link 2 Label (optional)",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "link_2_url",
+            label: "Link 2 URL (optional)",
+            kind: FieldKind::Url { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "link_2_target",
+            label: "Link 2 Target",
+            kind: FieldKind::Enum { options: HERO_TARGET_OPTIONS, default: "_self" },
+            required: false,
+            visible_when: None,
+        },
+    ],
+};
+
+// ==================== Tier C: dd-section (and header/footer section) ====================
+
+pub static COLUMN_ITEM_FORM: EditForm = EditForm {
+    title: "column",
+    fields: &[
+        FormField {
+            id: "id",
+            label: "Column ID",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "width_class",
+            label: "Width Class (dd-u-*)",
+            kind: FieldKind::Text { default: "dd-u-1-1" },
+            required: true,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static SECTION_FORM: EditForm = EditForm {
+    title: "dd-section",
+    fields: &[
+        FormField {
+            id: "id",
+            label: "Section ID",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "section_title",
+            label: "Section Title (optional)",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "section_class",
+            label: "Section Class",
+            kind: FieldKind::Enum { options: SECTION_CLASS_OPTIONS, default: "-full-contained" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "item_box_class",
+            label: "Item Box Class",
+            kind: FieldKind::Enum { options: ITEM_BOX_CLASS_OPTIONS, default: "l-box" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "columns",
+            label: "Columns",
+            kind: FieldKind::SubForm {
+                template: &COLUMN_ITEM_FORM,
+                min_items: 1,
+                summary_field_id: "id",
+            },
+            required: true,
+            visible_when: None,
+        },
+    ],
+};
+
+// ==================== Tier D: dd-navigation (recursive) ====================
+//
+// NAV_ITEM_FORM is self-referential — its `items` field is a SubForm whose
+// template is `&NAV_ITEM_FORM`. Rust permits this because the address of a
+// `static` is known at compile time.
+
+pub static NAV_ITEM_FORM: EditForm = EditForm {
+    title: "nav item",
+    fields: &[
+        FormField {
+            id: "child_kind",
+            label: "Kind",
+            kind: FieldKind::Enum { options: &["link", "button"], default: "link" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_link_label",
+            label: "Label",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "child_link_url",
+            label: "URL",
+            kind: FieldKind::Url { default: "" },
+            required: false,
+            visible_when: Some(FieldPredicate::FieldEquals {
+                other_id: "child_kind",
+                value: "link",
+            }),
+        },
+        FormField {
+            id: "child_link_target",
+            label: "Target",
+            kind: FieldKind::Enum { options: LINK_TARGET_OPTIONS, default: "_self" },
+            required: false,
+            visible_when: Some(FieldPredicate::FieldEquals {
+                other_id: "child_kind",
+                value: "link",
+            }),
+        },
+        FormField {
+            id: "child_link_css",
+            label: "CSS Class (optional)",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "items",
+            label: "Nested items",
+            kind: FieldKind::SubForm {
+                template: &NAV_ITEM_FORM,
+                min_items: 0,
+                summary_field_id: "child_link_label",
+            },
+            required: false,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static NAVIGATION_FORM: EditForm = EditForm {
+    title: "dd-navigation",
+    fields: &[
+        FormField {
+            id: "parent_type",
+            label: "Type",
+            kind: FieldKind::Enum {
+                options: &["dd-header__navigation", "dd-footer__navigation"],
+                default: "dd-header__navigation",
+            },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_class",
+            label: "Menu Style",
+            kind: FieldKind::Enum {
+                options: &[
+                    "-main-menu",
+                    "-menu-secondary",
+                    "-menu-tertiary",
+                    "-footer-menu",
+                    "-footer-menu-secondary",
+                    "-footer-menu-tertiary",
+                    "-social-menu",
+                ],
+                default: "-main-menu",
+            },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_data_aos",
+            label: "Animation",
+            kind: FieldKind::Enum { options: AOS_OPTIONS, default: "fade-in" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_width",
+            label: "Width Classes",
+            kind: FieldKind::Text {
+                default: "dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-18-24",
+            },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "items",
+            label: "Menu Items",
+            kind: FieldKind::SubForm {
+                template: &NAV_ITEM_FORM,
+                min_items: 1,
+                summary_field_id: "child_link_label",
             },
             required: true,
             visible_when: None,
