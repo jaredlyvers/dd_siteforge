@@ -150,6 +150,7 @@ enum Modal {
         cursor: cursor::Cursor,
         cursor_pos: usize, // text cursor within focused field's string
         drill_stack: Vec<DrillFrame>,
+        scroll_offset: u16, // vertical row scroll within the form content
     },
 }
 
@@ -380,28 +381,42 @@ struct AppTheme {
     background: Color,
     panel_background: Color,
     popup_background: Color,
-    // Text colors (from dd_framework text roles)
+    // Text colors
     foreground: Color,
     muted: Color,
     disabled: Color,
     text_inverse: Color,
-    // Accent colors (from dd_framework primary action)
+    text_labels: Color,
+    text_active_focus: Color,
+    modal_labels: Color,
+    modal_text: Color,
+    // Accent colors
     title: Color,
     active: Color,
     // Border colors
     border: Color,
     border_active: Color,
-    // Input field colors
-    input_default: Color,
-    input_focus: Color,
+    // Input field colors (split border vs text, default vs focus)
+    input_border_default: Color,
+    input_border_focus: Color,
+    input_text_default: Color,
+    input_text_focus: Color,
+    cursor: Color,
+    // Scrollbar colors
+    scrollbar: Color,
+    scrollbar_hover: Color,
     // Selection colors
     selected_background: Color,
     selected_foreground: Color,
-    // Semantic colors (from dd_framework)
+    // Semantic colors
     success: Color,
     warning: Color,
     error: Color,
     info: Color,
+    // Backwards-compat aliases (used by older code paths that haven't been
+    // migrated to the split border/text inputs yet).
+    input_default: Color,
+    input_focus: Color,
 }
 
 #[derive(Debug, Deserialize)]
@@ -415,26 +430,49 @@ struct PaletteFile {
     base_background: String,
     body_background: Option<String>,
     modal_background: Option<String>,
-    // Text colors (dd_framework: $c_text_primary, $c_text_secondary, $c_text_disabled, $c_text_inverse)
-    text: String,
-    subtext0: Option<String>,
+    // Text colors — new names match THEME_STRUCTURE_STANDARD.md, old names
+    // kept as aliases for in-tree theme files.
+    #[serde(alias = "text")]
+    text_primary: String,
+    #[serde(alias = "subtext0")]
+    text_secondary: Option<String>,
     text_disabled: Option<String>,
     text_inverse: Option<String>,
+    text_labels: Option<String>,
+    text_active_focus: Option<String>,
+    modal_labels: Option<String>,
+    modal_text: Option<String>,
     // Selection
     selected_background: String,
-    // Borders (dd_framework: $c_support_border, active state)
+    // Borders
     border_default: String,
     border_active: Option<String>,
-    // Input field colors
+    // Scrollbar
+    scrollbar: Option<String>,
+    scrollbar_hover: Option<String>,
+    // Input field colors — split for border vs text, default vs focus
+    input_border_default: Option<String>,
+    input_border_focus: Option<String>,
+    input_text_default: Option<String>,
+    input_text_focus: Option<String>,
+    cursor: Option<String>,
+    // Backwards-compat: plain input_default/input_focus still accepted
     input_default: Option<String>,
     input_focus: Option<String>,
-    // Active accent
+    // Accent
     active: Option<String>,
-    // Semantic colors (dd_framework: $c_success_text, $c_warning_text, $c_error_text, $c_info_text)
+    // Semantic
     success: Option<String>,
     warning: Option<String>,
     error: Option<String>,
     info: Option<String>,
+    // File roles (currently unused in the TUI, kept for schema completeness)
+    #[serde(default)]
+    folders: Option<String>,
+    #[serde(default)]
+    files: Option<String>,
+    #[serde(default)]
+    links: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -590,177 +628,342 @@ impl App {
                 self.render_single_field_unified(frame, *mode, buffer, *cursor, *multiline);
             }
             Modal::FormEdit {
-                state, cursor_pos, ..
+                state,
+                cursor_pos,
+                scroll_offset,
+                ..
             } => {
-                self.render_form_edit_modal(frame, state, *cursor_pos);
+                self.render_form_edit_modal(frame, state, *cursor_pos, *scroll_offset);
             }
         }
     }
 
-    /// Render the unified component-editor modal: one row per visible field,
-    /// label on the left, value on the right, focused row highlighted.
+    /// Render the unified component-editor modal per the team mockup:
+    /// solid popup background, title on the top border, help text at the
+    /// top of the content area, each field rendered as "Label:" + a
+    /// 1px-bordered input box. Content scrolls vertically; a peach
+    /// scrollbar on the right indicates position when scrollable.
     fn render_form_edit_modal(
         &self,
         frame: &mut ratatui::Frame,
         state: &editform::EditFormState,
         cursor_pos: usize,
+        scroll_offset: u16,
     ) {
-        let area = centered_rect(80, 80, frame.area());
+        let area = centered_rect(70, 80, frame.area());
         frame.render_widget(Clear, area);
-        let block = Block::default()
-            .title(format!("Edit — {}", state.form.title))
+
+        // Outer border + title with solid modal background.
+        let outer = Block::default()
+            .title(format!(" Edit Item -- {} ", state.form.title))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(self.theme.border))
+            .border_style(Style::default().fg(self.theme.modal_labels))
             .title_style(
                 Style::default()
-                    .fg(self.theme.title)
+                    .fg(self.theme.modal_labels)
                     .add_modifier(Modifier::BOLD),
-            );
-        frame.render_widget(block.clone(), area);
-        let inner = block.inner(area);
-        if inner.height < 3 {
+            )
+            .style(Style::default().bg(self.theme.popup_background));
+        let inner = outer.inner(area);
+        frame.render_widget(outer, area);
+        if inner.height < 3 || inner.width < 6 {
             return;
         }
 
-        let label_width: u16 = 22;
-        let value_left = inner.x.saturating_add(label_width + 2);
-        let value_width = inner.width.saturating_sub(label_width + 2);
+        // Help row at the very top of the content area.
+        let help_rect = Rect::new(inner.x, inner.y, inner.width, 1);
+        let help_text = "Tab/Up/Down: navigate | Ctrl+S: save | Esc: cancel";
+        frame.render_widget(
+            Paragraph::new(help_text).style(
+                Style::default()
+                    .fg(self.theme.modal_labels)
+                    .bg(self.theme.popup_background)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            help_rect,
+        );
 
-        let mut cur_y = inner.y;
-        let bottom = inner.y + inner.height.saturating_sub(1);
-        let footer_height = 2u16;
+        // Content area begins 2 rows below (help + spacer). Reserve 1 col for scrollbar.
+        if inner.height < 4 {
+            return;
+        }
+        let content_top = inner.y.saturating_add(2);
+        let content_height = inner.height.saturating_sub(2);
+        let scrollbar_col = inner
+            .x
+            .saturating_add(inner.width.saturating_sub(1));
+        let content_rect = Rect::new(inner.x, content_top, inner.width.saturating_sub(1), content_height);
 
+        // Build virtual field layout: each entry holds (field_idx, label_y, box_y, box_height).
+        #[derive(Clone, Copy)]
+        struct Slot {
+            idx: usize,
+            label_y: u16,
+            box_y: u16,
+            box_height: u16,
+        }
+        let mut slots: Vec<Slot> = Vec::new();
+        let mut virt_y: u16 = 0;
         for (idx, field) in state.form.fields.iter().enumerate() {
             if !state.field_visible(field) {
                 continue;
             }
-            if cur_y >= bottom.saturating_sub(footer_height) {
-                break;
-            }
-            let focused = idx == state.focused_field;
-            let label_style = if focused {
-                Style::default()
-                    .fg(self.theme.title)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(self.theme.foreground)
-            };
-            let label_rect = Rect::new(inner.x, cur_y, label_width, 1);
-            frame.render_widget(
-                Paragraph::new(format!("{}{}", if focused { "> " } else { "  " }, field.label))
-                    .style(label_style),
-                label_rect,
-            );
-
-            let field_height = match &field.kind {
+            let content_rows: u16 = match &field.kind {
                 editform::FieldKind::Textarea { rows, .. } => (*rows).max(1),
-                editform::FieldKind::OptionalLinkTriple { .. } => 3,
                 editform::FieldKind::SubForm { .. } => {
                     let items_len = state
                         .sub_state
                         .get(field.id)
                         .map(|v| v.len())
                         .unwrap_or(0);
-                    // 1 header line + 1 row per item (or 1 empty hint if none)
+                    // header line + one row per item (at least 1 placeholder row)
                     (1 + items_len.max(1)) as u16
                 }
                 _ => 1,
             };
-            if cur_y + field_height >= bottom.saturating_sub(footer_height) {
-                break;
+            let box_height = content_rows.saturating_add(2); // +2 for borders
+            let label_y = virt_y;
+            let box_y = virt_y.saturating_add(1);
+            slots.push(Slot {
+                idx,
+                label_y,
+                box_y,
+                box_height,
+            });
+            virt_y = virt_y.saturating_add(1 + box_height + 1); // label + box + blank separator
+        }
+        let total_height = virt_y;
+        let max_scroll = total_height.saturating_sub(content_height);
+        let scroll = scroll_offset.min(max_scroll);
+
+        for slot in &slots {
+            let field = &state.form.fields[slot.idx];
+            let focused = slot.idx == state.focused_field;
+            let label_screen = slot.label_y as i32 - scroll as i32;
+            let box_top_screen = slot.box_y as i32 - scroll as i32;
+            let box_bottom_screen = box_top_screen + slot.box_height as i32;
+            // Skip entries entirely outside the content window.
+            if box_bottom_screen <= 0 || label_screen >= content_height as i32 {
+                continue;
             }
 
-            let value_style = if focused {
-                Style::default()
-                    .fg(self.theme.input_focus)
-                    .bg(self.theme.selected_background)
-            } else {
-                Style::default().fg(self.theme.input_default)
-            };
-
-            match &field.kind {
-                editform::FieldKind::Text { .. } | editform::FieldKind::Url { .. } => {
-                    let value = state.get(field.id);
-                    let display = if focused {
-                        render_cursor_line(value, cursor_pos)
-                    } else {
-                        value.to_string()
-                    };
-                    let rect = Rect::new(value_left, cur_y, value_width, 1);
-                    frame.render_widget(Paragraph::new(display).style(value_style), rect);
-                }
-                editform::FieldKind::Textarea { rows, .. } => {
-                    let value = state.get(field.id);
-                    let rect = Rect::new(value_left, cur_y, value_width, *rows);
-                    frame.render_widget(
-                        Paragraph::new(value.to_string())
-                            .style(value_style)
-                            .wrap(Wrap { trim: false }),
-                        rect,
-                    );
-                }
-                editform::FieldKind::Enum { options, .. } => {
-                    let value = state.get(field.id);
-                    let display = format!("< {} >", value);
-                    let rect = Rect::new(value_left, cur_y, value_width, 1);
-                    let mut style = value_style;
-                    if !options.iter().any(|o| *o == value) {
-                        style = style.fg(self.theme.error);
-                    }
-                    frame.render_widget(Paragraph::new(display).style(style), rect);
-                }
-                editform::FieldKind::OptionalLinkTriple { .. } => {
-                    // Reserved for Hero migration; CTA wedge uses 3 flat fields.
-                }
-                editform::FieldKind::SubForm {
-                    summary_field_id, ..
-                } => {
-                    let items = state
-                        .sub_state
-                        .get(field.id)
-                        .cloned()
-                        .unwrap_or_default();
-                    let selected = state
-                        .selected_sub_item
-                        .get(field.id)
-                        .copied()
-                        .unwrap_or(0);
-                    let rect = Rect::new(value_left, cur_y, value_width, field_height);
-                    let mut lines: Vec<String> = Vec::new();
-                    lines.push(format!(
-                        "{} item(s)  —  A add · X remove · Enter edit",
-                        items.len()
-                    ));
-                    if items.is_empty() {
-                        lines.push("  (no items; press A to add)".to_string());
-                    } else {
-                        for (i, item) in items.iter().enumerate() {
-                            let summary = item.values.get(*summary_field_id).cloned().unwrap_or_default();
-                            let summary = if summary.trim().is_empty() {
-                                "(untitled)".to_string()
-                            } else {
-                                summary
-                            };
-                            let marker = if focused && i == selected { ">" } else { " " };
-                            lines.push(format!("  {} {}. {}", marker, i + 1, summary));
-                        }
-                    }
-                    frame.render_widget(
-                        Paragraph::new(lines.join("\n")).style(value_style),
-                        rect,
-                    );
-                }
+            // Label row.
+            if label_screen >= 0 && label_screen < content_height as i32 {
+                let label_rect = Rect::new(
+                    content_rect.x,
+                    content_rect.y + label_screen as u16,
+                    content_rect.width,
+                    1,
+                );
+                let label_color = if focused {
+                    self.theme.text_active_focus
+                } else {
+                    self.theme.text_labels
+                };
+                let label_mod = if focused {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                };
+                frame.render_widget(
+                    Paragraph::new(format!("{}:", field.label)).style(
+                        Style::default()
+                            .fg(label_color)
+                            .bg(self.theme.popup_background)
+                            .add_modifier(label_mod),
+                    ),
+                    label_rect,
+                );
             }
 
-            cur_y = cur_y.saturating_add(field_height + 1);
+            // Input box — only drawn when fully visible so partial borders don't flash.
+            if box_top_screen >= 0 && box_bottom_screen <= content_height as i32 {
+                let border_color = if focused {
+                    self.theme.input_border_focus
+                } else {
+                    self.theme.input_border_default
+                };
+                let box_rect = Rect::new(
+                    content_rect.x,
+                    content_rect.y + box_top_screen as u16,
+                    content_rect.width,
+                    slot.box_height,
+                );
+                let field_block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(border_color).bg(self.theme.popup_background))
+                    .style(Style::default().bg(self.theme.popup_background));
+                let inner_rect = field_block.inner(box_rect);
+                frame.render_widget(field_block, box_rect);
+                self.render_form_field_value(
+                    frame,
+                    field,
+                    state,
+                    cursor_pos,
+                    focused,
+                    inner_rect,
+                );
+            }
         }
 
-        let footer_rect = Rect::new(inner.x, bottom, inner.width, 1);
-        let footer = "Tab/Shift+Tab fields | Left/Right cycle enum | Ctrl+S save | Esc cancel";
-        frame.render_widget(
-            Paragraph::new(footer).style(Style::default().fg(self.theme.muted)),
-            footer_rect,
-        );
+        // Scrollbar on the right column when content exceeds window.
+        if total_height > content_height {
+            let track_bg = Block::default().style(Style::default().bg(self.theme.popup_background));
+            frame.render_widget(
+                track_bg,
+                Rect::new(scrollbar_col, content_top, 1, content_height),
+            );
+            let thumb_height = ((content_height as u32 * content_height as u32
+                / total_height.max(1) as u32) as u16)
+                .max(1);
+            let travel = content_height.saturating_sub(thumb_height);
+            let thumb_y = if max_scroll == 0 {
+                0
+            } else {
+                ((scroll as u32 * travel as u32) / max_scroll.max(1) as u32) as u16
+            };
+            let thumb = Paragraph::new(vec!["█".to_string(); thumb_height as usize].join("\n"))
+                .style(Style::default().fg(self.theme.scrollbar).bg(self.theme.popup_background));
+            frame.render_widget(
+                thumb,
+                Rect::new(scrollbar_col, content_top + thumb_y, 1, thumb_height),
+            );
+        }
+    }
+
+    /// Render the value portion of a form field inside the given inner rect.
+    fn render_form_field_value(
+        &self,
+        frame: &mut ratatui::Frame,
+        field: &editform::FormField,
+        state: &editform::EditFormState,
+        cursor_pos: usize,
+        focused: bool,
+        rect: Rect,
+    ) {
+        let text_color = if focused {
+            self.theme.input_text_focus
+        } else {
+            self.theme.input_text_default
+        };
+        let value_style = Style::default()
+            .fg(text_color)
+            .bg(self.theme.popup_background);
+
+        match &field.kind {
+            editform::FieldKind::Text { .. } | editform::FieldKind::Url { .. } => {
+                let value = state.get(field.id);
+                let display = if focused {
+                    render_cursor_line(value, cursor_pos)
+                } else {
+                    value.to_string()
+                };
+                frame.render_widget(Paragraph::new(display).style(value_style), rect);
+            }
+            editform::FieldKind::Textarea { .. } => {
+                let value = state.get(field.id);
+                frame.render_widget(
+                    Paragraph::new(value.to_string())
+                        .style(value_style)
+                        .wrap(Wrap { trim: false }),
+                    rect,
+                );
+            }
+            editform::FieldKind::Enum { options, .. } => {
+                let value = state.get(field.id);
+                let display = format!("< {} >", value);
+                let mut style = value_style;
+                if !options.iter().any(|o| *o == value) {
+                    style = Style::default()
+                        .fg(self.theme.error)
+                        .bg(self.theme.popup_background);
+                }
+                frame.render_widget(Paragraph::new(display).style(style), rect);
+            }
+            editform::FieldKind::OptionalLinkTriple { .. } => {
+                // Reserved — hero migration uses 3 flat fields instead.
+            }
+            editform::FieldKind::SubForm {
+                summary_field_id, ..
+            } => {
+                let items = state.sub_state.get(field.id).cloned().unwrap_or_default();
+                let selected = state
+                    .selected_sub_item
+                    .get(field.id)
+                    .copied()
+                    .unwrap_or(0);
+                let mut lines: Vec<String> = Vec::new();
+                lines.push(format!(
+                    "{} item(s) — A add · X remove · Enter edit",
+                    items.len()
+                ));
+                if items.is_empty() {
+                    lines.push("  (no items; press A to add)".to_string());
+                } else {
+                    for (i, item) in items.iter().enumerate() {
+                        let summary = item
+                            .values
+                            .get(*summary_field_id)
+                            .cloned()
+                            .unwrap_or_default();
+                        let summary = if summary.trim().is_empty() {
+                            "(untitled)".to_string()
+                        } else {
+                            summary
+                        };
+                        let marker = if focused && i == selected { ">" } else { " " };
+                        lines.push(format!("  {} {}. {}", marker, i + 1, summary));
+                    }
+                }
+                frame.render_widget(Paragraph::new(lines.join("\n")).style(value_style), rect);
+            }
+        }
+    }
+}
+
+/// Returns the (top_y, bottom_y) virtual rows of the focused field within
+/// the form's layout. Used for auto-scrolling the form editor to keep the
+/// focused field visible.
+fn focused_field_virtual_rows(state: &editform::EditFormState) -> (u16, u16) {
+    let mut y: u16 = 0;
+    for (idx, field) in state.form.fields.iter().enumerate() {
+        if !state.field_visible(field) {
+            continue;
+        }
+        let content_rows: u16 = match &field.kind {
+            editform::FieldKind::Textarea { rows, .. } => (*rows).max(1),
+            editform::FieldKind::SubForm { .. } => {
+                let items_len = state
+                    .sub_state
+                    .get(field.id)
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                (1 + items_len.max(1)) as u16
+            }
+            _ => 1,
+        };
+        let box_height = content_rows.saturating_add(2);
+        let entry_height = 1u16.saturating_add(box_height).saturating_add(1);
+        if idx == state.focused_field {
+            return (y, y.saturating_add(1).saturating_add(box_height));
+        }
+        y = y.saturating_add(entry_height);
+    }
+    (0, 0)
+}
+
+/// Compute a new scroll offset that keeps the focused field in view given
+/// a conservative estimate of the content window height. 16 rows covers the
+/// common case of an 80% / 80% modal on a standard terminal.
+fn auto_scroll_for_focus(state: &editform::EditFormState, current_scroll: u16) -> u16 {
+    const ESTIMATED_VISIBLE: u16 = 16;
+    let (top, bottom) = focused_field_virtual_rows(state);
+    if top < current_scroll {
+        top
+    } else if bottom > current_scroll.saturating_add(ESTIMATED_VISIBLE) {
+        bottom.saturating_sub(ESTIMATED_VISIBLE)
+    } else {
+        current_scroll
     }
 }
 
@@ -1321,6 +1524,7 @@ impl App {
                 cursor,
                 cursor_pos,
                 mut drill_stack,
+                scroll_offset: _,
             }) = taken
             {
                 if let Some(frame) = drill_stack.pop() {
@@ -1342,6 +1546,7 @@ impl App {
                         cursor,
                         cursor_pos: frame.parent_cursor_pos,
                         drill_stack,
+                        scroll_offset: 0,
                     });
                     return Some(ModalResult::Continue);
                 }
@@ -1358,6 +1563,7 @@ impl App {
                             cursor,
                             cursor_pos,
                             drill_stack,
+                            scroll_offset: 0,
                         });
                         return Some(ModalResult::Continue);
                     }
@@ -1373,6 +1579,7 @@ impl App {
                 cursor,
                 cursor_pos: _,
                 mut drill_stack,
+                scroll_offset: _,
             }) = taken
             {
                 if let Some(frame) = drill_stack.pop() {
@@ -1382,6 +1589,7 @@ impl App {
                         cursor,
                         cursor_pos: frame.parent_cursor_pos,
                         drill_stack,
+                        scroll_offset: 0,
                     });
                     return Some(ModalResult::Continue);
                 }
@@ -1391,7 +1599,10 @@ impl App {
         }
 
         let Some(Modal::FormEdit {
-            state, cursor_pos, ..
+            state,
+            cursor_pos,
+            scroll_offset,
+            ..
         }) = self.modal.as_mut()
         else {
             return Some(ModalResult::CloseCancel);
@@ -1481,10 +1692,12 @@ impl App {
                         .unwrap_or(0);
                     if items_len == 0 {
                         state.focus_prev();
+                    *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
                         *cursor_pos =
                             state.get(state.form.fields[state.focused_field].id).len();
                     } else if selected == 0 {
                         state.focus_prev();
+                    *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
                         *cursor_pos =
                             state.get(state.form.fields[state.focused_field].id).len();
                     } else {
@@ -1511,6 +1724,7 @@ impl App {
                             .insert(field_id.to_string(), selected + 1);
                     } else {
                         state.focus_next();
+                    *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
                         *cursor_pos =
                             state.get(state.form.fields[state.focused_field].id).len();
                     }
@@ -1524,6 +1738,7 @@ impl App {
                         cursor,
                         cursor_pos,
                         mut drill_stack,
+                        scroll_offset: _,
                     }) = taken
                     {
                         let selected = state
@@ -1563,6 +1778,7 @@ impl App {
                                 cursor,
                                 cursor_pos: item_cursor_pos,
                                 drill_stack,
+                                scroll_offset: 0,
                             });
                             self.status = "Editing item. Ctrl+S returns to parent.".to_string();
                         } else {
@@ -1572,6 +1788,7 @@ impl App {
                                 cursor,
                                 cursor_pos,
                                 drill_stack,
+                                scroll_offset: 0,
                             });
                         }
                     }
@@ -1584,10 +1801,12 @@ impl App {
         match key.code {
             KeyCode::Tab => {
                 state.focus_next();
+                    *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
                 *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
             }
             KeyCode::BackTab => {
                 state.focus_prev();
+                    *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
                 *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
             }
             KeyCode::Left => {
@@ -1609,10 +1828,12 @@ impl App {
             }
             KeyCode::Up => {
                 state.focus_prev();
+                    *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
                 *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
             }
             KeyCode::Down => {
                 state.focus_next();
+                    *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
                 *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
             }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1652,6 +1873,7 @@ impl App {
                     *cursor_pos = pos + 1;
                 } else {
                     state.focus_next();
+                    *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
                     *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
                 }
             }
@@ -8567,6 +8789,7 @@ impl App {
                 cursor: new_cursor,
                 cursor_pos,
                 drill_stack: Vec::new(),
+                scroll_offset: 0,
             });
             self.status = format!("Editing {}.", title);
             return true;
@@ -8663,6 +8886,7 @@ impl App {
             cursor: new_cursor,
             cursor_pos,
             drill_stack: Vec::new(),
+            scroll_offset: 0,
         });
         self.status = format!("Editing {}.", title);
         true
@@ -15053,33 +15277,72 @@ impl AppTheme {
                 .unwrap_or(p.base_background.as_str()),
         )?;
 
-        // Text colors (dd_framework text roles)
-        let foreground = parse_hex_color(p.text.as_str())?;
-        let muted = parse_hex_color(p.subtext0.as_deref().unwrap_or("#9ea3aa"))?;
+        // Text colors
+        let foreground = parse_hex_color(p.text_primary.as_str())?;
+        let muted = parse_hex_color(p.text_secondary.as_deref().unwrap_or("#9ea3aa"))?;
         let disabled = parse_hex_color(p.text_disabled.as_deref().unwrap_or("#a0a4a8"))?;
         let text_inverse = parse_hex_color(p.text_inverse.as_deref().unwrap_or("#f9fafb"))?;
+        let text_labels = parse_hex_color(p.text_labels.as_deref().unwrap_or("#ffaf46"))?;
+        let text_active_focus =
+            parse_hex_color(p.text_active_focus.as_deref().unwrap_or("#64b4f5"))?;
+        let modal_labels = parse_hex_color(p.modal_labels.as_deref().unwrap_or("#64b4f5"))?;
+        let modal_text = parse_hex_color(p.modal_text.as_deref().unwrap_or(p.text_primary.as_str()))?;
 
         // Selection
         let selected_background = parse_hex_color(p.selected_background.as_str())?;
 
-        // Borders (dd_framework support)
+        // Borders
         let border = parse_hex_color(p.border_default.as_str())?;
         let border_active = parse_hex_color(p.border_active.as_deref().unwrap_or("#6ec8ff"))?;
 
-        // Input field colors (default: lavender for focus, blue for default)
-        let input_focus = parse_hex_color(p.input_focus.as_deref().unwrap_or("#8cc8ff"))?;
-        let input_default = parse_hex_color(p.input_default.as_deref().unwrap_or("#5ab4f5"))?;
+        // Scrollbar
+        let scrollbar = parse_hex_color(p.scrollbar.as_deref().unwrap_or("#ffa087"))?;
+        let scrollbar_hover =
+            parse_hex_color(p.scrollbar_hover.as_deref().unwrap_or("#64b4f5"))?;
 
-        // Accents (dd_framework primary action)
+        // Input field colors — prefer new split names; fall back to old input_default/input_focus.
+        let input_border_default = parse_hex_color(
+            p.input_border_default
+                .as_deref()
+                .or(p.input_default.as_deref())
+                .unwrap_or(p.border_default.as_str()),
+        )?;
+        let input_border_focus = parse_hex_color(
+            p.input_border_focus
+                .as_deref()
+                .or(p.input_focus.as_deref())
+                .unwrap_or("#64b4f5"),
+        )?;
+        let input_text_default = parse_hex_color(
+            p.input_text_default
+                .as_deref()
+                .or(p.input_default.as_deref())
+                .unwrap_or(p.text_primary.as_str()),
+        )?;
+        let input_text_focus = parse_hex_color(
+            p.input_text_focus
+                .as_deref()
+                .or(p.input_focus.as_deref())
+                .unwrap_or("#64b4f5"),
+        )?;
+        let cursor = parse_hex_color(p.cursor.as_deref().unwrap_or("#64b4f5"))?;
+
+        // Back-compat aliases (keep the old semantics for any untouched code paths).
+        let input_default = input_border_default;
+        let input_focus = input_border_focus;
+
+        // Accents
         let title_seed = p
-            .input_focus
+            .modal_labels
             .as_deref()
-            .or(p.input_default.as_deref())
-            .unwrap_or(p.text.as_str());
+            .or(p.text_active_focus.as_deref())
+            .or(p.input_border_focus.as_deref())
+            .or(p.input_focus.as_deref())
+            .unwrap_or(p.text_primary.as_str());
         let title = parse_hex_color(title_seed)?;
         let active = parse_hex_color(p.active.as_deref().unwrap_or("#6ec8ff"))?;
 
-        // Semantic colors (dd_framework)
+        // Semantic
         let success = parse_hex_color(p.success.as_deref().unwrap_or("#1e8449"))?;
         let warning = parse_hex_color(p.warning.as_deref().unwrap_or("#b9770e"))?;
         let error = parse_hex_color(p.error.as_deref().unwrap_or("#a93226"))?;
@@ -15093,68 +15356,83 @@ impl AppTheme {
             muted,
             disabled,
             text_inverse,
-            border,
-            border_active,
-            input_default,
-            input_focus,
+            text_labels,
+            text_active_focus,
+            modal_labels,
+            modal_text,
             title,
             active,
+            border,
+            border_active,
+            input_border_default,
+            input_border_focus,
+            input_text_default,
+            input_text_focus,
+            cursor,
+            scrollbar,
+            scrollbar_hover,
             selected_background,
             selected_foreground: foreground,
             success,
             warning,
             error,
             info,
+            input_default,
+            input_focus,
         })
     }
 }
 
 impl Default for AppTheme {
     fn default() -> Self {
-        // dd_framework-inspired dark theme defaults
+        let border_def = Color::Rgb(245, 246, 247);
+        let border_focus = Color::Rgb(100, 180, 245);
         Self {
-            // Core backgrounds (from $c_ui_neutral_* dark variants)
-            background: Color::Rgb(15, 17, 20), // $c_ui_neutral_100--dark
-            panel_background: Color::Rgb(26, 28, 31), // $c_ui_neutral_200--dark
-            popup_background: Color::Rgb(42, 45, 49), // $c_ui_neutral_300--dark
-            // Text colors (from $c_text_* dark variants)
-            foreground: Color::Rgb(245, 246, 247), // $c_text_primary--dark
-            muted: Color::Rgb(158, 163, 170),      // $c_text_secondary--dark
-            disabled: Color::Rgb(90, 95, 102),     // $c_text_disabled--dark
-            text_inverse: Color::Rgb(15, 17, 20),  // $c_text_inverse--dark
-            // Borders (from $c_support_*)
-            border: Color::Rgb(42, 45, 49), // $c_support_border--dark
-            border_active: Color::Rgb(110, 200, 255), // Active state highlight
-            // Input field colors (lavender for focus, blue for default)
-            input_default: Color::Rgb(90, 180, 245), // $c_primary_action_default_surface--dark (blue family)
-            input_focus: Color::Rgb(140, 200, 255),  // $c_primary_strong--dark (lavender)
-            // Accents (from $c_primary_action_*)
-            title: Color::Rgb(140, 200, 255), // $c_primary_strong--dark
-            active: Color::Rgb(110, 200, 255), // $c_primary_action_default_surface--dark
-            // Selection
-            selected_background: Color::Rgb(42, 45, 49),
+            background: Color::Rgb(15, 17, 20),
+            panel_background: Color::Rgb(42, 45, 49),
+            popup_background: Color::Rgb(28, 30, 33),
+            foreground: Color::Rgb(245, 246, 247),
+            muted: Color::Rgb(158, 163, 170),
+            disabled: Color::Rgb(90, 95, 102),
+            text_inverse: Color::Rgb(15, 17, 20),
+            text_labels: Color::Rgb(255, 175, 70),
+            text_active_focus: border_focus,
+            modal_labels: border_focus,
+            modal_text: Color::Rgb(245, 246, 247),
+            title: border_focus,
+            active: Color::Rgb(110, 200, 255),
+            border: border_def,
+            border_active: border_focus,
+            input_border_default: border_def,
+            input_border_focus: border_focus,
+            input_text_default: Color::Rgb(245, 246, 247),
+            input_text_focus: border_focus,
+            cursor: border_focus,
+            scrollbar: Color::Rgb(255, 160, 135),
+            scrollbar_hover: border_focus,
+            selected_background: Color::Rgb(15, 17, 20),
             selected_foreground: Color::Rgb(245, 246, 247),
-            // Semantic (from $c_*_text dark variants)
-            success: Color::Rgb(130, 224, 170), // $c_success_text--dark
-            warning: Color::Rgb(245, 196, 105), // $c_warning_text--dark
-            error: Color::Rgb(229, 115, 115),   // $c_error_text--dark
-            info: Color::Rgb(93, 173, 226),     // $c_info_surface--dark
+            success: Color::Rgb(130, 224, 170),
+            warning: Color::Rgb(245, 196, 105),
+            error: Color::Rgb(229, 115, 115),
+            info: Color::Rgb(93, 173, 226),
+            input_default: border_def,
+            input_focus: border_focus,
         }
     }
 }
 
 fn theme_file_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
+    // Per THEME_STRUCTURE_STANDARD.md: project-local override wins over
+    // user-global default, which wins over built-in defaults.
+    candidates.push(PathBuf::from("dd_staticsite_theme.yml"));
     candidates.push(PathBuf::from("theme.yml"));
     candidates.push(PathBuf::from(".theme.yml"));
     if let Some(home) = std::env::var_os("HOME") {
-        candidates.push(
-            Path::new(&home)
-                .join(".config")
-                .join("ldnddev")
-                .join("dd_staticsite")
-                .join(".theme.yml"),
-        );
+        let base = Path::new(&home).join(".config").join("ldnddev");
+        candidates.push(base.join("dd_staticsite_theme.yml"));
+        candidates.push(base.join("dd_staticsite").join(".theme.yml"));
     }
     candidates
 }
