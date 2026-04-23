@@ -158,6 +158,11 @@ enum Modal {
     NewPageTitlePrompt {
         title: String,
     },
+    /// Title-edit prompt shown when renaming an existing page.
+    RenamePagePrompt {
+        title: String,
+        page_idx: usize,
+    },
     /// Generic yes/no confirmation prompt.
     ConfirmPrompt {
         message: String,
@@ -676,6 +681,9 @@ impl App {
             }
             Modal::NewPageTitlePrompt { title } => {
                 self.render_new_page_title_prompt(frame, title);
+            }
+            Modal::RenamePagePrompt { title, page_idx } => {
+                self.render_rename_page_prompt(frame, title, *page_idx);
             }
             Modal::ConfirmPrompt { message, .. } => {
                 self.render_confirm_prompt(frame, message);
@@ -1541,6 +1549,40 @@ impl App {
         frame.render_widget(prompt, inner);
     }
 
+    fn render_rename_page_prompt(&self, frame: &mut ratatui::Frame, title: &str, _page_idx: usize) {
+        let config = ModalConfig {
+            width_percent: 70,
+            height_percent: 35,
+            show_scrollbar: false,
+            footer_text: "Enter to save, Esc to cancel".to_string(),
+        };
+
+        let area = centered_rect(config.width_percent, config.height_percent, frame.area());
+        frame.render_widget(Clear, area);
+
+        let modal_block = Block::default()
+            .title(" Rename page ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(self.theme.border_active))
+            .title_style(
+                Style::default()
+                    .fg(self.theme.title)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        frame.render_widget(modal_block.clone(), area);
+        let inner = modal_block.inner(area);
+
+        let content = format!("Page title:\n{}\n\n{}", title, config.footer_text);
+        let prompt = Paragraph::new(content).style(
+            Style::default()
+                .fg(self.theme.foreground)
+                .bg(self.theme.popup_background),
+        );
+
+        frame.render_widget(prompt, inner);
+    }
+
     fn render_confirm_prompt(&self, frame: &mut ratatui::Frame, message: &str) {
         let area = centered_rect(70, 35, frame.area());
         frame.render_widget(Clear, area);
@@ -1645,6 +1687,9 @@ impl App {
                 Modal::TemplatePicker { .. } => return self.handle_template_picker_event(key),
                 Modal::NewPageTitlePrompt { .. } => {
                     return self.handle_new_page_title_prompt_event(key)
+                }
+                Modal::RenamePagePrompt { .. } => {
+                    return self.handle_rename_page_prompt_event(key)
                 }
                 Modal::ConfirmPrompt { .. } => return self.handle_confirm_prompt_event(key),
             }
@@ -2448,6 +2493,58 @@ impl App {
                 self.modal = Some(Modal::NewPageTitlePrompt { title });
                 Some(ModalResult::Continue)
             }
+        }
+    }
+
+    fn handle_rename_page_prompt_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
+        use crossterm::event::KeyCode;
+        let (title, page_idx) = match &self.modal {
+            Some(Modal::RenamePagePrompt { title, page_idx }) => (title.clone(), *page_idx),
+            _ => return Some(ModalResult::CloseCancel),
+        };
+        match key.code {
+            KeyCode::Esc => {
+                self.modal = None;
+                self.status = "Rename cancelled.".to_string();
+                Some(ModalResult::CloseCancel)
+            }
+            KeyCode::Enter => {
+                let trimmed = title.trim();
+                if trimmed.is_empty() {
+                    self.status = "Title required.".to_string();
+                    return Some(ModalResult::Continue);
+                }
+                if let Some(page) = self.site.pages.get_mut(page_idx) {
+                    page.head.title = trimmed.to_string();
+                    if !page.slug_locked {
+                        page.slug = crate::model::slug_from_title(trimmed);
+                    }
+                    self.status = format!("Renamed page: {}", page.head.title);
+                } else {
+                    self.status = "Page no longer exists.".to_string();
+                }
+                self.modal = None;
+                Some(ModalResult::CloseSuccess)
+            }
+            KeyCode::Backspace => {
+                let mut new_title = title;
+                new_title.pop();
+                self.modal = Some(Modal::RenamePagePrompt {
+                    title: new_title,
+                    page_idx,
+                });
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Char(c) => {
+                let mut new_title = title;
+                new_title.push(c);
+                self.modal = Some(Modal::RenamePagePrompt {
+                    title: new_title,
+                    page_idx,
+                });
+                Some(ModalResult::Continue)
+            }
+            _ => Some(ModalResult::Continue),
         }
     }
 
@@ -3632,6 +3729,19 @@ impl App {
                     self.selected_page = idx - 1;
                     self.status = "Moved page up.".to_string();
                 }
+                true
+            }
+            KeyCode::Char('r')
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+            {
+                let idx = self.selected_page;
+                let current_title = self.site.pages[idx].head.title.clone();
+                self.modal = Some(Modal::RenamePagePrompt {
+                    title: current_title,
+                    page_idx: idx,
+                });
+                self.status = "Rename page. Edit and press Enter.".to_string();
                 true
             }
             _ => false,
@@ -17394,6 +17504,50 @@ mod tests {
         assert_eq!(app.selected_page, 0);
         assert_eq!(app.site.pages[0].head.title, "Home");
     }
+
+    #[test]
+    fn pages_panel_r_renames_and_regenerates_slug_when_unlocked() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+        // starter page slug_locked defaults to false.
+        assert!(!app.site.pages[0].slug_locked);
+
+        send_key(&mut app, KeyCode::Char('r'), KeyModifiers::NONE);
+        assert!(matches!(app.modal, Some(Modal::RenamePagePrompt { .. })));
+
+        // Clear pre-filled "Home" (4 backspaces) and type "Front Page".
+        for _ in 0..4 {
+            send_key(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+        }
+        for c in "Front Page".chars() {
+            send_key(&mut app, KeyCode::Char(c), KeyModifiers::NONE);
+        }
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+
+        let p = &app.site.pages[0];
+        assert_eq!(p.head.title, "Front Page");
+        assert_eq!(p.slug, "front-page");
+    }
+
+    #[test]
+    fn pages_panel_r_with_locked_slug_renames_title_only() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+        app.site.pages[0].slug_locked = true;
+        let orig_slug = app.site.pages[0].slug.clone();
+
+        send_key(&mut app, KeyCode::Char('r'), KeyModifiers::NONE);
+        for _ in 0..4 {
+            send_key(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+        }
+        for c in "Front Page".chars() {
+            send_key(&mut app, KeyCode::Char(c), KeyModifiers::NONE);
+        }
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+
+        assert_eq!(app.site.pages[0].head.title, "Front Page");
+        assert_eq!(app.site.pages[0].slug, orig_slug, "locked slug must not regenerate");
+    }
 }
 
 impl Modal {
@@ -17407,6 +17561,7 @@ impl Modal {
             Modal::FormEdit { .. } => "FormEdit",
             Modal::TemplatePicker { .. } => "TemplatePicker",
             Modal::NewPageTitlePrompt { .. } => "NewPageTitlePrompt",
+            Modal::RenamePagePrompt { .. } => "RenamePagePrompt",
             Modal::ConfirmPrompt { .. } => "ConfirmPrompt",
         }
     }
