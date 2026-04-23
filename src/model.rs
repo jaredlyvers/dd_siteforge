@@ -886,3 +886,65 @@ impl Site {
         }
     }
 }
+
+/// Convert a human title to a filesystem/URL-safe kebab-case slug.
+/// ASCII-only, lowercase, alphanumerics and hyphens preserved,
+/// whitespace collapsed to single `-`, everything else stripped.
+/// Falls back to `"untitled"` for empty/whitespace-only inputs.
+pub fn slug_from_title(title: &str) -> String {
+    let mut out = String::with_capacity(title.len());
+    let mut prev_hyphen = false;
+    for ch in title.chars() {
+        let c = ch.to_ascii_lowercase();
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+            prev_hyphen = false;
+        } else if c.is_whitespace() || c == '-' || c == '_' {
+            if !prev_hyphen && !out.is_empty() {
+                out.push('-');
+                prev_hyphen = true;
+            }
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.is_empty() {
+        "untitled".to_string()
+    } else {
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slug_from_title_basic_lowercase_and_hyphenate() {
+        assert_eq!(slug_from_title("Contact Us"), "contact-us");
+    }
+
+    #[test]
+    fn slug_from_title_strips_punctuation() {
+        assert_eq!(slug_from_title("Hello, World!"), "hello-world");
+    }
+
+    #[test]
+    fn slug_from_title_collapses_whitespace() {
+        assert_eq!(slug_from_title("  a   b  "), "a-b");
+    }
+
+    #[test]
+    fn slug_from_title_empty_fallback() {
+        assert_eq!(slug_from_title(""), "untitled");
+        assert_eq!(slug_from_title("   "), "untitled");
+        assert_eq!(slug_from_title("!!!"), "untitled");
+    }
+
+    #[test]
+    fn slug_from_title_preserves_existing_hyphens_without_duplicating() {
+        assert_eq!(slug_from_title("about-us"), "about-us");
+        assert_eq!(slug_from_title("about  -  us"), "about-us");
+    }
+}
