@@ -2917,6 +2917,30 @@ impl App {
         }
     }
 
+    /// Entry point for the `E` key. Validates first; opens ValidationErrors
+    /// modal on failures. Otherwise resolves the output dir (prompting on first
+    /// use) and either opens the prompt or commits the export directly.
+    fn begin_export_flow(&mut self) {
+        let errors = crate::validate::validate_site(&self.site);
+        if !errors.is_empty() {
+            self.modal = Some(Modal::ValidationErrors {
+                errors,
+                scroll_offset: 0,
+            });
+            return;
+        }
+        match self.site.export_dir.clone() {
+            Some(dir) if !dir.trim().is_empty() => {
+                self.commit_export_to(dir);
+            }
+            _ => {
+                self.modal = Some(Modal::ExportPathPrompt {
+                    path: "./web/".to_string(),
+                });
+            }
+        }
+    }
+
     fn commit_export_path_from_prompt(&mut self, path: String) -> Option<ModalResult> {
         let trimmed = path.trim();
         if trimmed.is_empty() {
@@ -2929,9 +2953,46 @@ impl App {
         }
     }
 
-    /// Stub — full body lands in Task 3.
-    fn commit_export_to(&mut self, _rel: String) {
-        self.push_toast(ToastLevel::Info, "Export wiring lands in Task 3.");
+    /// Resolve `rel` against the site JSON's directory (or cwd if no path),
+    /// run the renderer, best-effort copy source images, and surface the
+    /// outcome as toasts. Persists the `rel` as `site.export_dir` on success.
+    fn commit_export_to(&mut self, rel: String) {
+        use std::path::{Path, PathBuf};
+        let base = self
+            .path
+            .as_ref()
+            .and_then(|p| p.parent().map(PathBuf::from))
+            .unwrap_or_else(|| PathBuf::from("."));
+        let out = base.join(Path::new(&rel));
+
+        match crate::renderer::render_site_to_dir(&self.site, &out) {
+            Ok(()) => {
+                self.site.export_dir = Some(rel);
+                self.copy_source_images_to(&base, &out);
+                let page_count = self.site.pages.len();
+                let msg = format!("Exported {} page(s) to {}", page_count, out.display());
+                self.push_toast(ToastLevel::Success, msg);
+            }
+            Err(e) => {
+                let msg = format!("Export failed: {}", e);
+                self.push_toast(ToastLevel::Warning, msg);
+            }
+        }
+    }
+
+    /// Recursively copy `base/source/imgs/` → `<out>/assets/imgs/` when the
+    /// source exists. Silently skips when absent. Copy errors surface as a
+    /// warning toast but don't fail the export.
+    fn copy_source_images_to(&mut self, base: &std::path::Path, out: &std::path::Path) {
+        let src = base.join("source").join("imgs");
+        if !src.exists() {
+            return;
+        }
+        let dst = out.join("assets").join("imgs");
+        if let Err(e) = copy_dir_recursive(&src, &dst) {
+            let msg = format!("Images copy skipped: {}", e);
+            self.push_toast(ToastLevel::Warning, msg);
+        }
     }
 
     fn handle_rename_page_prompt_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
@@ -18255,6 +18316,67 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn begin_export_flow_on_clean_starter_without_export_dir_opens_path_prompt() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        assert!(app.site.export_dir.is_none());
+        app.begin_export_flow();
+        match &app.modal {
+            Some(Modal::ExportPathPrompt { path }) => {
+                assert_eq!(path, "./web/");
+            }
+            _ => panic!("expected ExportPathPrompt, got a different modal or None"),
+        }
+    }
+
+    #[test]
+    fn begin_export_flow_with_invalid_site_opens_validation_modal() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.site.pages[0].slug = "".to_string();
+        app.begin_export_flow();
+        assert!(matches!(app.modal, Some(Modal::ValidationErrors { .. })));
+    }
+
+    #[test]
+    fn begin_export_flow_with_saved_export_dir_commits_directly() {
+        let tmp = std::env::temp_dir().join(format!(
+            "dd_export_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let json_path = tmp.join("site.json");
+        let mut app = App::new(Site::starter(), Some(json_path.clone()), AppTheme::default());
+        app.site.export_dir = Some("web".to_string());
+
+        app.begin_export_flow();
+
+        assert!(app.modal.is_none(), "no modal should open — direct export");
+        let last = app.toasts.last().expect("expected a toast");
+        assert_eq!(last.level, ToastLevel::Success);
+        assert!(last.message.to_lowercase().contains("exported"));
+        assert!(tmp.join("web").exists(), "export directory should have been created");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+}
+
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let path = entry.path();
+        let target = dst.join(entry.file_name());
+        if path.is_dir() {
+            copy_dir_recursive(&path, &target)?;
+        } else {
+            std::fs::copy(&path, &target)?;
+        }
+    }
+    Ok(())
 }
 
 impl Modal {
