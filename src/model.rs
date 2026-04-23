@@ -23,6 +23,8 @@ pub struct ThemeSettings {
 pub struct Page {
     pub id: String,
     pub slug: String,
+    #[serde(default)]
+    pub slug_locked: bool,
     pub head: DdHead,
     pub nodes: Vec<PageNode>,
 }
@@ -834,6 +836,7 @@ impl Site {
             pages: vec![Page {
                 id: "page-home".to_string(),
                 slug: "index".to_string(),
+                slug_locked: false,
                 head: DdHead {
                     title: "Home".to_string(),
                     meta_description: Some("Starter page".to_string()),

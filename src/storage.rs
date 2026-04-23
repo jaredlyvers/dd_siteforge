@@ -22,7 +22,6 @@ mod tests {
     use super::{load_site, save_site};
     use crate::model::{SectionComponent, Site};
     use std::time::{SystemTime, UNIX_EPOCH};
-
     #[test]
     fn save_and_load_round_trip_preserves_supported_components() {
         let mut site = Site::starter();
@@ -366,5 +365,38 @@ mod tests {
             .expect("system time before unix epoch")
             .as_nanos();
         std::env::temp_dir().join(format!("{prefix}_{now}.json"))
+    }
+
+    #[test]
+    fn slug_locked_defaults_to_false_on_load_of_legacy_site_json() {
+        // Legacy JSON that predates slug_locked — must still load.
+        let json = r##"{
+          "schema_version": 1,
+          "id": "s",
+          "name": "n",
+          "theme": {"primary_color":"#000","secondary_color":"#000","tertiary_color":"#000","support_color":"#000"},
+          "header": {"id":"h","custom_css":null,"alert":null,"sections":[]},
+          "footer": {"id":"f","custom_css":null,"sections":[]},
+          "pages": [{
+            "id":"p1","slug":"index",
+            "head":{"title":"Home","meta_description":null,"canonical_url":null,
+                    "robots":"index, follow","schema_type":"WebPage",
+                    "og_title":null,"og_description":null,"og_image":null},
+            "nodes":[]
+          }]
+        }"##;
+        let site: crate::model::Site = serde_json::from_str(json).expect("legacy JSON should load");
+        assert!(!site.pages[0].slug_locked, "legacy pages load with slug_locked = false");
+    }
+
+    #[test]
+    fn slug_locked_round_trips_through_save_and_load() {
+        let tmp = unique_temp_path("dd_site_slug_lock");
+        let mut site = crate::model::Site::starter();
+        site.pages[0].slug_locked = true;
+        save_site(&tmp, &site).expect("save ok");
+        let loaded = load_site(&tmp).expect("load ok");
+        std::fs::remove_file(&tmp).ok();
+        assert!(loaded.pages[0].slug_locked);
     }
 }
