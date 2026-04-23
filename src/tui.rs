@@ -87,6 +87,9 @@ struct App {
     /// flag, `sync_tree_row_with_selection` would always fall back to the
     /// first Hero/Section row and make `[HEAD]` unreachable via j/k.
     page_head_selected: bool,
+    /// Session trash — deleted pages pushed here for `u` undo.
+    /// Not persisted. Capped at 20 entries (oldest drops off).
+    deleted_pages: Vec<crate::model::Page>,
     list_area: Rect,
     details_area: Rect,
     details_scroll_row: usize,
@@ -2373,6 +2376,7 @@ impl App {
             selected_header_column: 0,
             selected_header_component: 0,
             page_head_selected: false,
+            deleted_pages: Vec::new(),
             list_area: Rect::default(),
             details_area: Rect::default(),
             details_scroll_row: 0,
