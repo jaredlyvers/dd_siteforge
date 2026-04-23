@@ -1547,6 +1547,13 @@ impl App {
         );
 
         frame.render_widget(prompt, inner);
+
+        let inner_width = inner.width.saturating_sub(1) as usize;
+        let cursor_x = inner
+            .x
+            .saturating_add(title.chars().count().min(inner_width) as u16);
+        let cursor_y = inner.y.saturating_add(1);
+        frame.set_cursor_position((cursor_x, cursor_y));
     }
 
     fn render_rename_page_prompt(&self, frame: &mut ratatui::Frame, title: &str, _page_idx: usize) {
@@ -1581,6 +1588,13 @@ impl App {
         );
 
         frame.render_widget(prompt, inner);
+
+        let inner_width = inner.width.saturating_sub(1) as usize;
+        let cursor_x = inner
+            .x
+            .saturating_add(title.chars().count().min(inner_width) as u16);
+        let cursor_y = inner.y.saturating_add(1);
+        frame.set_cursor_position((cursor_x, cursor_y));
     }
 
     fn render_confirm_prompt(&self, frame: &mut ratatui::Frame, message: &str) {
@@ -11287,46 +11301,6 @@ impl App {
             self.selected_nested_item = 0;
         }
         self.status = format!("Deleted node {}.", idx + 1);
-    }
-
-    fn move_selected_up(&mut self) {
-        let selected = self.selected_node;
-        let Some(page) = self.current_page_mut() else {
-            return;
-        };
-        if page.nodes.len() < 2 {
-            return;
-        }
-        let idx = selected.min(page.nodes.len() - 1);
-        if idx == 0 {
-            return;
-        }
-        page.nodes.swap(idx, idx - 1);
-        self.selected_node = idx - 1;
-        self.selected_column = 0;
-        self.selected_component = 0;
-        self.selected_nested_item = 0;
-        self.status = "Moved node up.".to_string();
-    }
-
-    fn move_selected_down(&mut self) {
-        let selected = self.selected_node;
-        let Some(page) = self.current_page_mut() else {
-            return;
-        };
-        if page.nodes.len() < 2 {
-            return;
-        }
-        let idx = selected.min(page.nodes.len() - 1);
-        if idx + 1 >= page.nodes.len() {
-            return;
-        }
-        page.nodes.swap(idx, idx + 1);
-        self.selected_node = idx + 1;
-        self.selected_column = 0;
-        self.selected_component = 0;
-        self.selected_nested_item = 0;
-        self.status = "Moved node down.".to_string();
     }
 
     fn add_selected_component_to_section(&mut self) {
