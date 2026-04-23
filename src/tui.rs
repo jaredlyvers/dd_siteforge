@@ -1132,9 +1132,14 @@ impl App {
             let is_selected = idx == selected_field;
             let y_offset = header_height + rel_y;
 
-            // Label
+            // Label — text_labels for default, text_active_focus for active.
+            let label_color = if is_selected {
+                self.theme.text_active_focus
+            } else {
+                self.theme.text_labels
+            };
             let label = Paragraph::new(format!("{}:", field.label))
-                .style(Style::default().fg(self.theme.foreground));
+                .style(Style::default().fg(label_color).bg(self.theme.popup_background));
             frame.render_widget(
                 label,
                 Rect {
@@ -1145,11 +1150,11 @@ impl App {
                 },
             );
 
-            // Input box with border (height = rows + 2 for borders)
+            // Input box border — input_border_default / input_border_focus.
             let border_color = if is_selected {
-                self.theme.input_focus
+                self.theme.input_border_focus
             } else {
-                self.theme.input_default
+                self.theme.input_border_default
             };
 
             let input_height = field.rows + 2; // rows inside + top/bottom border
@@ -1180,15 +1185,22 @@ impl App {
                 visible_lines.join("\n")
             };
 
+            // Input text — input_text_default / input_text_focus.
+            let text_color = if is_selected {
+                self.theme.input_text_focus
+            } else {
+                self.theme.input_text_default
+            };
             let input_box = Paragraph::new(display_text)
                 .style(
                     Style::default()
-                        .fg(self.theme.foreground)
+                        .fg(text_color)
                         .bg(self.theme.popup_background),
                 )
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
+                        .style(Style::default().bg(self.theme.popup_background))
                         .border_style(Style::default().fg(border_color)),
                 )
                 .wrap(ratatui::widgets::Wrap { trim: false });
@@ -1301,6 +1313,24 @@ impl App {
         );
 
         if let Some((x, y)) = cursor_pos {
+            // Paint a single cell with the themed `cursor` background so the
+            // cursor position is legible regardless of the terminal's own
+            // cursor color. The real terminal cursor is still placed on top
+            // so it pulses/blinks as the user expects.
+            let cursor_cell = Paragraph::new(" ").style(
+                Style::default()
+                    .fg(self.theme.popup_background)
+                    .bg(self.theme.cursor),
+            );
+            frame.render_widget(
+                cursor_cell,
+                Rect {
+                    x,
+                    y,
+                    width: 1,
+                    height: 1,
+                },
+            );
             frame.set_cursor_position((x, y));
         }
     }
@@ -1578,9 +1608,11 @@ impl App {
             width: content_w,
             height: 1,
         };
+        // Single-input modal has exactly one field always focused, so label
+        // uses the text_active_focus token.
         let label_para = Paragraph::new(format!("{}:", label)).style(
             Style::default()
-                .fg(self.theme.text_labels)
+                .fg(self.theme.text_active_focus)
                 .bg(self.theme.popup_background),
         );
         frame.render_widget(label_para, label_area);
@@ -1606,10 +1638,25 @@ impl App {
             );
         frame.render_widget(input, input_area);
 
-        // Cursor inside the input box (one row below top border, after last char)
+        // Cursor inside the input box (one row below top border, after last char).
         let max_x = input_area.x + input_area.width.saturating_sub(2);
         let cursor_x = (input_area.x + 1 + value.chars().count() as u16).min(max_x);
         let cursor_y = input_area.y + 1;
+        // Paint a themed cursor cell so the cursor color follows the theme.
+        let cursor_cell = Paragraph::new(" ").style(
+            Style::default()
+                .fg(self.theme.popup_background)
+                .bg(self.theme.cursor),
+        );
+        frame.render_widget(
+            cursor_cell,
+            Rect {
+                x: cursor_x,
+                y: cursor_y,
+                width: 1,
+                height: 1,
+            },
+        );
         frame.set_cursor_position((cursor_x, cursor_y));
 
         // Footer hint row at the bottom of inner
@@ -4984,9 +5031,14 @@ impl App {
     }
 
     fn save_edit_modal_changes(&mut self) {
-        let Some(modal) = self.edit_modal.take() else {
+        let Some(mut modal) = self.edit_modal.take() else {
             return;
         };
+        // Commit any in-flight typing in every field so Ctrl+S saves the
+        // current buffer state without requiring a prior Enter press.
+        for field in &mut modal.fields {
+            field.value = field.buffer.clone();
+        }
 
         // Determine what we're editing based on the modal title
         let saved = if modal.title == "dd-hero" {
