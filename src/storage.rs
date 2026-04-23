@@ -399,4 +399,31 @@ mod tests {
         std::fs::remove_file(&tmp).ok();
         assert!(loaded.pages[0].slug_locked);
     }
+
+    #[test]
+    fn export_dir_defaults_to_none_on_legacy_json() {
+        // Legacy JSON missing export_dir — must still load.
+        let json = r##"{
+          "schema_version": 1,
+          "id": "s",
+          "name": "n",
+          "theme": {"primary_color":"#000","secondary_color":"#000","tertiary_color":"#000","support_color":"#000"},
+          "header": {"id":"h","custom_css":null,"alert":null,"sections":[]},
+          "footer": {"id":"f","custom_css":null,"sections":[]},
+          "pages": []
+        }"##;
+        let site: crate::model::Site = serde_json::from_str(json).expect("legacy JSON should load");
+        assert!(site.export_dir.is_none(), "legacy sites load with export_dir = None");
+    }
+
+    #[test]
+    fn export_dir_round_trips_through_save_and_load() {
+        let tmp = unique_temp_path("dd_site_export_dir_roundtrip");
+        let mut site = crate::model::Site::starter();
+        site.export_dir = Some("./web/".to_string());
+        save_site(&tmp, &site).expect("save ok");
+        let loaded = load_site(&tmp).expect("load ok");
+        std::fs::remove_file(&tmp).ok();
+        assert_eq!(loaded.export_dir.as_deref(), Some("./web/"));
+    }
 }

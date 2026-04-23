@@ -9,6 +9,10 @@ pub struct Site {
     pub header: DdHeader,
     pub footer: DdFooter,
     pub pages: Vec<Page>,
+    /// Persisted export output directory, relative to the site JSON file.
+    /// `None` triggers a first-time prompt; user-confirmed value is written back.
+    #[serde(default)]
+    pub export_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -833,6 +837,7 @@ impl Site {
                     }],
                 }],
             },
+            export_dir: None,
             pages: vec![Page {
                 id: "page-home".to_string(),
                 slug: "index".to_string(),
