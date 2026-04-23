@@ -887,6 +887,99 @@ impl Site {
     }
 }
 
+/// Starter content to seed a new page with.
+#[derive(Debug, Clone, Copy)]
+pub enum PageTemplate {
+    /// No nodes, just the `[HEAD]` metadata.
+    Blank,
+    /// One empty `dd-hero`.
+    HeroOnly,
+    /// `dd-hero` + `dd-section` with one empty column.
+    HeroPlusSection,
+}
+
+impl Page {
+    pub fn from_template(title: &str, template: PageTemplate) -> Self {
+        let slug = slug_from_title(title);
+        let id = format!("page-{}", slug);
+        let nodes = match template {
+            PageTemplate::Blank => Vec::new(),
+            PageTemplate::HeroOnly => vec![PageNode::Hero(Self::empty_hero())],
+            PageTemplate::HeroPlusSection => vec![
+                PageNode::Hero(Self::empty_hero()),
+                PageNode::Section(Self::empty_section()),
+            ],
+        };
+        Page {
+            id,
+            slug,
+            slug_locked: false,
+            head: DdHead {
+                title: title.to_string(),
+                meta_description: None,
+                canonical_url: None,
+                robots: RobotsDirective::IndexFollow,
+                schema_type: SchemaType::WebPage,
+                og_title: None,
+                og_description: None,
+                og_image: None,
+            },
+            nodes,
+        }
+    }
+
+    pub fn duplicate_from(src: &Page) -> Self {
+        let title = format!("{} (Copy)", src.head.title);
+        let slug = slug_from_title(&title);
+        let mut head = src.head.clone();
+        head.title = title;
+        Page {
+            id: format!("page-{}", slug),
+            slug,
+            slug_locked: false,
+            head,
+            nodes: src.nodes.clone(),
+        }
+    }
+
+    fn empty_hero() -> DdHero {
+        DdHero {
+            parent_image_url: String::new(),
+            parent_image_alt: None,
+            parent_class: Some(HeroImageClass::FullFull),
+            parent_data_aos: Some(HeroAos::FadeIn),
+            parent_custom_css: None,
+            parent_title: String::new(),
+            parent_subtitle: String::new(),
+            parent_copy: None,
+            link_1_label: None,
+            link_1_url: None,
+            link_1_target: None,
+            link_2_label: None,
+            link_2_url: None,
+            link_2_target: None,
+            parent_image_mobile: None,
+            parent_image_tablet: None,
+            parent_image_desktop: None,
+            parent_image_class: Some(HeroImageClass::FullFull),
+        }
+    }
+
+    fn empty_section() -> DdSection {
+        DdSection {
+            id: "section-1".to_string(),
+            section_title: None,
+            section_class: Some(SectionClass::FullContained),
+            item_box_class: Some(SectionItemBoxClass::LBox),
+            columns: vec![SectionColumn {
+                id: "column-1".to_string(),
+                width_class: "dd-u-1-1".to_string(),
+                components: Vec::new(),
+            }],
+        }
+    }
+}
+
 /// Convert a human title to a filesystem/URL-safe kebab-case slug.
 /// ASCII-only, lowercase, alphanumerics and hyphens preserved,
 /// whitespace collapsed to single `-`, everything else stripped.
@@ -919,6 +1012,42 @@ pub fn slug_from_title(title: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn page_from_template_blank_has_no_nodes() {
+        let p = Page::from_template("Contact Us", PageTemplate::Blank);
+        assert_eq!(p.head.title, "Contact Us");
+        assert_eq!(p.slug, "contact-us");
+        assert!(!p.slug_locked);
+        assert!(p.nodes.is_empty());
+    }
+
+    #[test]
+    fn page_from_template_hero_only_has_one_hero_node() {
+        let p = Page::from_template("Gallery", PageTemplate::HeroOnly);
+        assert_eq!(p.nodes.len(), 1);
+        assert!(matches!(p.nodes[0], PageNode::Hero(_)));
+    }
+
+    #[test]
+    fn page_from_template_hero_plus_section_has_hero_then_section() {
+        let p = Page::from_template("Services", PageTemplate::HeroPlusSection);
+        assert_eq!(p.nodes.len(), 2);
+        assert!(matches!(p.nodes[0], PageNode::Hero(_)));
+        assert!(matches!(p.nodes[1], PageNode::Section(_)));
+    }
+
+    #[test]
+    fn page_from_template_duplicate_deep_clones_and_appends_copy_suffix() {
+        let mut starter = Site::starter();
+        starter.pages[0].head.title = "Home".to_string();
+        let dup = Page::duplicate_from(&starter.pages[0]);
+        assert_eq!(dup.head.title, "Home (Copy)");
+        assert_eq!(dup.slug, "home-copy");
+        assert!(!dup.slug_locked);
+        assert_eq!(dup.nodes.len(), starter.pages[0].nodes.len());
+        assert_ne!(dup.id, starter.pages[0].id);
+    }
 
     #[test]
     fn slug_from_title_basic_lowercase_and_hyphenate() {
