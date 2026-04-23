@@ -4311,6 +4311,9 @@ impl App {
                 match k.code {
                 KeyCode::F(1) => self.show_help = true,
                 KeyCode::F(3) => self.open_validation_modal(),
+                KeyCode::Char('E') if k.modifiers.contains(KeyModifiers::SHIFT) => {
+                    self.begin_export_flow();
+                }
                 KeyCode::Char('q') if k.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.should_quit = true
                 }
@@ -16851,6 +16854,7 @@ fn help_text() -> String {
         "Global:",
         "  F1: Open/close this help",
         "  F3: Validate site (shows errors in a modal)",
+        "  Shift+E: Export site to HTML (validates first; prompts for output dir on first use)",
         "  Ctrl+Q: Quit",
         "  s: Open save modal and enter file path",
         "  Tab / Shift+Tab: Next/previous page",
@@ -18361,6 +18365,21 @@ mod tests {
         assert!(tmp.join("web").exists(), "export directory should have been created");
 
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn e_key_with_validation_errors_opens_validation_modal() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.site.pages[0].slug = "".to_string();
+        send_key(&mut app, KeyCode::Char('E'), KeyModifiers::SHIFT);
+        assert!(matches!(app.modal, Some(Modal::ValidationErrors { .. })));
+    }
+
+    #[test]
+    fn e_key_with_clean_site_and_no_export_dir_opens_path_prompt() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        send_key(&mut app, KeyCode::Char('E'), KeyModifiers::SHIFT);
+        assert!(matches!(app.modal, Some(Modal::ExportPathPrompt { .. })));
     }
 }
 
