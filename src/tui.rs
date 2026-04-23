@@ -3616,6 +3616,24 @@ impl App {
                 }
                 true
             }
+            KeyCode::Char('J') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                let idx = self.selected_page;
+                if idx + 1 < self.site.pages.len() {
+                    self.site.pages.swap(idx, idx + 1);
+                    self.selected_page = idx + 1;
+                    self.status = "Moved page down.".to_string();
+                }
+                true
+            }
+            KeyCode::Char('K') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                let idx = self.selected_page;
+                if idx > 0 {
+                    self.site.pages.swap(idx, idx - 1);
+                    self.selected_page = idx - 1;
+                    self.status = "Moved page up.".to_string();
+                }
+                true
+            }
             _ => false,
         }
     }
@@ -17329,6 +17347,52 @@ mod tests {
             app.status.to_lowercase().contains("nothing to restore")
                 || app.status.to_lowercase().contains("no deleted")
         );
+    }
+
+    #[test]
+    fn pages_panel_shift_j_moves_current_page_down() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+        app.site.pages.push(crate::model::Page::from_template(
+            "Contact",
+            crate::model::PageTemplate::Blank,
+        ));
+        app.site.pages.push(crate::model::Page::from_template(
+            "About",
+            crate::model::PageTemplate::Blank,
+        ));
+        app.selected_page = 0;
+
+        send_key(&mut app, KeyCode::Char('J'), KeyModifiers::SHIFT);
+        assert_eq!(app.site.pages[0].head.title, "Contact");
+        assert_eq!(app.site.pages[1].head.title, "Home");
+        assert_eq!(app.selected_page, 1);
+    }
+
+    #[test]
+    fn pages_panel_shift_k_moves_current_page_up() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+        app.site.pages.push(crate::model::Page::from_template(
+            "Contact",
+            crate::model::PageTemplate::Blank,
+        ));
+        app.selected_page = 1;
+
+        send_key(&mut app, KeyCode::Char('K'), KeyModifiers::SHIFT);
+        assert_eq!(app.site.pages[0].head.title, "Contact");
+        assert_eq!(app.site.pages[1].head.title, "Home");
+        assert_eq!(app.selected_page, 0);
+    }
+
+    #[test]
+    fn pages_panel_shift_j_at_last_is_noop() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+        app.selected_page = 0;
+        send_key(&mut app, KeyCode::Char('J'), KeyModifiers::SHIFT);
+        assert_eq!(app.selected_page, 0);
+        assert_eq!(app.site.pages[0].head.title, "Home");
     }
 }
 
