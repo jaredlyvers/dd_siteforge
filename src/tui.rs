@@ -9576,6 +9576,21 @@ impl App {
         }
     }
 
+    /// Run `validate_site` on the current site. Open `Modal::ValidationErrors`
+    /// if any errors; otherwise set a green status and leave no modal open.
+    fn open_validation_modal(&mut self) {
+        let errors = crate::validate::validate_site(&self.site);
+        if errors.is_empty() {
+            self.status = "No validation errors.".to_string();
+        } else {
+            self.status = format!("Validation: {} error(s).", errors.len());
+            self.modal = Some(Modal::ValidationErrors {
+                errors,
+                scroll_offset: 0,
+            });
+        }
+    }
+
     fn open_component_picker(&mut self) {
         self.input_mode = None;
         self.component_picker = Some(ComponentPickerState {
@@ -17951,6 +17966,44 @@ mod tests {
             app.site.pages[0].slug, "about-us",
             "slug should regenerate from title when unlocked"
         );
+    }
+
+    #[test]
+    fn open_validation_modal_on_clean_starter_sets_status_and_no_modal() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.open_validation_modal();
+        assert!(
+            app.modal.is_none(),
+            "no modal should open when validation is clean"
+        );
+        assert!(
+            app.status.to_lowercase().contains("no validation errors"),
+            "status should confirm clean validation, got: {:?}",
+            app.status
+        );
+    }
+
+    #[test]
+    fn open_validation_modal_with_errors_opens_modal_with_error_list() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        // Force an error: empty slug.
+        app.site.pages[0].slug = "".to_string();
+        app.open_validation_modal();
+        match &app.modal {
+            Some(Modal::ValidationErrors {
+                errors,
+                scroll_offset,
+            }) => {
+                assert!(!errors.is_empty());
+                assert_eq!(*scroll_offset, 0);
+                assert!(
+                    errors.iter().any(|e| e.contains("empty slug")),
+                    "expected empty-slug error, got: {:?}",
+                    errors
+                );
+            }
+            _ => panic!("expected Modal::ValidationErrors, got a different modal or None"),
+        }
     }
 }
 
