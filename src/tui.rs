@@ -5677,6 +5677,7 @@ impl App {
         for field in fields {
             match field.label.as_str() {
                 "Title" => page.head.title = field.value.clone(),
+                "Slug" => page.slug = field.value.clone(),
                 "Meta Description" => {
                     page.head.meta_description = if field.value.is_empty() {
                         None
@@ -13242,7 +13243,8 @@ impl App {
         let og_t = head.og_title.clone().unwrap_or_default();
         let og_d = head.og_description.clone().unwrap_or_default();
         let og_i = head.og_image.clone().unwrap_or_default();
-        let fields = vec![
+        let slug_locked = self.site.pages[self.selected_page].slug_locked;
+        let mut fields = vec![
             EditField {
                 label: "Title".to_string(),
                 value: head.title.clone(),
@@ -13308,6 +13310,17 @@ impl App {
                 rows: 1,
             },
         ];
+        if slug_locked {
+            let slug = self.site.pages[self.selected_page].slug.clone();
+            fields.insert(1, EditField {
+                label: "Slug".to_string(),
+                value: slug.clone(),
+                buffer: slug.clone(),
+                cursor: slug.len(),
+                is_multiline: false,
+                rows: 1,
+            });
+        }
         self.edit_modal = Some(EditModalState {
             title: "page-head".to_string(),
             fields,
@@ -17579,6 +17592,58 @@ mod tests {
 
         assert!(app.site.pages[0].slug_locked);
         assert!(app.site.pages[1].slug_locked);
+    }
+
+    #[test]
+    fn page_head_modal_has_slug_field_only_when_locked() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+
+        // Unlocked → no Slug field
+        app.open_page_head_edit_modal();
+        let fields = app
+            .edit_modal
+            .as_ref()
+            .map(|m| m.fields.clone())
+            .expect("expected page-head modal");
+        assert!(
+            !fields.iter().any(|f| f.label == "Slug"),
+            "slug field should not appear when slug_locked=false"
+        );
+        app.edit_modal = None;
+
+        // Locked → Slug field appears
+        app.site.pages[0].slug_locked = true;
+        app.open_page_head_edit_modal();
+        let fields = app
+            .edit_modal
+            .as_ref()
+            .map(|m| m.fields.clone())
+            .expect("expected page-head modal");
+        let slug_field = fields
+            .iter()
+            .find(|f| f.label == "Slug")
+            .expect("Slug field should appear when slug_locked=true");
+        // Value pre-fills with the current slug.
+        assert_eq!(slug_field.value, app.site.pages[0].slug);
+    }
+
+    #[test]
+    fn page_head_modal_save_writes_slug_when_slug_field_present() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.site.pages[0].slug_locked = true;
+        app.open_page_head_edit_modal();
+        // Mutate the slug field's value + buffer to "new-slug"
+        let modal = app.edit_modal.as_mut().unwrap();
+        for f in modal.fields.iter_mut() {
+            if f.label == "Slug" {
+                f.value = "new-slug".to_string();
+                f.buffer = "new-slug".to_string();
+            }
+        }
+        let fields = modal.fields.clone();
+        let ok = app.save_page_head_changes(&fields);
+        assert!(ok);
+        assert_eq!(app.site.pages[0].slug, "new-slug");
     }
 }
 
