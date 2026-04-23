@@ -3602,6 +3602,20 @@ impl App {
                 }
                 true
             }
+            KeyCode::Char('u') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if let Some(page) = self.deleted_pages.pop() {
+                    self.status = format!("Restored page: {}", page.head.title);
+                    self.site.pages.push(page);
+                    self.selected_page = self.site.pages.len() - 1;
+                    self.selected_node = 0;
+                    self.selected_column = 0;
+                    self.selected_component = 0;
+                    self.selected_nested_item = 0;
+                } else {
+                    self.status = "No deleted pages to restore.".to_string();
+                }
+                true
+            }
             _ => false,
         }
     }
@@ -17281,6 +17295,40 @@ mod tests {
         assert!(app.modal.is_none());
         assert_eq!(app.site.pages.len(), 2);
         assert!(app.deleted_pages.is_empty());
+    }
+
+    #[test]
+    fn pages_panel_u_restores_last_deleted_page_and_selects_it() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+        app.site.pages.push(crate::model::Page::from_template(
+            "Contact",
+            crate::model::PageTemplate::Blank,
+        ));
+        app.selected_page = 1;
+
+        app.modal = None;
+        app.commit_delete_page();
+        assert_eq!(app.site.pages.len(), 1);
+
+        send_key(&mut app, KeyCode::Char('u'), KeyModifiers::NONE);
+        assert_eq!(app.site.pages.len(), 2);
+        let restored = &app.site.pages[1];
+        assert_eq!(restored.head.title, "Contact");
+        assert_eq!(app.selected_page, 1);
+        assert!(app.deleted_pages.is_empty());
+    }
+
+    #[test]
+    fn pages_panel_u_with_empty_trash_is_noop() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+        send_key(&mut app, KeyCode::Char('u'), KeyModifiers::NONE);
+        assert_eq!(app.site.pages.len(), 1);
+        assert!(
+            app.status.to_lowercase().contains("nothing to restore")
+                || app.status.to_lowercase().contains("no deleted")
+        );
     }
 }
 
