@@ -146,6 +146,11 @@ enum Modal {
         cursor: usize,
         multiline: bool,
     },
+    /// Template picker for adding a new page.
+    TemplatePicker {
+        /// Index within the template option list that is currently highlighted.
+        selected: usize,
+    },
     /// Unified form editor: all fields of a component rendered together,
     /// Tab moves between fields, Left/Right cycles enums, Ctrl+S saves via
     /// `cursor::apply_edit_form_to_component`.
@@ -647,6 +652,9 @@ impl App {
                 ..
             } => {
                 self.render_form_edit_modal(frame, state, *cursor_pos, *scroll_offset);
+            }
+            Modal::TemplatePicker { selected } => {
+                self.render_template_picker_modal(frame, *selected);
             }
         }
     }
@@ -1444,6 +1452,37 @@ impl App {
         frame.render_widget(prompt, inner);
     }
 
+    fn render_template_picker_modal(&self, frame: &mut ratatui::Frame, selected: usize) {
+        use ratatui::widgets::{List, ListItem, ListState};
+        let area = centered_rect(60, 30, frame.area());
+        frame.render_widget(Clear, area);
+        let options = ["Blank", "Hero only", "Hero + Section", "Duplicate current"];
+        let items: Vec<ListItem> = options.iter().map(|s| ListItem::new(*s)).collect();
+        let mut state = ListState::default();
+        state.select(Some(selected.min(options.len() - 1)));
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .title(" New page — choose template ")
+                    .borders(Borders::ALL)
+                    .style(
+                        Style::default()
+                            .fg(self.theme.modal_text)
+                            .bg(self.theme.popup_background),
+                    )
+                    .border_style(Style::default().fg(self.theme.border_active))
+                    .title_style(Style::default().fg(self.theme.modal_labels)),
+            )
+            .highlight_style(
+                Style::default()
+                    .fg(self.theme.selected_foreground)
+                    .bg(self.theme.selected_background)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("> ");
+        frame.render_stateful_widget(list, area, &mut state);
+    }
+
     /// Unified single field renderer (legacy mode)
     fn render_single_field_unified(
         &self,
@@ -1518,6 +1557,7 @@ impl App {
                 Modal::SavePrompt { .. } => return self.handle_save_prompt_event_unified(key),
                 Modal::SingleField { .. } => return self.handle_single_field_event_unified(key),
                 Modal::FormEdit { .. } => return self.handle_form_edit_event(key),
+                Modal::TemplatePicker { .. } => return self.handle_template_picker_event(key),
             }
         }
 
@@ -2186,6 +2226,39 @@ impl App {
                 self.modal = Some(Modal::SavePrompt { path });
                 Some(ModalResult::Continue)
             }
+        }
+    }
+
+    fn handle_template_picker_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
+        use crossterm::event::KeyCode;
+        let Some(Modal::TemplatePicker { selected }) = self.modal.as_mut() else {
+            return Some(ModalResult::CloseCancel);
+        };
+        match key.code {
+            KeyCode::Esc => {
+                self.modal = None;
+                self.status = "Add page cancelled.".to_string();
+                Some(ModalResult::CloseCancel)
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if *selected > 0 {
+                    *selected -= 1;
+                }
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if *selected < 3 {
+                    *selected += 1;
+                }
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Enter => {
+                // Commit handled in Task 7.
+                self.modal = None;
+                self.status = "Template picker not yet wired.".to_string();
+                Some(ModalResult::CloseCancel)
+            }
+            _ => Some(ModalResult::Continue),
         }
     }
 
@@ -16810,6 +16883,7 @@ impl Modal {
             Modal::SavePrompt { .. } => "SavePrompt",
             Modal::SingleField { .. } => "SingleField",
             Modal::FormEdit { .. } => "FormEdit",
+            Modal::TemplatePicker { .. } => "TemplatePicker",
         }
     }
 }
