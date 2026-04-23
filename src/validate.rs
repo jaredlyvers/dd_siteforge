@@ -12,6 +12,9 @@ pub fn validate_site(site: &Site) -> Vec<String> {
     validate_footer(&site.footer, &mut errors);
 
     for page in &site.pages {
+        if page.head.title.trim().is_empty() {
+            errors.push(format!("Page '{}' is missing a head title.", page.id));
+        }
         if page.slug.trim().is_empty() {
             errors.push(format!("Page '{}' has an empty slug.", page.id));
         }

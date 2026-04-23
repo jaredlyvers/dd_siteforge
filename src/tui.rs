@@ -93,6 +93,8 @@ struct App {
     /// Title captured while the TemplatePicker is open after the title prompt.
     /// None outside of the add-page flow.
     pending_new_page_title: Option<String>,
+    /// Ephemeral bottom-right notifications; expire ~5s after `shown_at`.
+    toasts: Vec<Toast>,
     list_area: Rect,
     details_area: Rect,
     details_scroll_row: usize,
@@ -215,6 +217,22 @@ enum ModalResult {
 #[derive(Debug, Clone)]
 enum ConfirmKind {
     DeletePage,
+}
+
+/// Visual/semantic class of a toast notification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ToastLevel {
+    Success,
+    Info,
+    Warning,
+}
+
+/// A transient bottom-right notification. Expires ~5s after `shown_at`.
+#[derive(Debug, Clone)]
+struct Toast {
+    level: ToastLevel,
+    message: String,
+    shown_at: std::time::Instant,
 }
 
 /// Unified modal configuration
@@ -1786,6 +1804,87 @@ impl App {
         frame.render_widget(footer, footer_area);
     }
 
+    /// Push a transient toast notification. Caps at 4 entries; oldest dropped.
+    fn push_toast(&mut self, level: ToastLevel, message: impl Into<String>) {
+        self.toasts.push(Toast {
+            level,
+            message: message.into(),
+            shown_at: std::time::Instant::now(),
+        });
+        if self.toasts.len() > 4 {
+            self.toasts.remove(0);
+        }
+    }
+
+    /// Drop toasts older than 5 seconds. Called every render tick.
+    fn prune_toasts(&mut self) {
+        let now = std::time::Instant::now();
+        self.toasts
+            .retain(|t| now.duration_since(t.shown_at) < std::time::Duration::from_secs(5));
+    }
+
+    /// Render the toast stack at the bottom-right of `area`. Each toast is a
+    /// single-line bordered box, stacked upward.
+    fn render_toasts(&self, frame: &mut ratatui::Frame, area: Rect) {
+        if self.toasts.is_empty() {
+            return;
+        }
+        let toast_w: u16 = 60;
+        let gap: u16 = 1;
+        let max_width = area.width.saturating_sub(2);
+        let width = toast_w.min(max_width);
+        if width < 10 {
+            return;
+        }
+        let right_x = area.x + area.width.saturating_sub(width + 1);
+        let toast_h: u16 = 3;
+        let mut y = area.y + area.height.saturating_sub(toast_h);
+        for toast in self.toasts.iter().rev() {
+            if y + toast_h > area.y + area.height {
+                break;
+            }
+            let rect = Rect {
+                x: right_x,
+                y,
+                width,
+                height: toast_h,
+            };
+            let (glyph, accent) = match toast.level {
+                ToastLevel::Success => ("✓", self.theme.success),
+                ToastLevel::Info => ("ℹ", self.theme.info),
+                ToastLevel::Warning => ("⚠", self.theme.warning),
+            };
+            frame.render_widget(Clear, rect);
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .style(Style::default().bg(self.theme.popup_background))
+                .border_style(Style::default().fg(accent));
+            let inner_x = rect.x + 2;
+            let inner_y = rect.y + 1;
+            let inner_w = rect.width.saturating_sub(4);
+            frame.render_widget(block, rect);
+            let text = format!("{} {}", glyph, toast.message);
+            let body = Paragraph::new(text).style(
+                Style::default()
+                    .fg(accent)
+                    .bg(self.theme.popup_background),
+            );
+            frame.render_widget(
+                body,
+                Rect {
+                    x: inner_x,
+                    y: inner_y,
+                    width: inner_w,
+                    height: 1,
+                },
+            );
+            if y < area.y + toast_h + gap {
+                break;
+            }
+            y = y.saturating_sub(toast_h + gap);
+        }
+    }
+
     /// Turn raw validator messages into a numbered, pre-wrapped list. Each
     /// input entry becomes one or more output rows depending on `width`.
     fn wrap_validation_lines(&self, errors: &[String], width: usize) -> Vec<String> {
@@ -1991,7 +2090,8 @@ impl App {
                 // Top-level save: commit to the model.
                 match cursor::apply_edit_form_to_component(&mut self.site, &cursor, &state) {
                     Ok(()) => {
-                        self.status = format!("Saved {}.", state.form.title);
+                        let msg = format!("Saved {}.", state.form.title);
+                        self.push_toast(ToastLevel::Success, msg);
                         return Some(ModalResult::CloseSuccess);
                     }
                     Err(e) => {
@@ -2362,7 +2462,8 @@ impl App {
             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Save and close immediately - call on_save now before it gets moved
                 on_save(self, &fields);
-                self.status = format!("Saved {} changes.", title);
+                let msg = format!("Saved {} changes.", title);
+                self.push_toast(ToastLevel::Success, msg);
                 return Some(ModalResult::CloseSuccess);
             }
             KeyCode::Up => {
@@ -2590,7 +2691,8 @@ impl App {
                         Some(ModalResult::Continue)
                     } else {
                         self.path = Some(path_buf.clone());
-                        self.status = format!("Saved {}", path_buf.display());
+                        let msg = format!("Saved {}", path_buf.display());
+                        self.push_toast(ToastLevel::Success, msg);
                         Some(ModalResult::CloseSuccess)
                     }
                 }
@@ -2689,10 +2791,11 @@ impl App {
                 self.selected_component = 0;
                 self.selected_nested_item = 0;
                 self.modal = None;
-                self.status = format!(
+                let msg = format!(
                     "Added page: {}",
                     self.site.pages[self.selected_page].head.title
                 );
+                self.push_toast(ToastLevel::Success, msg);
                 Some(ModalResult::CloseSuccess)
             }
             _ => Some(ModalResult::Continue),
@@ -2812,7 +2915,8 @@ impl App {
             if !page.slug_locked {
                 page.slug = crate::model::slug_from_title(trimmed);
             }
-            self.status = format!("Renamed page: {}", page.head.title);
+            let msg = format!("Renamed page: {}", page.head.title);
+            self.push_toast(ToastLevel::Success, msg);
         } else {
             self.status = "Page no longer exists.".to_string();
         }
@@ -2845,12 +2949,13 @@ impl App {
 
     fn commit_delete_page(&mut self) {
         if self.site.pages.len() <= 1 {
-            self.status = "Cannot delete last page.".to_string();
+            self.push_toast(ToastLevel::Warning, "Cannot delete last page.");
             return;
         }
         let idx = self.selected_page.min(self.site.pages.len() - 1);
         let removed = self.site.pages.remove(idx);
-        self.status = format!("Deleted page: {}", removed.head.title);
+        let msg = format!("Deleted page: {}", removed.head.title);
+        self.push_toast(ToastLevel::Success, msg);
         self.deleted_pages.push(removed);
         // Cap trash at 20 (oldest dropped).
         if self.deleted_pages.len() > 20 {
@@ -3052,6 +3157,7 @@ impl App {
             page_head_selected: false,
             deleted_pages: Vec::new(),
             pending_new_page_title: None,
+            toasts: Vec::new(),
             list_area: Rect::default(),
             details_area: Rect::default(),
             details_scroll_row: 0,
@@ -3099,6 +3205,7 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut ratatui::Frame) {
+        self.prune_toasts();
         self.multiline_value_area = None;
         let page = self.current_page();
         let root = Layout::default()
@@ -3834,6 +3941,10 @@ impl App {
         // Render unified modal if open (handles all modal types)
         self.render_modal(frame);
 
+        // Toasts paint last so they float above everything except the
+        // active-input cursor overlay.
+        self.render_toasts(frame, frame.area());
+
         let cursor_overlay = self.set_cursor_for_active_input(frame);
         if let Some((x, y, ch)) = cursor_overlay {
             let cursor_cell = Paragraph::new(ch.to_string()).style(
@@ -3961,7 +4072,7 @@ impl App {
             }
             KeyCode::Char('X') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 if self.site.pages.len() <= 1 {
-                    self.status = "Cannot delete last page.".to_string();
+                    self.push_toast(ToastLevel::Warning, "Cannot delete last page.");
                 } else {
                     let title = self.site.pages[self.selected_page].head.title.clone();
                     self.modal = Some(Modal::ConfirmPrompt {
@@ -3973,7 +4084,8 @@ impl App {
             }
             KeyCode::Char('u') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 if let Some(page) = self.deleted_pages.pop() {
-                    self.status = format!("Restored page: {}", page.head.title);
+                    let msg = format!("Restored page: {}", page.head.title);
+                    self.push_toast(ToastLevel::Success, msg);
                     self.site.pages.push(page);
                     self.selected_page = self.site.pages.len() - 1;
                     self.selected_node = 0;
@@ -3981,7 +4093,7 @@ impl App {
                     self.selected_component = 0;
                     self.selected_nested_item = 0;
                 } else {
-                    self.status = "No deleted pages to restore.".to_string();
+                    self.push_toast(ToastLevel::Warning, "No deleted pages to restore.");
                 }
                 true
             }
@@ -3990,7 +4102,7 @@ impl App {
                 if idx + 1 < self.site.pages.len() {
                     self.site.pages.swap(idx, idx + 1);
                     self.selected_page = idx + 1;
-                    self.status = "Moved page down.".to_string();
+                    self.push_toast(ToastLevel::Success, "Moved page down.");
                 }
                 true
             }
@@ -3999,7 +4111,7 @@ impl App {
                 if idx > 0 {
                     self.site.pages.swap(idx, idx - 1);
                     self.selected_page = idx - 1;
-                    self.status = "Moved page up.".to_string();
+                    self.push_toast(ToastLevel::Success, "Moved page up.");
                 }
                 true
             }
@@ -5416,7 +5528,8 @@ impl App {
         };
 
         if saved {
-            self.status = format!("Saved {} changes.", modal.title);
+            let msg = format!("Saved {} changes.", modal.title);
+            self.push_toast(ToastLevel::Success, msg);
         }
     }
 
@@ -6152,7 +6265,8 @@ impl App {
         self.path = Some(path.clone());
         self.save_prompt_open = false;
         self.save_input.clear();
-        self.status = format!("Saved {}", path.display());
+        let msg = format!("Saved {}", path.display());
+        self.push_toast(ToastLevel::Success, msg);
         Ok(())
     }
 
@@ -9585,9 +9699,8 @@ impl App {
     fn open_validation_modal(&mut self) {
         let errors = crate::validate::validate_site(&self.site);
         if errors.is_empty() {
-            self.status = "No validation errors.".to_string();
+            self.push_toast(ToastLevel::Success, "No validation errors.");
         } else {
-            self.status = format!("Validation: {} error(s).", errors.len());
             self.modal = Some(Modal::ValidationErrors {
                 errors,
                 scroll_offset: 0,
@@ -17693,7 +17806,9 @@ mod tests {
         send_key(&mut app, KeyCode::Char('X'), KeyModifiers::SHIFT);
         assert!(app.modal.is_none(), "no confirm modal should open");
         assert_eq!(app.site.pages.len(), 1, "page must not be deleted");
-        assert!(app.status.to_lowercase().contains("cannot delete"));
+        let last = app.toasts.last().expect("expected a warning toast");
+        assert_eq!(last.level, ToastLevel::Warning);
+        assert!(last.message.to_lowercase().contains("cannot delete"));
     }
 
     #[test]
@@ -17761,9 +17876,11 @@ mod tests {
         app.selected_sidebar_section = SidebarSection::Pages;
         send_key(&mut app, KeyCode::Char('u'), KeyModifiers::NONE);
         assert_eq!(app.site.pages.len(), 1);
+        let last = app.toasts.last().expect("expected a warning toast");
+        assert_eq!(last.level, ToastLevel::Warning);
         assert!(
-            app.status.to_lowercase().contains("nothing to restore")
-                || app.status.to_lowercase().contains("no deleted")
+            last.message.to_lowercase().contains("nothing to restore")
+                || last.message.to_lowercase().contains("no deleted")
         );
     }
 
@@ -17974,17 +18091,19 @@ mod tests {
     }
 
     #[test]
-    fn open_validation_modal_on_clean_starter_sets_status_and_no_modal() {
+    fn open_validation_modal_on_clean_starter_pushes_success_toast_and_no_modal() {
         let mut app = App::new(Site::starter(), None, AppTheme::default());
         app.open_validation_modal();
         assert!(
             app.modal.is_none(),
             "no modal should open when validation is clean"
         );
+        let last = app.toasts.last().expect("expected a success toast");
+        assert_eq!(last.level, ToastLevel::Success);
         assert!(
-            app.status.to_lowercase().contains("no validation errors"),
-            "status should confirm clean validation, got: {:?}",
-            app.status
+            last.message.to_lowercase().contains("no validation errors"),
+            "expected clean-validation toast, got: {:?}",
+            last.message
         );
     }
 
@@ -18012,11 +18131,13 @@ mod tests {
     }
 
     #[test]
-    fn f3_on_clean_starter_shows_no_error_status() {
+    fn f3_on_clean_starter_pushes_success_toast() {
         let mut app = App::new(Site::starter(), None, AppTheme::default());
         send_key(&mut app, KeyCode::F(3), KeyModifiers::NONE);
         assert!(app.modal.is_none());
-        assert!(app.status.to_lowercase().contains("no validation errors"));
+        let last = app.toasts.last().expect("expected a success toast");
+        assert_eq!(last.level, ToastLevel::Success);
+        assert!(last.message.to_lowercase().contains("no validation errors"));
     }
 
     #[test]
