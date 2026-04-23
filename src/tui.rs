@@ -168,6 +168,11 @@ enum Modal {
         message: String,
         on_confirm: ConfirmKind,
     },
+    /// Scrollable list of validation errors.
+    ValidationErrors {
+        errors: Vec<String>,
+        scroll_offset: usize,
+    },
     /// Unified form editor: all fields of a component rendered together,
     /// Tab moves between fields, Left/Right cycles enums, Ctrl+S saves via
     /// `cursor::apply_edit_form_to_component`.
@@ -687,6 +692,9 @@ impl App {
             }
             Modal::ConfirmPrompt { message, .. } => {
                 self.render_confirm_prompt(frame, message);
+            }
+            Modal::ValidationErrors { errors, scroll_offset } => {
+                self.render_validation_errors_modal(frame, errors, *scroll_offset);
             }
         }
     }
@@ -1702,6 +1710,156 @@ impl App {
         frame.render_widget(prompt, inner);
     }
 
+    fn render_validation_errors_modal(
+        &self,
+        frame: &mut ratatui::Frame,
+        errors: &[String],
+        scroll_offset: usize,
+    ) {
+        let area = centered_rect(70, 60, frame.area());
+        frame.render_widget(Clear, area);
+
+        let outer_title = format!(" Validation — {} error(s) ", errors.len());
+        let modal_block = Block::default()
+            .title(outer_title)
+            .borders(Borders::ALL)
+            .style(Style::default().bg(self.theme.popup_background))
+            .border_style(Style::default().fg(self.theme.border_active))
+            .title_style(
+                Style::default()
+                    .fg(self.theme.title)
+                    .add_modifier(Modifier::BOLD),
+            );
+        frame.render_widget(modal_block.clone(), area);
+        let inner = modal_block.inner(area);
+
+        if inner.width < 4 || inner.height < 3 {
+            return;
+        }
+
+        let padding_x: u16 = 2;
+        let content_x = inner.x + padding_x;
+        let content_w = inner.width.saturating_sub(padding_x * 2);
+        let footer_height: u16 = 1;
+        let list_height = inner.height.saturating_sub(footer_height);
+
+        let wrapped_lines = self.wrap_validation_lines(errors, content_w as usize);
+        let visible: Vec<String> = wrapped_lines
+            .iter()
+            .skip(scroll_offset)
+            .take(list_height as usize)
+            .cloned()
+            .collect();
+
+        let body = Paragraph::new(visible.join("\n")).style(
+            Style::default()
+                .fg(self.theme.foreground)
+                .bg(self.theme.popup_background),
+        );
+        frame.render_widget(
+            body,
+            Rect {
+                x: content_x,
+                y: inner.y,
+                width: content_w,
+                height: list_height,
+            },
+        );
+
+        let footer_y = inner.y + inner.height.saturating_sub(footer_height);
+        let footer_area = Rect {
+            x: content_x,
+            y: footer_y,
+            width: content_w,
+            height: 1,
+        };
+        let footer_text = if wrapped_lines.len() > list_height as usize {
+            "j / k or \u{2191} / \u{2193} to scroll  |  Enter or Esc to dismiss"
+        } else {
+            "Enter or Esc to dismiss"
+        };
+        let footer = Paragraph::new(footer_text).style(
+            Style::default()
+                .fg(self.theme.muted)
+                .bg(self.theme.popup_background),
+        );
+        frame.render_widget(footer, footer_area);
+    }
+
+    /// Turn raw validator messages into a numbered, pre-wrapped list. Each
+    /// input entry becomes one or more output rows depending on `width`.
+    fn wrap_validation_lines(&self, errors: &[String], width: usize) -> Vec<String> {
+        let mut out = Vec::with_capacity(errors.len());
+        for (i, err) in errors.iter().enumerate() {
+            let prefix = format!("{}. ", i + 1);
+            let indent = " ".repeat(prefix.len());
+            let body_w = width.saturating_sub(prefix.len()).max(1);
+            let mut first = true;
+            let mut remaining = err.as_str();
+            while !remaining.is_empty() {
+                let take = remaining.chars().take(body_w).count();
+                let split_byte = remaining
+                    .char_indices()
+                    .nth(take)
+                    .map(|(i, _)| i)
+                    .unwrap_or(remaining.len());
+                let (chunk, rest) = remaining.split_at(split_byte);
+                let line = if first {
+                    format!("{}{}", prefix, chunk)
+                } else {
+                    format!("{}{}", indent, chunk)
+                };
+                out.push(line);
+                remaining = rest;
+                first = false;
+            }
+        }
+        out
+    }
+
+    fn handle_validation_errors_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
+        use crossterm::event::KeyCode;
+        let (errors_len, scroll) = match &self.modal {
+            Some(Modal::ValidationErrors { errors, scroll_offset }) => {
+                (errors.len(), *scroll_offset)
+            }
+            _ => return Some(ModalResult::CloseCancel),
+        };
+        match key.code {
+            KeyCode::Enter | KeyCode::Esc => {
+                self.modal = None;
+                Some(ModalResult::CloseSuccess)
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(Modal::ValidationErrors { scroll_offset, .. }) = self.modal.as_mut() {
+                    *scroll_offset = scroll_offset.saturating_sub(1);
+                }
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(Modal::ValidationErrors { scroll_offset, .. }) = self.modal.as_mut() {
+                    if scroll + 1 < errors_len.max(1) {
+                        *scroll_offset += 1;
+                    }
+                }
+                Some(ModalResult::Continue)
+            }
+            KeyCode::PageUp => {
+                if let Some(Modal::ValidationErrors { scroll_offset, .. }) = self.modal.as_mut() {
+                    *scroll_offset = scroll_offset.saturating_sub(5);
+                }
+                Some(ModalResult::Continue)
+            }
+            KeyCode::PageDown => {
+                if let Some(Modal::ValidationErrors { scroll_offset, .. }) = self.modal.as_mut() {
+                    *scroll_offset = (scroll + 5).min(errors_len.saturating_sub(1));
+                }
+                Some(ModalResult::Continue)
+            }
+            _ => Some(ModalResult::Continue),
+        }
+    }
+
     /// Unified single field renderer (legacy mode)
     fn render_single_field_unified(
         &self,
@@ -1784,6 +1942,7 @@ impl App {
                     return self.handle_rename_page_prompt_event(key)
                 }
                 Modal::ConfirmPrompt { .. } => return self.handle_confirm_prompt_event(key),
+                Modal::ValidationErrors { .. } => return self.handle_validation_errors_event(key),
             }
         }
 
@@ -17808,6 +17967,7 @@ impl Modal {
             Modal::NewPageTitlePrompt { .. } => "NewPageTitlePrompt",
             Modal::RenamePagePrompt { .. } => "RenamePagePrompt",
             Modal::ConfirmPrompt { .. } => "ConfirmPrompt",
+            Modal::ValidationErrors { .. } => "ValidationErrors",
         }
     }
 }
