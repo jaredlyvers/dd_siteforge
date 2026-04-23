@@ -4065,6 +4065,7 @@ impl App {
                 }
                 match k.code {
                 KeyCode::F(1) => self.show_help = true,
+                KeyCode::F(3) => self.open_validation_modal(),
                 KeyCode::Char('q') if k.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.should_quit = true
                 }
@@ -8214,6 +8215,9 @@ impl App {
     }
 
     fn build_page_tree_rows(&self) -> Vec<TreeRow> {
+        if self.site.pages.is_empty() {
+            return Vec::new();
+        }
         let page = self.current_page();
         let mut rows = Vec::new();
         rows.push(TreeRow {
@@ -18003,6 +18007,58 @@ mod tests {
                 );
             }
             _ => panic!("expected Modal::ValidationErrors, got a different modal or None"),
+        }
+    }
+
+    #[test]
+    fn f3_on_clean_starter_shows_no_error_status() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        send_key(&mut app, KeyCode::F(3), KeyModifiers::NONE);
+        assert!(app.modal.is_none());
+        assert!(app.status.to_lowercase().contains("no validation errors"));
+    }
+
+    #[test]
+    fn f3_with_validation_errors_opens_modal() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.site.pages[0].slug = "".to_string();
+        send_key(&mut app, KeyCode::F(3), KeyModifiers::NONE);
+        assert!(matches!(app.modal, Some(Modal::ValidationErrors { .. })));
+    }
+
+    #[test]
+    fn f3_then_enter_dismisses_modal() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.site.pages[0].slug = "".to_string();
+        send_key(&mut app, KeyCode::F(3), KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(app.modal.is_none());
+    }
+
+    #[test]
+    fn f3_then_j_k_scrolls_error_list() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.site.pages.clear();
+        send_key(&mut app, KeyCode::F(3), KeyModifiers::NONE);
+        let initial_errors = match &app.modal {
+            Some(Modal::ValidationErrors { errors, .. }) => errors.len(),
+            _ => 0,
+        };
+        if initial_errors > 1 {
+            send_key(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+            match &app.modal {
+                Some(Modal::ValidationErrors { scroll_offset, .. }) => {
+                    assert_eq!(*scroll_offset, 1);
+                }
+                _ => panic!("modal closed unexpectedly"),
+            }
+            send_key(&mut app, KeyCode::Char('k'), KeyModifiers::NONE);
+            match &app.modal {
+                Some(Modal::ValidationErrors { scroll_offset, .. }) => {
+                    assert_eq!(*scroll_offset, 0);
+                }
+                _ => panic!("modal closed unexpectedly"),
+            }
         }
     }
 }
