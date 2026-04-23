@@ -3271,6 +3271,13 @@ impl App {
         }
     }
 
+    /// Try to handle a key as a Pages-panel-scoped action.
+    /// Returns `true` if the key was consumed — caller should short-circuit.
+    /// Future tasks populate this; today it always returns false.
+    fn try_handle_pages_panel_key(&mut self, _key: &event::KeyEvent) -> bool {
+        false
+    }
+
     fn handle_event(&mut self, evt: Event) -> anyhow::Result<()> {
         // Unified modal handling - takes priority over legacy modals
         if let Some(modal_result) = self.handle_modal_event(evt.clone()) {
@@ -3307,7 +3314,14 @@ impl App {
             return self.handle_input_mode(evt);
         }
         match evt {
-            Event::Key(k) => match k.code {
+            Event::Key(k) => {
+                if self.selected_sidebar_section == SidebarSection::Pages
+                    && self.try_handle_pages_panel_key(&k)
+                {
+                    self.sync_tree_row_with_selection();
+                    return Ok(());
+                }
+                match k.code {
                 KeyCode::F(1) => self.show_help = true,
                 KeyCode::Char('q') if k.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.should_quit = true
@@ -3358,6 +3372,7 @@ impl App {
                     self.status = "Details panel active.".to_string();
                 }
                 _ => {}
+                }
             },
             Event::Mouse(m) => match m.kind {
                 MouseEventKind::ScrollUp => {
