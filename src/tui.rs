@@ -1516,85 +1516,116 @@ impl App {
     }
 
     fn render_new_page_title_prompt(&self, frame: &mut ratatui::Frame, title: &str) {
-        let config = ModalConfig {
-            width_percent: 70,
-            height_percent: 35,
-            show_scrollbar: false,
-            footer_text: "Enter to continue, Esc to cancel".to_string(),
-        };
-
-        let area = centered_rect(config.width_percent, config.height_percent, frame.area());
-        frame.render_widget(Clear, area);
-
-        let modal_block = Block::default()
-            .title(" New page — title ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(self.theme.border_active))
-            .title_style(
-                Style::default()
-                    .fg(self.theme.title)
-                    .add_modifier(Modifier::BOLD),
-            );
-
-        frame.render_widget(modal_block.clone(), area);
-        let inner = modal_block.inner(area);
-
-        let content = format!("Page title:\n{}\n\n{}", title, config.footer_text);
-        let prompt = Paragraph::new(content).style(
-            Style::default()
-                .fg(self.theme.foreground)
-                .bg(self.theme.popup_background),
+        self.render_single_input_modal(
+            frame,
+            " New page — title ",
+            "Title",
+            title,
+            "Enter or Ctrl+S: continue  |  Esc: cancel",
         );
-
-        frame.render_widget(prompt, inner);
-
-        let inner_width = inner.width.saturating_sub(1) as usize;
-        let cursor_x = inner
-            .x
-            .saturating_add(title.chars().count().min(inner_width) as u16);
-        let cursor_y = inner.y.saturating_add(1);
-        frame.set_cursor_position((cursor_x, cursor_y));
     }
 
     fn render_rename_page_prompt(&self, frame: &mut ratatui::Frame, title: &str, _page_idx: usize) {
-        let config = ModalConfig {
-            width_percent: 70,
-            height_percent: 35,
-            show_scrollbar: false,
-            footer_text: "Enter to save, Esc to cancel".to_string(),
-        };
+        self.render_single_input_modal(
+            frame,
+            " Rename page ",
+            "Title",
+            title,
+            "Enter or Ctrl+S: save  |  Esc: cancel",
+        );
+    }
 
-        let area = centered_rect(config.width_percent, config.height_percent, frame.area());
+    /// Shared single-text-field modal matching the unified edit-modal look:
+    /// outer bordered block with solid popup background, a label row, a
+    /// 1px-bordered input box holding `value`, cursor inside the input box,
+    /// and a footer hint line at the bottom.
+    fn render_single_input_modal(
+        &self,
+        frame: &mut ratatui::Frame,
+        outer_title: &str,
+        label: &str,
+        value: &str,
+        footer_text: &str,
+    ) {
+        let area = centered_rect(60, 30, frame.area());
         frame.render_widget(Clear, area);
 
         let modal_block = Block::default()
-            .title(" Rename page ")
+            .title(outer_title.to_string())
             .borders(Borders::ALL)
+            .style(Style::default().bg(self.theme.popup_background))
             .border_style(Style::default().fg(self.theme.border_active))
             .title_style(
                 Style::default()
                     .fg(self.theme.title)
                     .add_modifier(Modifier::BOLD),
             );
-
         frame.render_widget(modal_block.clone(), area);
         let inner = modal_block.inner(area);
 
-        let content = format!("Page title:\n{}\n\n{}", title, config.footer_text);
-        let prompt = Paragraph::new(content).style(
+        if inner.width < 6 || inner.height < 6 {
+            return;
+        }
+
+        let padding_x: u16 = 2;
+        let content_x = inner.x + padding_x;
+        let content_w = inner.width.saturating_sub(padding_x * 2);
+
+        // Label row
+        let label_area = Rect {
+            x: content_x,
+            y: inner.y + 1,
+            width: content_w,
+            height: 1,
+        };
+        let label_para = Paragraph::new(format!("{}:", label)).style(
             Style::default()
-                .fg(self.theme.foreground)
+                .fg(self.theme.text_labels)
                 .bg(self.theme.popup_background),
         );
+        frame.render_widget(label_para, label_area);
 
-        frame.render_widget(prompt, inner);
+        // Bordered input box (3 rows tall: border + content + border)
+        let input_area = Rect {
+            x: content_x,
+            y: inner.y + 2,
+            width: content_w,
+            height: 3,
+        };
+        let input = Paragraph::new(value)
+            .style(
+                Style::default()
+                    .fg(self.theme.input_text_focus)
+                    .bg(self.theme.popup_background),
+            )
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .style(Style::default().bg(self.theme.popup_background))
+                    .border_style(Style::default().fg(self.theme.input_border_focus)),
+            );
+        frame.render_widget(input, input_area);
 
-        let inner_width = inner.width.saturating_sub(1) as usize;
-        let cursor_x = inner
-            .x
-            .saturating_add(title.chars().count().min(inner_width) as u16);
-        let cursor_y = inner.y.saturating_add(1);
+        // Cursor inside the input box (one row below top border, after last char)
+        let max_x = input_area.x + input_area.width.saturating_sub(2);
+        let cursor_x = (input_area.x + 1 + value.chars().count() as u16).min(max_x);
+        let cursor_y = input_area.y + 1;
         frame.set_cursor_position((cursor_x, cursor_y));
+
+        // Footer hint row at the bottom of inner
+        let footer_y = inner.y + inner.height.saturating_sub(2);
+        let footer_area = Rect {
+            x: content_x,
+            y: footer_y,
+            width: content_w,
+            height: 1,
+        };
+        let footer = Paragraph::new(footer_text).style(
+            Style::default()
+                .fg(self.theme.muted)
+                .bg(self.theme.popup_background),
+        );
+        frame.render_widget(footer, footer_area);
     }
 
     fn render_confirm_prompt(&self, frame: &mut ratatui::Frame, message: &str) {
@@ -2352,10 +2383,6 @@ impl App {
                         self.modal = Some(Modal::SavePrompt { path });
                         Some(ModalResult::Continue)
                     } else {
-                        // Lock slugs — once saved, slug edits require explicit user action (Task 12).
-                        for page in &mut self.site.pages {
-                            page.slug_locked = true;
-                        }
                         self.path = Some(path_buf.clone());
                         self.status = format!("Saved {}", path_buf.display());
                         Some(ModalResult::CloseSuccess)
@@ -2495,6 +2522,18 @@ impl App {
                     Some(ModalResult::Continue)
                 }
             }
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let trimmed = title.trim().to_string();
+                if trimmed.is_empty() {
+                    self.status = "Title required.".to_string();
+                    self.modal = Some(Modal::NewPageTitlePrompt { title });
+                    Some(ModalResult::Continue)
+                } else {
+                    self.pending_new_page_title = Some(trimmed);
+                    self.modal = Some(Modal::TemplatePicker { selected: 0 });
+                    Some(ModalResult::Continue)
+                }
+            }
             KeyCode::Backspace => {
                 let mut new_title = title;
                 new_title.pop();
@@ -2526,23 +2565,9 @@ impl App {
                 self.status = "Rename cancelled.".to_string();
                 Some(ModalResult::CloseCancel)
             }
-            KeyCode::Enter => {
-                let trimmed = title.trim();
-                if trimmed.is_empty() {
-                    self.status = "Title required.".to_string();
-                    return Some(ModalResult::Continue);
-                }
-                if let Some(page) = self.site.pages.get_mut(page_idx) {
-                    page.head.title = trimmed.to_string();
-                    if !page.slug_locked {
-                        page.slug = crate::model::slug_from_title(trimmed);
-                    }
-                    self.status = format!("Renamed page: {}", page.head.title);
-                } else {
-                    self.status = "Page no longer exists.".to_string();
-                }
-                self.modal = None;
-                Some(ModalResult::CloseSuccess)
+            KeyCode::Enter => self.commit_rename_page(title, page_idx),
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.commit_rename_page(title, page_idx)
             }
             KeyCode::Backspace => {
                 let mut new_title = title;
@@ -2564,6 +2589,29 @@ impl App {
             }
             _ => Some(ModalResult::Continue),
         }
+    }
+
+    /// Commit the rename modal's current title to the given page_idx.
+    /// Regenerates slug from title only when the page's slug is not locked.
+    /// Empty titles keep the modal open with a "Title required." status.
+    fn commit_rename_page(&mut self, title: String, page_idx: usize) -> Option<ModalResult> {
+        let trimmed = title.trim();
+        if trimmed.is_empty() {
+            self.status = "Title required.".to_string();
+            self.modal = Some(Modal::RenamePagePrompt { title, page_idx });
+            return Some(ModalResult::Continue);
+        }
+        if let Some(page) = self.site.pages.get_mut(page_idx) {
+            page.head.title = trimmed.to_string();
+            if !page.slug_locked {
+                page.slug = crate::model::slug_from_title(trimmed);
+            }
+            self.status = format!("Renamed page: {}", page.head.title);
+        } else {
+            self.status = "Page no longer exists.".to_string();
+        }
+        self.modal = None;
+        Some(ModalResult::CloseSuccess)
     }
 
     fn handle_confirm_prompt_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
@@ -5688,10 +5736,20 @@ impl App {
         let Some(page) = self.current_page_mut() else {
             return false;
         };
+        let orig_title = page.head.title.clone();
+        let orig_slug = page.slug.clone();
         for field in fields {
             match field.label.as_str() {
                 "Title" => page.head.title = field.value.clone(),
-                "Slug" => page.slug = field.value.clone(),
+                "Slug" => {
+                    let trimmed = field.value.trim();
+                    if !trimmed.is_empty() && trimmed != page.slug {
+                        page.slug = trimmed.to_string();
+                        // An explicit slug edit locks the slug so future
+                        // title renames stop auto-regenerating it.
+                        page.slug_locked = true;
+                    }
+                }
                 "Meta Description" => {
                     page.head.meta_description = if field.value.is_empty() {
                         None
@@ -5738,6 +5796,17 @@ impl App {
                     };
                 }
                 _ => {}
+            }
+        }
+        // If the user changed the Title but did not manually override the
+        // Slug (and it's not locked), regenerate the slug from the new title
+        // so the two stay in sync — same behavior as the `r` rename flow.
+        let title_changed = page.head.title != orig_title;
+        let slug_user_edited = page.slug != orig_slug;
+        if title_changed && !slug_user_edited && !page.slug_locked {
+            let derived = crate::model::slug_from_title(&page.head.title);
+            if !derived.is_empty() {
+                page.slug = derived;
             }
         }
         true
@@ -13209,15 +13278,21 @@ impl App {
     // First-pass stores items[] flat on the DdNavigation; editing of items (kind, label,
     // url, target, css) not yet exposed in the TUI - drop into JSON to edit.
     fn open_page_head_edit_modal(&mut self) {
-        let head = &self.site.pages[self.selected_page].head;
+        let page = &self.site.pages[self.selected_page];
+        let head = &page.head;
         let robots = robots_directive_to_str(head.robots).to_string();
         let schema = schema_type_to_str(head.schema_type).to_string();
         let meta = head.meta_description.clone().unwrap_or_default();
-        let canon = head.canonical_url.clone().unwrap_or_default();
+        // Default canonical URL to `/<slug>` when unset so authors can see
+        // and optionally override the computed canonical.
+        let canon = head
+            .canonical_url
+            .clone()
+            .unwrap_or_else(|| format!("/{}", page.slug));
+        let slug = page.slug.clone();
         let og_t = head.og_title.clone().unwrap_or_default();
         let og_d = head.og_description.clone().unwrap_or_default();
         let og_i = head.og_image.clone().unwrap_or_default();
-        let slug_locked = self.site.pages[self.selected_page].slug_locked;
         let mut fields = vec![
             EditField {
                 label: "Title".to_string(),
@@ -13284,17 +13359,19 @@ impl App {
                 rows: 1,
             },
         ];
-        if slug_locked {
-            let slug = self.site.pages[self.selected_page].slug.clone();
-            fields.insert(1, EditField {
+        // Always show Slug field immediately after Title. Editing it implicitly
+        // locks the slug so future title renames won't auto-regenerate it.
+        fields.insert(
+            1,
+            EditField {
                 label: "Slug".to_string(),
                 value: slug.clone(),
                 buffer: slug.clone(),
                 cursor: slug.len(),
                 is_multiline: false,
                 rows: 1,
-            });
-        }
+            },
+        );
         self.edit_modal = Some(EditModalState {
             title: "page-head".to_string(),
             fields,
@@ -17548,52 +17625,10 @@ mod tests {
     }
 
     #[test]
-    fn first_successful_save_locks_all_page_slugs() {
+    fn page_head_modal_always_shows_slug_field() {
         let mut app = App::new(Site::starter(), None, AppTheme::default());
-        app.site.pages.push(crate::model::Page::from_template(
-            "Contact",
-            crate::model::PageTemplate::Blank,
-        ));
+        // Unlocked starter still exposes the Slug field.
         assert!(!app.site.pages[0].slug_locked);
-        assert!(!app.site.pages[1].slug_locked);
-
-        let tmp = std::env::temp_dir().join(format!(
-            "dd_site_lock_test_{}.json",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        app.path = Some(tmp.clone());
-        app.modal = Some(Modal::SavePrompt {
-            path: tmp.to_string_lossy().to_string(),
-        });
-        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        std::fs::remove_file(&tmp).ok();
-
-        assert!(app.site.pages[0].slug_locked);
-        assert!(app.site.pages[1].slug_locked);
-    }
-
-    #[test]
-    fn page_head_modal_has_slug_field_only_when_locked() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
-
-        // Unlocked → no Slug field
-        app.open_page_head_edit_modal();
-        let fields = app
-            .edit_modal
-            .as_ref()
-            .map(|m| m.fields.clone())
-            .expect("expected page-head modal");
-        assert!(
-            !fields.iter().any(|f| f.label == "Slug"),
-            "slug field should not appear when slug_locked=false"
-        );
-        app.edit_modal = None;
-
-        // Locked → Slug field appears
-        app.site.pages[0].slug_locked = true;
         app.open_page_head_edit_modal();
         let fields = app
             .edit_modal
@@ -17603,17 +17638,15 @@ mod tests {
         let slug_field = fields
             .iter()
             .find(|f| f.label == "Slug")
-            .expect("Slug field should appear when slug_locked=true");
-        // Value pre-fills with the current slug.
+            .expect("Slug field should always appear");
         assert_eq!(slug_field.value, app.site.pages[0].slug);
     }
 
     #[test]
-    fn page_head_modal_save_writes_slug_when_slug_field_present() {
+    fn page_head_modal_save_writes_slug_and_locks_when_edited() {
         let mut app = App::new(Site::starter(), None, AppTheme::default());
-        app.site.pages[0].slug_locked = true;
+        assert!(!app.site.pages[0].slug_locked);
         app.open_page_head_edit_modal();
-        // Mutate the slug field's value + buffer to "new-slug"
         let modal = app.edit_modal.as_mut().unwrap();
         for f in modal.fields.iter_mut() {
             if f.label == "Slug" {
@@ -17625,6 +17658,66 @@ mod tests {
         let ok = app.save_page_head_changes(&fields);
         assert!(ok);
         assert_eq!(app.site.pages[0].slug, "new-slug");
+        assert!(
+            app.site.pages[0].slug_locked,
+            "editing the slug field must lock the slug"
+        );
+    }
+
+    #[test]
+    fn page_head_modal_save_leaves_slug_unchanged_when_user_did_not_edit_it() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let orig_slug = app.site.pages[0].slug.clone();
+        app.open_page_head_edit_modal();
+        let fields = app.edit_modal.as_ref().unwrap().fields.clone();
+        let ok = app.save_page_head_changes(&fields);
+        assert!(ok);
+        assert_eq!(app.site.pages[0].slug, orig_slug);
+        assert!(!app.site.pages[0].slug_locked, "no slug edit means no lock");
+    }
+
+    #[test]
+    fn page_head_modal_default_canonical_is_slug_path() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        // Starter page has no canonical_url set.
+        assert!(app.site.pages[0].head.canonical_url.is_none());
+        app.open_page_head_edit_modal();
+        let canon_field = app
+            .edit_modal
+            .as_ref()
+            .unwrap()
+            .fields
+            .iter()
+            .find(|f| f.label == "Canonical URL")
+            .cloned()
+            .expect("Canonical URL field should exist");
+        assert_eq!(
+            canon_field.value,
+            format!("/{}", app.site.pages[0].slug),
+            "canonical should default to /<slug> when unset"
+        );
+    }
+
+    #[test]
+    fn page_head_title_rename_regens_slug_when_unlocked() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        assert!(!app.site.pages[0].slug_locked);
+        app.open_page_head_edit_modal();
+        let modal = app.edit_modal.as_mut().unwrap();
+        for f in modal.fields.iter_mut() {
+            if f.label == "Title" {
+                f.value = "About Us".to_string();
+                f.buffer = "About Us".to_string();
+            }
+        }
+        let fields = modal.fields.clone();
+        let ok = app.save_page_head_changes(&fields);
+        assert!(ok);
+        assert_eq!(app.site.pages[0].head.title, "About Us");
+        assert_eq!(
+            app.site.pages[0].slug, "about-us",
+            "slug should regenerate from title when unlocked"
+        );
     }
 }
 
