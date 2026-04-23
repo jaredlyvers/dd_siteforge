@@ -16604,6 +16604,7 @@ fn help_text() -> String {
     [
         "Global:",
         "  F1: Open/close this help",
+        "  F3: Validate site (shows errors in a modal)",
         "  Ctrl+Q: Quit",
         "  s: Open save modal and enter file path",
         "  Tab / Shift+Tab: Next/previous page",
