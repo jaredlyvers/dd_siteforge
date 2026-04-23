@@ -158,6 +158,11 @@ enum Modal {
     NewPageTitlePrompt {
         title: String,
     },
+    /// Generic yes/no confirmation prompt.
+    ConfirmPrompt {
+        message: String,
+        on_confirm: ConfirmKind,
+    },
     /// Unified form editor: all fields of a component rendered together,
     /// Tab moves between fields, Left/Right cycles enums, Ctrl+S saves via
     /// `cursor::apply_edit_form_to_component`.
@@ -194,6 +199,12 @@ enum ModalResult {
     CloseSuccess,
     /// Close modal with cancel
     CloseCancel,
+}
+
+/// The action to execute when a ConfirmPrompt is confirmed.
+#[derive(Debug, Clone)]
+enum ConfirmKind {
+    DeletePage,
 }
 
 /// Unified modal configuration
@@ -665,6 +676,9 @@ impl App {
             }
             Modal::NewPageTitlePrompt { title } => {
                 self.render_new_page_title_prompt(frame, title);
+            }
+            Modal::ConfirmPrompt { message, .. } => {
+                self.render_confirm_prompt(frame, message);
             }
         }
     }
@@ -1527,6 +1541,33 @@ impl App {
         frame.render_widget(prompt, inner);
     }
 
+    fn render_confirm_prompt(&self, frame: &mut ratatui::Frame, message: &str) {
+        let area = centered_rect(70, 35, frame.area());
+        frame.render_widget(Clear, area);
+
+        let modal_block = Block::default()
+            .title(" Confirm ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(self.theme.border_active))
+            .title_style(
+                Style::default()
+                    .fg(self.theme.title)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        frame.render_widget(modal_block.clone(), area);
+        let inner = modal_block.inner(area);
+
+        let content = format!("{}\n\ny = confirm, n / Esc = cancel", message);
+        let prompt = Paragraph::new(content).style(
+            Style::default()
+                .fg(self.theme.foreground)
+                .bg(self.theme.popup_background),
+        );
+
+        frame.render_widget(prompt, inner);
+    }
+
     /// Unified single field renderer (legacy mode)
     fn render_single_field_unified(
         &self,
@@ -1605,6 +1646,7 @@ impl App {
                 Modal::NewPageTitlePrompt { .. } => {
                     return self.handle_new_page_title_prompt_event(key)
                 }
+                Modal::ConfirmPrompt { .. } => return self.handle_confirm_prompt_event(key),
             }
         }
 
@@ -2407,6 +2449,49 @@ impl App {
                 Some(ModalResult::Continue)
             }
         }
+    }
+
+    fn handle_confirm_prompt_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
+        use crossterm::event::KeyCode;
+        let kind = match &self.modal {
+            Some(Modal::ConfirmPrompt { on_confirm, .. }) => on_confirm.clone(),
+            _ => return Some(ModalResult::CloseCancel),
+        };
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                match kind {
+                    ConfirmKind::DeletePage => self.commit_delete_page(),
+                }
+                self.modal = None;
+                Some(ModalResult::CloseSuccess)
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                self.modal = None;
+                self.status = "Cancelled.".to_string();
+                Some(ModalResult::CloseCancel)
+            }
+            _ => Some(ModalResult::Continue),
+        }
+    }
+
+    fn commit_delete_page(&mut self) {
+        if self.site.pages.len() <= 1 {
+            self.status = "Cannot delete last page.".to_string();
+            return;
+        }
+        let idx = self.selected_page.min(self.site.pages.len() - 1);
+        let removed = self.site.pages.remove(idx);
+        self.status = format!("Deleted page: {}", removed.head.title);
+        self.deleted_pages.push(removed);
+        // Cap trash at 20 (oldest dropped).
+        if self.deleted_pages.len() > 20 {
+            self.deleted_pages.remove(0);
+        }
+        self.selected_page = idx.min(self.site.pages.len() - 1);
+        self.selected_node = 0;
+        self.selected_column = 0;
+        self.selected_component = 0;
+        self.selected_nested_item = 0;
     }
 
     fn handle_single_field_event_unified(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
@@ -3503,6 +3588,18 @@ impl App {
                     title: String::new(),
                 });
                 self.status = "New page: type a title, Enter to continue.".to_string();
+                true
+            }
+            KeyCode::Char('X') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if self.site.pages.len() <= 1 {
+                    self.status = "Cannot delete last page.".to_string();
+                } else {
+                    let title = self.site.pages[self.selected_page].head.title.clone();
+                    self.modal = Some(Modal::ConfirmPrompt {
+                        message: format!("Delete \"{}\"? y/n", title),
+                        on_confirm: ConfirmKind::DeletePage,
+                    });
+                }
                 true
             }
             _ => false,
@@ -17136,6 +17233,55 @@ mod tests {
         // The starter page keeps its id.
         assert_eq!(app.site.pages[0].id, "page-home");
     }
+
+    #[test]
+    fn pages_panel_shift_x_on_last_page_refuses_delete() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+        assert_eq!(app.site.pages.len(), 1);
+
+        send_key(&mut app, KeyCode::Char('X'), KeyModifiers::SHIFT);
+        assert!(app.modal.is_none(), "no confirm modal should open");
+        assert_eq!(app.site.pages.len(), 1, "page must not be deleted");
+        assert!(app.status.to_lowercase().contains("cannot delete"));
+    }
+
+    #[test]
+    fn pages_panel_shift_x_prompts_then_y_deletes_and_pushes_trash() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+        app.site.pages.push(crate::model::Page::from_template(
+            "Contact",
+            crate::model::PageTemplate::Blank,
+        ));
+        app.selected_page = 1;
+
+        send_key(&mut app, KeyCode::Char('X'), KeyModifiers::SHIFT);
+        assert!(matches!(app.modal, Some(Modal::ConfirmPrompt { .. })));
+
+        send_key(&mut app, KeyCode::Char('y'), KeyModifiers::NONE);
+        assert_eq!(app.site.pages.len(), 1);
+        assert_eq!(app.deleted_pages.len(), 1);
+        assert_eq!(app.deleted_pages[0].head.title, "Contact");
+        assert_eq!(app.selected_page, 0);
+    }
+
+    #[test]
+    fn pages_panel_shift_x_prompts_then_n_cancels() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+        app.site.pages.push(crate::model::Page::from_template(
+            "Contact",
+            crate::model::PageTemplate::Blank,
+        ));
+        app.selected_page = 1;
+
+        send_key(&mut app, KeyCode::Char('X'), KeyModifiers::SHIFT);
+        send_key(&mut app, KeyCode::Char('n'), KeyModifiers::NONE);
+        assert!(app.modal.is_none());
+        assert_eq!(app.site.pages.len(), 2);
+        assert!(app.deleted_pages.is_empty());
+    }
 }
 
 impl Modal {
@@ -17149,6 +17295,7 @@ impl Modal {
             Modal::FormEdit { .. } => "FormEdit",
             Modal::TemplatePicker { .. } => "TemplatePicker",
             Modal::NewPageTitlePrompt { .. } => "NewPageTitlePrompt",
+            Modal::ConfirmPrompt { .. } => "ConfirmPrompt",
         }
     }
 }
