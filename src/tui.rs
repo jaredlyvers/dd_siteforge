@@ -82,6 +82,11 @@ struct App {
     selected_header_section: usize,
     selected_header_column: usize,
     selected_header_component: usize,
+    /// True when the `[HEAD]` row is the active tree selection. Needed
+    /// because page-head has no `selected_*` index of its own; without this
+    /// flag, `sync_tree_row_with_selection` would always fall back to the
+    /// first Hero/Section row and make `[HEAD]` unreachable via j/k.
+    page_head_selected: bool,
     list_area: Rect,
     details_area: Rect,
     details_scroll_row: usize,
@@ -161,6 +166,7 @@ enum Modal {
 struct DrillFrame {
     parent_state: editform::EditFormState,
     parent_cursor_pos: usize,
+    parent_scroll_offset: u16,
     subform_field_id: String,
     item_idx: usize,
 }
@@ -413,6 +419,10 @@ struct AppTheme {
     warning: Color,
     error: Color,
     info: Color,
+    // File-role colors (THEME_STRUCTURE_STANDARD.md section 8)
+    folders: Color,
+    files: Color,
+    links: Color,
     // Backwards-compat aliases (used by older code paths that haven't been
     // migrated to the split border/text inputs yet).
     input_default: Color,
@@ -1546,7 +1556,7 @@ impl App {
                         cursor,
                         cursor_pos: frame.parent_cursor_pos,
                         drill_stack,
-                        scroll_offset: 0,
+                        scroll_offset: frame.parent_scroll_offset,
                     });
                     return Some(ModalResult::Continue);
                 }
@@ -1589,7 +1599,7 @@ impl App {
                         cursor,
                         cursor_pos: frame.parent_cursor_pos,
                         drill_stack,
-                        scroll_offset: 0,
+                        scroll_offset: frame.parent_scroll_offset,
                     });
                     return Some(ModalResult::Continue);
                 }
@@ -1679,7 +1689,7 @@ impl App {
                     }
                     return Some(ModalResult::Continue);
                 }
-                KeyCode::Up => {
+                KeyCode::Up | KeyCode::Char('k') => {
                     let selected = state
                         .selected_sub_item
                         .get(field_id)
@@ -1707,7 +1717,7 @@ impl App {
                     }
                     return Some(ModalResult::Continue);
                 }
-                KeyCode::Down => {
+                KeyCode::Down | KeyCode::Char('j') => {
                     let selected = state
                         .selected_sub_item
                         .get(field_id)
@@ -1738,7 +1748,7 @@ impl App {
                         cursor,
                         cursor_pos,
                         mut drill_stack,
-                        scroll_offset: _,
+                        scroll_offset,
                     }) = taken
                     {
                         let selected = state
@@ -1770,6 +1780,7 @@ impl App {
                             drill_stack.push(DrillFrame {
                                 parent_state: state,
                                 parent_cursor_pos: cursor_pos,
+                                parent_scroll_offset: scroll_offset,
                                 subform_field_id: field_id.to_string(),
                                 item_idx: selected,
                             });
@@ -1788,7 +1799,7 @@ impl App {
                                 cursor,
                                 cursor_pos,
                                 drill_stack,
-                                scroll_offset: 0,
+                                scroll_offset,
                             });
                         }
                     }
@@ -2361,6 +2372,7 @@ impl App {
             selected_header_section: 0,
             selected_header_column: 0,
             selected_header_component: 0,
+            page_head_selected: false,
             list_area: Rect::default(),
             details_area: Rect::default(),
             details_scroll_row: 0,
@@ -2525,7 +2537,13 @@ impl App {
             .enumerate()
             .map(|(idx, page)| {
                 let num = format!("{:02}", idx + 1);
-                let label = format!("{} {}", num, page.slug);
+                let title = page.head.title.trim();
+                let label_body = if title.is_empty() {
+                    page.slug.as_str()
+                } else {
+                    title
+                };
+                let label = format!("{} {}", num, label_body);
                 let style = if idx == self.selected_page {
                     Style::default()
                         .fg(self.theme.selected_foreground)
@@ -3307,14 +3325,12 @@ impl App {
                 KeyCode::Char('s') => self.begin_save_prompt(),
                 KeyCode::Char('/') => self.open_component_picker(),
                 KeyCode::Char('d') => self.delete_selected_node(),
-                KeyCode::Char('J') => self.move_selected_down(),
-                KeyCode::Char('K') => self.move_selected_up(),
+                KeyCode::Char('J') => self.move_selected_column_down(),
+                KeyCode::Char('K') => self.move_selected_column_up(),
                 KeyCode::Char('C') => self.add_column(),
                 KeyCode::Char('V') => self.remove_selected_column(),
                 KeyCode::Char('c') => self.select_prev_column(),
                 KeyCode::Char('v') => self.select_next_column(),
-                KeyCode::Char('(') => self.move_selected_column_up(),
-                KeyCode::Char(')') => self.move_selected_column_down(),
                 KeyCode::Char('r') => self.begin_edit_selected_column_id(),
                 KeyCode::Char('f') => self.begin_edit_selected_column_width_class(),
                 KeyCode::Char('A') => self.add_selected_collection_item(),
@@ -7973,6 +7989,7 @@ impl App {
     }
 
     fn apply_tree_row_selection(&mut self, row: TreeRow) {
+        self.page_head_selected = matches!(row.kind, TreeRowKind::PageHead);
         match row.kind {
             TreeRowKind::HeaderRoot { .. } => {
                 self.selected_header_section = 0;
@@ -8158,8 +8175,12 @@ impl App {
                     && column_idx == self.selected_header_column
                     && component_idx == self.selected_header_component
             }
-            TreeRowKind::Hero { node_idx } => node_idx == self.selected_node,
-            TreeRowKind::Section { node_idx } => node_idx == self.selected_node,
+            TreeRowKind::Hero { node_idx } => {
+                !self.page_head_selected && node_idx == self.selected_node
+            }
+            TreeRowKind::Section { node_idx } => {
+                !self.page_head_selected && node_idx == self.selected_node
+            }
             TreeRowKind::Column {
                 node_idx,
                 column_idx,
@@ -8260,7 +8281,7 @@ impl App {
                     && column_idx == self.selected_header_column
                     && component_idx == self.selected_header_component
             }
-            TreeRowKind::PageHead => false,
+            TreeRowKind::PageHead => self.page_head_selected,
         };
 
         if let Some(current) = rows.get(self.selected_tree_row) {
@@ -12577,6 +12598,7 @@ impl App {
             }
             section.columns.swap(ci, ci - 1);
             self.selected_header_column = ci - 1;
+            self.snap_tree_row_to_header_column(section_idx, ci - 1);
             self.status = "Moved header column up.".to_string();
             return;
         }
@@ -12612,6 +12634,7 @@ impl App {
             self.selected_column = next_selected_column;
             self.selected_component = 0;
             self.selected_nested_item = 0;
+            self.snap_tree_row_to_column(ni, next_selected_column);
         }
         self.status = result.1;
     }
@@ -12639,6 +12662,7 @@ impl App {
             }
             section.columns.swap(ci, ci + 1);
             self.selected_header_column = ci + 1;
+            self.snap_tree_row_to_header_column(section_idx, ci + 1);
             self.status = "Moved header column down.".to_string();
             return;
         }
@@ -12674,8 +12698,36 @@ impl App {
             self.selected_column = next_selected_column;
             self.selected_component = 0;
             self.selected_nested_item = 0;
+            self.snap_tree_row_to_column(ni, next_selected_column);
         }
         self.status = result.1;
+    }
+
+    /// After a column swap, force `selected_tree_row` to the Column row for
+    /// `(node_idx, column_idx)`. Avoids the permissive Section matcher in
+    /// `sync_tree_row_with_selection` falling back to the parent Section.
+    fn snap_tree_row_to_column(&mut self, node_idx: usize, column_idx: usize) {
+        let rows = self.build_tree_rows();
+        if let Some(idx) = rows.iter().position(|r| {
+            matches!(
+                r.kind,
+                TreeRowKind::Column { node_idx: n, column_idx: c } if n == node_idx && c == column_idx
+            )
+        }) {
+            self.selected_tree_row = idx;
+        }
+    }
+
+    fn snap_tree_row_to_header_column(&mut self, section_idx: usize, column_idx: usize) {
+        let rows = self.build_tree_rows();
+        if let Some(idx) = rows.iter().position(|r| {
+            matches!(
+                r.kind,
+                TreeRowKind::HeaderColumn { section_idx: s, column_idx: c } if s == section_idx && c == column_idx
+            )
+        }) {
+            self.selected_tree_row = idx;
+        }
     }
 
     // TODO(rock-19-followup): add row-scoped Left/Right enum cycling for the new
@@ -13909,7 +13961,11 @@ fn card_items_ascii_lines(
 
 fn section_item_ascii_inner_width(width_class: &str, section_inner_width: usize) -> usize {
     let min_inner = 12usize;
-    let max_inner = section_inner_width.saturating_sub(10).max(min_inner);
+    // Upper bound chosen so a full-width (ratio 1.0) box renders exactly the
+    // same total row width as two half-width (ratio 0.5) boxes + 2-char gap:
+    // both resolve to (section_inner_width - 2). Previously inner-10, which
+    // left the 1-1 row 4 chars short and misaligned the right edge.
+    let max_inner = section_inner_width.saturating_sub(6).max(min_inner);
     let ratio = resolve_dd_u_ratio_for_panel(width_class, section_inner_width)
         .map(|(num, den)| (num as f64 / den as f64).clamp(0.1, 1.0))
         .unwrap_or(1.0);
@@ -15348,6 +15404,11 @@ impl AppTheme {
         let error = parse_hex_color(p.error.as_deref().unwrap_or("#a93226"))?;
         let info = parse_hex_color(p.info.as_deref().unwrap_or("#21618c"))?;
 
+        // File roles (THEME_STRUCTURE_STANDARD.md section 8)
+        let folders = parse_hex_color(p.folders.as_deref().unwrap_or("#64b4f5"))?;
+        let files = parse_hex_color(p.files.as_deref().unwrap_or("#ffaf46"))?;
+        let links = parse_hex_color(p.links.as_deref().unwrap_or("#ffa087"))?;
+
         Ok(Self {
             background,
             panel_background,
@@ -15377,6 +15438,9 @@ impl AppTheme {
             warning,
             error,
             info,
+            folders,
+            files,
+            links,
             input_default,
             input_focus,
         })
@@ -15416,6 +15480,9 @@ impl Default for AppTheme {
             warning: Color::Rgb(245, 196, 105),
             error: Color::Rgb(229, 115, 115),
             info: Color::Rgb(93, 173, 226),
+            folders: Color::Rgb(100, 180, 245),
+            files: Color::Rgb(255, 175, 70),
+            links: Color::Rgb(255, 160, 135),
             input_default: border_def,
             input_focus: border_focus,
         }
@@ -15760,12 +15827,11 @@ fn help_text() -> String {
         "  /: Open insert fuzzy finder (hero/section/cta/banner/blockquote/accordion/alternating/card/filmstrip/milestones/modal/slider)",
         "  A / X: Add/remove dd-accordion, dd-alternating, dd-card, dd-filmstrip, dd-milestones, or dd-slider item",
         "  d: Delete selected node",
-        "  J / K: Move selected node down / up",
         "",
         "Section layout:",
         "  C / V: Add/remove selected column",
         "  c / v: Select previous/next column",
-        "  ( / ): Move selected column up/down",
+        "  J / K: Move selected column down/up",
         "  r / f: Edit selected column id / width class",
         "  Details pane shows ASCII blueprint for all page items",
         "",
