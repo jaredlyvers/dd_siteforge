@@ -160,6 +160,10 @@ enum Modal {
     NewPageTitlePrompt {
         title: String,
     },
+    /// Path entry prompt shown when exporting the site to a local directory.
+    ExportPathPrompt {
+        path: String,
+    },
     /// Title-edit prompt shown when renaming an existing page.
     RenamePagePrompt {
         title: String,
@@ -704,6 +708,9 @@ impl App {
             }
             Modal::NewPageTitlePrompt { title } => {
                 self.render_new_page_title_prompt(frame, title);
+            }
+            Modal::ExportPathPrompt { path } => {
+                self.render_export_path_prompt(frame, path);
             }
             Modal::RenamePagePrompt { title, page_idx } => {
                 self.render_rename_page_prompt(frame, title, *page_idx);
@@ -1581,6 +1588,16 @@ impl App {
         );
     }
 
+    fn render_export_path_prompt(&self, frame: &mut ratatui::Frame, path: &str) {
+        self.render_single_input_modal(
+            frame,
+            " Export — output directory ",
+            "Path (relative to site JSON)",
+            path,
+            "Enter or Ctrl+S: export  |  Esc: cancel",
+        );
+    }
+
     fn render_rename_page_prompt(&self, frame: &mut ratatui::Frame, title: &str, _page_idx: usize) {
         self.render_single_input_modal(
             frame,
@@ -2036,6 +2053,9 @@ impl App {
                 Modal::TemplatePicker { .. } => return self.handle_template_picker_event(key),
                 Modal::NewPageTitlePrompt { .. } => {
                     return self.handle_new_page_title_prompt_event(key)
+                }
+                Modal::ExportPathPrompt { .. } => {
+                    return self.handle_export_path_prompt_event(key)
                 }
                 Modal::RenamePagePrompt { .. } => {
                     return self.handle_rename_page_prompt_event(key)
@@ -2860,6 +2880,58 @@ impl App {
                 Some(ModalResult::Continue)
             }
         }
+    }
+
+    fn handle_export_path_prompt_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
+        use crossterm::event::KeyCode;
+        let path = if let Some(Modal::ExportPathPrompt { path }) = self.modal.take() {
+            path
+        } else {
+            return Some(ModalResult::CloseCancel);
+        };
+        match key.code {
+            KeyCode::Esc => {
+                self.push_toast(ToastLevel::Info, "Export cancelled.");
+                Some(ModalResult::CloseCancel)
+            }
+            KeyCode::Enter => self.commit_export_path_from_prompt(path),
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.commit_export_path_from_prompt(path)
+            }
+            KeyCode::Backspace => {
+                let mut new_path = path;
+                new_path.pop();
+                self.modal = Some(Modal::ExportPathPrompt { path: new_path });
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let mut new_path = path;
+                new_path.push(c);
+                self.modal = Some(Modal::ExportPathPrompt { path: new_path });
+                Some(ModalResult::Continue)
+            }
+            _ => {
+                self.modal = Some(Modal::ExportPathPrompt { path });
+                Some(ModalResult::Continue)
+            }
+        }
+    }
+
+    fn commit_export_path_from_prompt(&mut self, path: String) -> Option<ModalResult> {
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            self.push_toast(ToastLevel::Warning, "Export path required.");
+            self.modal = Some(Modal::ExportPathPrompt { path });
+            Some(ModalResult::Continue)
+        } else {
+            self.commit_export_to(trimmed.to_string());
+            Some(ModalResult::CloseSuccess)
+        }
+    }
+
+    /// Stub — full body lands in Task 3.
+    fn commit_export_to(&mut self, _rel: String) {
+        self.push_toast(ToastLevel::Info, "Export wiring lands in Task 3.");
     }
 
     fn handle_rename_page_prompt_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
@@ -18196,6 +18268,7 @@ impl Modal {
             Modal::FormEdit { .. } => "FormEdit",
             Modal::TemplatePicker { .. } => "TemplatePicker",
             Modal::NewPageTitlePrompt { .. } => "NewPageTitlePrompt",
+            Modal::ExportPathPrompt { .. } => "ExportPathPrompt",
             Modal::RenamePagePrompt { .. } => "RenamePagePrompt",
             Modal::ConfirmPrompt { .. } => "ConfirmPrompt",
             Modal::ValidationErrors { .. } => "ValidationErrors",
