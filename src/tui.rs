@@ -2338,6 +2338,10 @@ impl App {
                         self.modal = Some(Modal::SavePrompt { path });
                         Some(ModalResult::Continue)
                     } else {
+                        // Lock slugs — once saved, slug edits require explicit user action (Task 12).
+                        for page in &mut self.site.pages {
+                            page.slug_locked = true;
+                        }
                         self.path = Some(path_buf.clone());
                         self.status = format!("Saved {}", path_buf.display());
                         Some(ModalResult::CloseSuccess)
@@ -17547,6 +17551,34 @@ mod tests {
 
         assert_eq!(app.site.pages[0].head.title, "Front Page");
         assert_eq!(app.site.pages[0].slug, orig_slug, "locked slug must not regenerate");
+    }
+
+    #[test]
+    fn first_successful_save_locks_all_page_slugs() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.site.pages.push(crate::model::Page::from_template(
+            "Contact",
+            crate::model::PageTemplate::Blank,
+        ));
+        assert!(!app.site.pages[0].slug_locked);
+        assert!(!app.site.pages[1].slug_locked);
+
+        let tmp = std::env::temp_dir().join(format!(
+            "dd_site_lock_test_{}.json",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        app.path = Some(tmp.clone());
+        app.modal = Some(Modal::SavePrompt {
+            path: tmp.to_string_lossy().to_string(),
+        });
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        std::fs::remove_file(&tmp).ok();
+
+        assert!(app.site.pages[0].slug_locked);
+        assert!(app.site.pages[1].slug_locked);
     }
 }
 
