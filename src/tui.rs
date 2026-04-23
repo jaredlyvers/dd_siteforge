@@ -90,6 +90,9 @@ struct App {
     /// Session trash — deleted pages pushed here for `u` undo.
     /// Not persisted. Capped at 20 entries (oldest drops off).
     deleted_pages: Vec<crate::model::Page>,
+    /// Title captured while the TemplatePicker is open after the title prompt.
+    /// None outside of the add-page flow.
+    pending_new_page_title: Option<String>,
     list_area: Rect,
     details_area: Rect,
     details_scroll_row: usize,
@@ -150,6 +153,10 @@ enum Modal {
     TemplatePicker {
         /// Index within the template option list that is currently highlighted.
         selected: usize,
+    },
+    /// Title entry prompt shown before the TemplatePicker when adding a new page.
+    NewPageTitlePrompt {
+        title: String,
     },
     /// Unified form editor: all fields of a component rendered together,
     /// Tab moves between fields, Left/Right cycles enums, Ctrl+S saves via
@@ -655,6 +662,9 @@ impl App {
             }
             Modal::TemplatePicker { selected } => {
                 self.render_template_picker_modal(frame, *selected);
+            }
+            Modal::NewPageTitlePrompt { title } => {
+                self.render_new_page_title_prompt(frame, title);
             }
         }
     }
@@ -1483,6 +1493,40 @@ impl App {
         frame.render_stateful_widget(list, area, &mut state);
     }
 
+    fn render_new_page_title_prompt(&self, frame: &mut ratatui::Frame, title: &str) {
+        let config = ModalConfig {
+            width_percent: 70,
+            height_percent: 35,
+            show_scrollbar: false,
+            footer_text: "Enter to continue, Esc to cancel".to_string(),
+        };
+
+        let area = centered_rect(config.width_percent, config.height_percent, frame.area());
+        frame.render_widget(Clear, area);
+
+        let modal_block = Block::default()
+            .title(" New page — title ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(self.theme.border_active))
+            .title_style(
+                Style::default()
+                    .fg(self.theme.title)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        frame.render_widget(modal_block.clone(), area);
+        let inner = modal_block.inner(area);
+
+        let content = format!("Page title:\n{}\n\n{}", title, config.footer_text);
+        let prompt = Paragraph::new(content).style(
+            Style::default()
+                .fg(self.theme.foreground)
+                .bg(self.theme.popup_background),
+        );
+
+        frame.render_widget(prompt, inner);
+    }
+
     /// Unified single field renderer (legacy mode)
     fn render_single_field_unified(
         &self,
@@ -1558,6 +1602,9 @@ impl App {
                 Modal::SingleField { .. } => return self.handle_single_field_event_unified(key),
                 Modal::FormEdit { .. } => return self.handle_form_edit_event(key),
                 Modal::TemplatePicker { .. } => return self.handle_template_picker_event(key),
+                Modal::NewPageTitlePrompt { .. } => {
+                    return self.handle_new_page_title_prompt_event(key)
+                }
             }
         }
 
@@ -2253,12 +2300,112 @@ impl App {
                 Some(ModalResult::Continue)
             }
             KeyCode::Enter => {
-                // Commit handled in Task 7.
+                let picked = *selected;
+                let title = self.pending_new_page_title.take().unwrap_or_default();
+                if title.is_empty() {
+                    self.modal = None;
+                    self.status = "Cancelled — no title.".to_string();
+                    return Some(ModalResult::CloseCancel);
+                }
+                let mut new_page = match picked {
+                    0 => crate::model::Page::from_template(
+                        &title,
+                        crate::model::PageTemplate::Blank,
+                    ),
+                    1 => crate::model::Page::from_template(
+                        &title,
+                        crate::model::PageTemplate::HeroOnly,
+                    ),
+                    2 => crate::model::Page::from_template(
+                        &title,
+                        crate::model::PageTemplate::HeroPlusSection,
+                    ),
+                    3 => {
+                        let src_idx =
+                            self.selected_page.min(self.site.pages.len().saturating_sub(1));
+                        let src = &self.site.pages[src_idx];
+                        crate::model::Page::duplicate_from(src)
+                    }
+                    _ => crate::model::Page::from_template(
+                        &title,
+                        crate::model::PageTemplate::Blank,
+                    ),
+                };
+                // Dedup id/slug to avoid collisions.
+                if self.site.pages.iter().any(|p| p.id == new_page.id) {
+                    let base_id = new_page.id.clone();
+                    let base_slug = new_page.slug.clone();
+                    for n in 2.. {
+                        let candidate_id = format!("{}-{}", base_id, n);
+                        if !self.site.pages.iter().any(|p| p.id == candidate_id) {
+                            new_page.id = candidate_id;
+                            new_page.slug = format!("{}-{}", base_slug, n);
+                            break;
+                        }
+                    }
+                }
+                self.site.pages.push(new_page);
+                self.selected_page = self.site.pages.len() - 1;
+                self.selected_node = 0;
+                self.selected_column = 0;
+                self.selected_component = 0;
+                self.selected_nested_item = 0;
                 self.modal = None;
-                self.status = "Template picker not yet wired.".to_string();
-                Some(ModalResult::CloseCancel)
+                self.status = format!(
+                    "Added page: {}",
+                    self.site.pages[self.selected_page].head.title
+                );
+                Some(ModalResult::CloseSuccess)
             }
             _ => Some(ModalResult::Continue),
+        }
+    }
+
+    fn handle_new_page_title_prompt_event(
+        &mut self,
+        key: event::KeyEvent,
+    ) -> Option<ModalResult> {
+        use crossterm::event::KeyCode;
+
+        let title = if let Some(Modal::NewPageTitlePrompt { title }) = self.modal.take() {
+            title
+        } else {
+            return Some(ModalResult::CloseCancel);
+        };
+
+        match key.code {
+            KeyCode::Esc => {
+                self.status = "Add page cancelled.".to_string();
+                Some(ModalResult::CloseCancel)
+            }
+            KeyCode::Enter => {
+                let trimmed = title.trim().to_string();
+                if trimmed.is_empty() {
+                    self.status = "Title required.".to_string();
+                    self.modal = Some(Modal::NewPageTitlePrompt { title });
+                    Some(ModalResult::Continue)
+                } else {
+                    self.pending_new_page_title = Some(trimmed);
+                    self.modal = Some(Modal::TemplatePicker { selected: 0 });
+                    Some(ModalResult::Continue)
+                }
+            }
+            KeyCode::Backspace => {
+                let mut new_title = title;
+                new_title.pop();
+                self.modal = Some(Modal::NewPageTitlePrompt { title: new_title });
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Char(c) => {
+                let mut new_title = title;
+                new_title.push(c);
+                self.modal = Some(Modal::NewPageTitlePrompt { title: new_title });
+                Some(ModalResult::Continue)
+            }
+            _ => {
+                self.modal = Some(Modal::NewPageTitlePrompt { title });
+                Some(ModalResult::Continue)
+            }
         }
     }
 
@@ -2450,6 +2597,7 @@ impl App {
             selected_header_component: 0,
             page_head_selected: false,
             deleted_pages: Vec::new(),
+            pending_new_page_title: None,
             list_area: Rect::default(),
             details_area: Rect::default(),
             details_scroll_row: 0,
@@ -3347,8 +3495,18 @@ impl App {
     /// Try to handle a key as a Pages-panel-scoped action.
     /// Returns `true` if the key was consumed — caller should short-circuit.
     /// Future tasks populate this; today it always returns false.
-    fn try_handle_pages_panel_key(&mut self, _key: &event::KeyEvent) -> bool {
-        false
+    fn try_handle_pages_panel_key(&mut self, key: &event::KeyEvent) -> bool {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        match key.code {
+            KeyCode::Char('A') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.modal = Some(Modal::NewPageTitlePrompt {
+                    title: String::new(),
+                });
+                self.status = "New page: type a title, Enter to continue.".to_string();
+                true
+            }
+            _ => false,
+        }
     }
 
     fn handle_event(&mut self, evt: Event) -> anyhow::Result<()> {
@@ -16872,6 +17030,112 @@ mod tests {
             _ => panic!("expected FormEdit modal"),
         }
     }
+
+    #[test]
+    fn pages_panel_shift_a_opens_title_prompt_then_template_picker_then_inserts_blank_page() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+        let initial_len = app.site.pages.len();
+
+        send_key(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT);
+        assert!(matches!(app.modal, Some(Modal::NewPageTitlePrompt { .. })));
+
+        for c in "Contact Us".chars() {
+            send_key(&mut app, KeyCode::Char(c), KeyModifiers::NONE);
+        }
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(app.modal, Some(Modal::TemplatePicker { selected: 0 })));
+
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(app.modal.is_none());
+        assert_eq!(app.site.pages.len(), initial_len + 1);
+        let new_page = app.site.pages.last().unwrap();
+        assert_eq!(new_page.head.title, "Contact Us");
+        assert_eq!(new_page.slug, "contact-us");
+        assert!(!new_page.slug_locked);
+        assert!(new_page.nodes.is_empty());
+        assert_eq!(app.selected_page, initial_len);
+    }
+
+    #[test]
+    fn pages_panel_add_hero_only_template_inserts_single_hero() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+
+        send_key(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT);
+        for c in "Gallery".chars() {
+            send_key(&mut app, KeyCode::Char(c), KeyModifiers::NONE);
+        }
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Down, KeyModifiers::NONE); // selected=1 (Hero only)
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+
+        let p = app.site.pages.last().unwrap();
+        assert_eq!(p.nodes.len(), 1);
+        assert!(matches!(p.nodes[0], crate::model::PageNode::Hero(_)));
+    }
+
+    #[test]
+    fn pages_panel_add_hero_plus_section_inserts_hero_then_section() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+
+        send_key(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT);
+        for c in "Services".chars() {
+            send_key(&mut app, KeyCode::Char(c), KeyModifiers::NONE);
+        }
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Down, KeyModifiers::NONE); // selected=2
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+
+        let p = app.site.pages.last().unwrap();
+        assert_eq!(p.nodes.len(), 2);
+        assert!(matches!(p.nodes[0], crate::model::PageNode::Hero(_)));
+        assert!(matches!(p.nodes[1], crate::model::PageNode::Section(_)));
+    }
+
+    #[test]
+    fn pages_panel_add_duplicate_clones_current_and_appends_copy_suffix() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+        let orig_len = app.site.pages.len();
+        let orig_node_count = app.site.pages[0].nodes.len();
+
+        send_key(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT);
+        // Type anything — duplicate ignores the typed title and uses src title.
+        send_key(&mut app, KeyCode::Char('x'), KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Down, KeyModifiers::NONE); // selected=3 (Duplicate)
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+
+        assert_eq!(app.site.pages.len(), orig_len + 1);
+        let dup = app.site.pages.last().unwrap();
+        assert_eq!(dup.head.title, "Home (Copy)");
+        assert_eq!(dup.nodes.len(), orig_node_count);
+    }
+
+    #[test]
+    fn pages_panel_add_with_duplicate_title_dedupes_id_with_numeric_suffix() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.selected_sidebar_section = SidebarSection::Pages;
+        // Starter page has id "page-home". Adding a page titled "Home" (Blank) would
+        // generate the same id and should be deduped.
+        send_key(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT);
+        for c in "Home".chars() {
+            send_key(&mut app, KeyCode::Char(c), KeyModifiers::NONE);
+        }
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE); // Blank
+
+        let new_page = app.site.pages.last().unwrap();
+        assert_eq!(new_page.id, "page-home-2");
+        assert_eq!(new_page.slug, "home-2");
+        // The starter page keeps its id.
+        assert_eq!(app.site.pages[0].id, "page-home");
+    }
 }
 
 impl Modal {
@@ -16884,6 +17148,7 @@ impl Modal {
             Modal::SingleField { .. } => "SingleField",
             Modal::FormEdit { .. } => "FormEdit",
             Modal::TemplatePicker { .. } => "TemplatePicker",
+            Modal::NewPageTitlePrompt { .. } => "NewPageTitlePrompt",
         }
     }
 }
