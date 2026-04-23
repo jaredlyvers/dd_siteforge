@@ -13290,7 +13290,9 @@ impl App {
             .clone()
             .unwrap_or_else(|| format!("/{}", page.slug));
         let slug = page.slug.clone();
-        let og_t = head.og_title.clone().unwrap_or_default();
+        // Default OG Title to the page title when unset so social cards
+        // have sensible copy; author can override.
+        let og_t = head.og_title.clone().unwrap_or_else(|| head.title.clone());
         let og_d = head.og_description.clone().unwrap_or_default();
         let og_i = head.og_image.clone().unwrap_or_default();
         let mut fields = vec![
@@ -17674,6 +17676,26 @@ mod tests {
         assert!(ok);
         assert_eq!(app.site.pages[0].slug, orig_slug);
         assert!(!app.site.pages[0].slug_locked, "no slug edit means no lock");
+    }
+
+    #[test]
+    fn page_head_modal_default_og_title_is_page_title() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        assert!(app.site.pages[0].head.og_title.is_none());
+        app.open_page_head_edit_modal();
+        let og_field = app
+            .edit_modal
+            .as_ref()
+            .unwrap()
+            .fields
+            .iter()
+            .find(|f| f.label == "OG Title")
+            .cloned()
+            .expect("OG Title field should exist");
+        assert_eq!(
+            og_field.value, app.site.pages[0].head.title,
+            "OG Title should default to the page title when unset"
+        );
     }
 
     #[test]
