@@ -22,6 +22,8 @@ use serde::Deserialize;
 use crate::model::{PageNode, SectionColumn, Site};
 use crate::storage::save_site;
 
+const AUTOSAVE_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(2);
+
 pub mod cursor;
 pub mod editform;
 
@@ -3343,6 +3345,7 @@ impl App {
         terminal: &mut Terminal<B>,
     ) -> anyhow::Result<()> {
         while !self.should_quit {
+            self.tick_autosave(std::time::Instant::now());
             terminal.draw(|f| self.draw(f))?;
 
             if event::poll(Duration::from_millis(100))? {
@@ -14657,6 +14660,40 @@ impl App {
             self.dirty = true;
         }
     }
+
+    /// If the site is dirty, has a path, and the debounce window has elapsed,
+    /// write `self.site` to the active path and refresh the saved snapshot.
+    /// Errors are surfaced as a warning toast and leave `dirty` set so the
+    /// next tick can retry.
+    fn tick_autosave(&mut self, now: std::time::Instant) {
+        if !self.dirty {
+            return;
+        }
+        let Some(since) = self.dirty_since else {
+            // Defensive: dirty without a timestamp shouldn't happen; treat as
+            // freshly dirty.
+            self.dirty_since = Some(now);
+            return;
+        };
+        if now.duration_since(since) < AUTOSAVE_DEBOUNCE {
+            return;
+        }
+        let Some(path) = self.path.clone() else {
+            return;
+        };
+        match crate::storage::save_site(&path, &self.site) {
+            Ok(()) => {
+                self.last_saved_json =
+                    serde_json::to_string(&self.site).unwrap_or_default();
+                self.dirty = false;
+                self.dirty_since = None;
+            }
+            Err(e) => {
+                let msg = format!("Autosave failed: {}", e);
+                self.push_toast(ToastLevel::Warning, msg);
+            }
+        }
+    }
 }
 
 fn contains(rect: Rect, x: u16, y: u16) -> bool {
@@ -18455,6 +18492,65 @@ mod tests {
             Some(first),
             "subsequent mutations must NOT push dirty_since forward"
         );
+    }
+
+    #[test]
+    fn tick_autosave_does_nothing_when_clean() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let now = std::time::Instant::now();
+        app.tick_autosave(now);
+        assert!(!app.dirty);
+    }
+
+    #[test]
+    fn tick_autosave_does_nothing_when_dirty_but_no_path() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.site.pages[0].head.title = "x".to_string();
+        app.mark_dirty_if_changed();
+        let later = app.dirty_since.unwrap()
+            + std::time::Duration::from_secs(10);
+        app.tick_autosave(later);
+        assert!(app.dirty, "no path means no autosave; site stays dirty");
+    }
+
+    #[test]
+    fn tick_autosave_writes_when_dirty_and_debounce_elapsed() {
+        let tmp_dir = std::env::temp_dir().join(format!(
+            "dd_autosave_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let json_path = tmp_dir.join("site.json");
+        crate::storage::save_site(&json_path, &Site::starter()).unwrap();
+
+        let mut app =
+            App::new(Site::starter(), Some(json_path.clone()), AppTheme::default());
+        app.site.pages[0].head.title = "After mutation".to_string();
+        app.mark_dirty_if_changed();
+        assert!(app.dirty);
+
+        let due = app.dirty_since.unwrap()
+            + std::time::Duration::from_millis(2_100);
+        app.tick_autosave(due);
+        assert!(!app.dirty, "autosave should clear the dirty flag");
+        assert!(app.dirty_since.is_none());
+        let on_disk = std::fs::read_to_string(&json_path).unwrap();
+        assert!(on_disk.contains("After mutation"));
+        std::fs::remove_dir_all(&tmp_dir).ok();
+    }
+
+    #[test]
+    fn tick_autosave_holds_off_within_debounce_window() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.site.pages[0].head.title = "x".to_string();
+        app.mark_dirty_if_changed();
+        let still_in_window = app.dirty_since.unwrap()
+            + std::time::Duration::from_millis(500);
+        app.tick_autosave(still_in_window);
+        assert!(app.dirty);
     }
 }
 
