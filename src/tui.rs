@@ -3288,7 +3288,7 @@ impl App {
             ensure_page_section_ids(page);
         }
         let last_saved_json = serde_json::to_string(&site).unwrap_or_default();
-        Self {
+        let mut app = Self {
             site,
             theme,
             selected_page: 0,
@@ -3336,7 +3336,35 @@ impl App {
             dirty: false,
             dirty_since: None,
             last_saved_json,
+        };
+
+        if let Some(p) = app.path.as_ref() {
+            let backup = backup_path_for(p);
+            if backup.exists() && p.exists() {
+                if let (Ok(main), Ok(bak)) = (
+                    std::fs::read_to_string(p),
+                    std::fs::read_to_string(&backup),
+                ) {
+                    if main != bak {
+                        let mtime = std::fs::metadata(&backup)
+                            .and_then(|m| m.modified())
+                            .ok();
+                        let when = mtime
+                            .and_then(chrono_like_format)
+                            .unwrap_or_else(|| "unknown".into());
+                        app.push_toast(
+                            ToastLevel::Info,
+                            format!(
+                                "Loaded state differs from last manual save ({}).",
+                                when
+                            ),
+                        );
+                    }
+                }
+            }
         }
+
+        app
     }
 
     fn run<B: ratatui::backend::Backend>(
@@ -18594,12 +18622,80 @@ mod tests {
         assert!(!app.dirty, "manual save clears dirty");
         std::fs::remove_dir_all(&tmp).ok();
     }
+
+    #[test]
+    fn load_with_diverging_backup_pushes_info_toast() {
+        let tmp = std::env::temp_dir().join(format!(
+            "dd_loadcheck_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let json_path = tmp.join("site.json");
+        let backup_path = tmp.join("site.json.backup");
+
+        std::fs::write(&backup_path, "{\"backup\":\"old\"}").unwrap();
+        std::fs::write(&json_path, "{\"main\":\"new\"}").unwrap();
+
+        let app = App::new(
+            Site::starter(),
+            Some(json_path.clone()),
+            AppTheme::default(),
+        );
+        let toast = app
+            .toasts
+            .iter()
+            .find(|t| t.message.to_lowercase().contains("differs from last manual save"));
+        assert!(
+            toast.is_some(),
+            "expected a divergence toast, got: {:?}",
+            app.toasts.iter().map(|t| &t.message).collect::<Vec<_>>()
+        );
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn load_with_matching_backup_pushes_no_toast() {
+        let tmp = std::env::temp_dir().join(format!(
+            "dd_loadcheck_match_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let json_path = tmp.join("site.json");
+        let backup_path = tmp.join("site.json.backup");
+        std::fs::write(&json_path, "same").unwrap();
+        std::fs::write(&backup_path, "same").unwrap();
+
+        let app = App::new(
+            Site::starter(),
+            Some(json_path.clone()),
+            AppTheme::default(),
+        );
+        assert!(app
+            .toasts
+            .iter()
+            .all(|t| !t.message.to_lowercase().contains("differs")));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
 }
 
 fn backup_path_for(path: &std::path::Path) -> std::path::PathBuf {
     let mut s = path.as_os_str().to_owned();
     s.push(".backup");
     std::path::PathBuf::from(s)
+}
+
+fn chrono_like_format(t: std::time::SystemTime) -> Option<String> {
+    let secs = t
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    Some(format!("{}s since epoch", secs))
 }
 
 fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
