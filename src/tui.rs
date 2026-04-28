@@ -4506,6 +4506,9 @@ impl App {
                 KeyCode::Char('E') if k.modifiers.contains(KeyModifiers::SHIFT) => {
                     self.begin_export_flow();
                 }
+                KeyCode::Char('p') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.begin_preview_flow();
+                }
                 KeyCode::Char('q') if k.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.should_quit = true
                 }
@@ -17112,6 +17115,7 @@ fn help_text() -> String {
         "  F1: Open/close this help",
         "  F3: Validate site (shows errors in a modal)",
         "  Shift+E: Export site to HTML (validates first; prompts for output dir on first use)",
+        "  p: Preview current page in browser (validates + exports first)",
         "  Ctrl+Q: Quit",
         "  s: Open save modal and enter file path (also writes a .backup checkpoint)",
         "  Tab / Shift+Tab: Next/previous page",
@@ -18856,6 +18860,21 @@ mod tests {
         ));
         app.selected_page = 1;
         assert_eq!(app.current_page_slug_for_preview(), "contact");
+    }
+
+    #[test]
+    fn p_key_with_validation_errors_opens_validation_modal() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.site.pages[0].slug = "".to_string();
+        send_key(&mut app, KeyCode::Char('p'), KeyModifiers::NONE);
+        assert!(matches!(app.modal, Some(Modal::ValidationErrors { .. })));
+    }
+
+    #[test]
+    fn p_key_with_clean_site_and_no_export_dir_opens_preview_path_prompt() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        send_key(&mut app, KeyCode::Char('p'), KeyModifiers::NONE);
+        assert!(matches!(app.modal, Some(Modal::PreviewPathPrompt { .. })));
     }
 }
 
