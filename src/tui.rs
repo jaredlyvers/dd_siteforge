@@ -2715,12 +2715,11 @@ impl App {
                     Some(ModalResult::Continue)
                 } else {
                     let path_buf = std::path::PathBuf::from(raw);
-                    if let Err(e) = crate::storage::save_site(&path_buf, &self.site) {
+                    if let Err(e) = self.commit_save_with_backup(&path_buf) {
                         self.status = format!("Failed to save: {}", e);
                         self.modal = Some(Modal::SavePrompt { path });
                         Some(ModalResult::Continue)
                     } else {
-                        self.path = Some(path_buf.clone());
                         let msg = format!("Saved {}", path_buf.display());
                         self.push_toast(ToastLevel::Success, msg);
                         Some(ModalResult::CloseSuccess)
@@ -6418,8 +6417,7 @@ impl App {
             return Ok(());
         }
         let path = PathBuf::from(raw);
-        save_site(&path, &self.site)?;
-        self.path = Some(path.clone());
+        self.commit_save_with_backup(&path)?;
         self.save_prompt_open = false;
         self.save_input.clear();
         let msg = format!("Saved {}", path.display());
@@ -14661,6 +14659,21 @@ impl App {
         }
     }
 
+    /// Write `self.site` to `path` AND to `<path>.backup`. Both writes share
+    /// a single serialization so the two files are guaranteed byte-identical.
+    /// Refreshes the saved snapshot and clears the dirty flag on success.
+    fn commit_save_with_backup(&mut self, path: &std::path::Path) -> anyhow::Result<()> {
+        let json = serde_json::to_string_pretty(&self.site)?;
+        std::fs::write(path, &json)?;
+        let backup = backup_path_for(path);
+        std::fs::write(&backup, &json)?;
+        self.last_saved_json = serde_json::to_string(&self.site).unwrap_or_default();
+        self.dirty = false;
+        self.dirty_since = None;
+        self.path = Some(path.to_path_buf());
+        Ok(())
+    }
+
     /// If the site is dirty, has a path, and the debounce window has elapsed,
     /// write `self.site` to the active path and refresh the saved snapshot.
     /// Errors are surfaced as a warning toast and leave `dirty` set so the
@@ -18552,6 +18565,41 @@ mod tests {
         app.tick_autosave(still_in_window);
         assert!(app.dirty);
     }
+
+    #[test]
+    fn manual_save_writes_backup_alongside_main_file() {
+        let tmp = std::env::temp_dir().join(format!(
+            "dd_backup_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let json_path = tmp.join("site.json");
+        let backup_path = tmp.join("site.json.backup");
+
+        let mut app =
+            App::new(Site::starter(), Some(json_path.clone()), AppTheme::default());
+        app.site.pages[0].head.title = "Pre-save".to_string();
+
+        app.commit_save_with_backup(&json_path)
+            .expect("manual save should succeed");
+
+        assert!(json_path.exists(), "main file written");
+        assert!(backup_path.exists(), "backup written");
+        let main = std::fs::read_to_string(&json_path).unwrap();
+        let bak = std::fs::read_to_string(&backup_path).unwrap();
+        assert_eq!(main, bak, "backup must be byte-identical to main");
+        assert!(!app.dirty, "manual save clears dirty");
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+}
+
+fn backup_path_for(path: &std::path::Path) -> std::path::PathBuf {
+    let mut s = path.as_os_str().to_owned();
+    s.push(".backup");
+    std::path::PathBuf::from(s)
 }
 
 fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
