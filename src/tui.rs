@@ -95,6 +95,14 @@ struct App {
     pending_new_page_title: Option<String>,
     /// Ephemeral bottom-right notifications; expire ~5s after `shown_at`.
     toasts: Vec<Toast>,
+    /// True when in-memory site differs from `last_saved_json`.
+    dirty: bool,
+    /// Instant of the first mutation since `last_saved_json` was synced.
+    /// `None` while clean.
+    dirty_since: Option<std::time::Instant>,
+    /// JSON snapshot of the site at the most recent successful disk write.
+    /// Used both for dirty detection and for skipping no-op autosaves.
+    last_saved_json: String,
     list_area: Rect,
     details_area: Rect,
     details_scroll_row: usize,
@@ -3278,6 +3286,7 @@ impl App {
         for page in &mut site.pages {
             ensure_page_section_ids(page);
         }
+        let last_saved_json = serde_json::to_string(&site).unwrap_or_default();
         Self {
             site,
             theme,
@@ -3323,6 +3332,9 @@ impl App {
             expanded_slider_items: HashSet::new(),
             header_column_expanded: true,
             header_components_expanded: HashSet::new(),
+            dirty: false,
+            dirty_since: None,
+            last_saved_json,
         }
     }
 
