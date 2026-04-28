@@ -2993,9 +2993,81 @@ impl App {
         }
     }
 
-    /// Stub — real body lands in Task 3.
-    fn commit_preview_to(&mut self, _rel: String) {
-        self.push_toast(ToastLevel::Info, "Preview wiring lands in Task 3.");
+    fn commit_preview_to(&mut self, rel: String) {
+        use std::path::{Path, PathBuf};
+        let normalized = normalize_relative_path(&rel);
+        let base = self
+            .path
+            .as_ref()
+            .and_then(|p| p.parent().map(PathBuf::from))
+            .unwrap_or_else(|| PathBuf::from("."));
+        let out = base.join(Path::new(&normalized));
+
+        if let Err(e) = crate::renderer::render_site_to_dir(&self.site, &out) {
+            let msg = format!("Preview failed: {}", e);
+            self.push_toast(ToastLevel::Warning, msg);
+            return;
+        }
+        self.site.export_dir = Some(normalized.clone());
+        self.copy_source_images_to(&base, &out);
+
+        let slug = self.current_page_slug_for_preview();
+        let target = out.join(format!("{}.html", slug));
+        let display = display_relative_path(&base, &out, &normalized);
+        let count = self.site.pages.len();
+        self.push_toast(
+            ToastLevel::Success,
+            format!("Exported {} page(s) to {}", count, display),
+        );
+        match open_in_browser(&target) {
+            Ok(()) => {
+                self.push_toast(
+                    ToastLevel::Info,
+                    format!("Opening {} in browser…", target.display()),
+                );
+            }
+            Err(e) => {
+                self.push_toast(
+                    ToastLevel::Warning,
+                    format!("Browser open failed: {}", e),
+                );
+            }
+        }
+    }
+
+    /// Slug of the currently selected page, falling back to the first page
+    /// when the selection is somehow out of bounds (or `index` if even that
+    /// fails).
+    fn current_page_slug_for_preview(&self) -> String {
+        let idx = self.selected_page.min(self.site.pages.len().saturating_sub(1));
+        self.site
+            .pages
+            .get(idx)
+            .map(|p| p.slug.clone())
+            .unwrap_or_else(|| "index".to_string())
+    }
+
+    /// Entry point for the `p` key. Mirrors `begin_export_flow` but routes
+    /// success to `commit_preview_to` so the browser opens after rendering.
+    fn begin_preview_flow(&mut self) {
+        let errors = crate::validate::validate_site(&self.site);
+        if !errors.is_empty() {
+            self.modal = Some(Modal::ValidationErrors {
+                errors,
+                scroll_offset: 0,
+            });
+            return;
+        }
+        match self.site.export_dir.clone() {
+            Some(dir) if !dir.trim().is_empty() => {
+                self.commit_preview_to(dir);
+            }
+            _ => {
+                self.modal = Some(Modal::PreviewPathPrompt {
+                    path: "./web/".to_string(),
+                });
+            }
+        }
     }
 
     /// Entry point for the `E` key. Validates first; opens ValidationErrors
@@ -18755,6 +18827,35 @@ mod tests {
             .iter()
             .all(|t| !t.message.to_lowercase().contains("differs")));
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn begin_preview_flow_with_invalid_site_opens_validation_modal() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.site.pages[0].slug = "".to_string();
+        app.begin_preview_flow();
+        assert!(matches!(app.modal, Some(Modal::ValidationErrors { .. })));
+    }
+
+    #[test]
+    fn begin_preview_flow_without_export_dir_opens_path_prompt() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.begin_preview_flow();
+        match &app.modal {
+            Some(Modal::PreviewPathPrompt { path }) => assert_eq!(path, "./web/"),
+            _ => panic!("expected PreviewPathPrompt"),
+        }
+    }
+
+    #[test]
+    fn current_page_slug_for_preview_returns_selected_page_slug() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.site.pages.push(crate::model::Page::from_template(
+            "Contact",
+            crate::model::PageTemplate::Blank,
+        ));
+        app.selected_page = 1;
+        assert_eq!(app.current_page_slug_for_preview(), "contact");
     }
 }
 
