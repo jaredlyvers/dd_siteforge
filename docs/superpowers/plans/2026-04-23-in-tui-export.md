@@ -4,7 +4,7 @@
 
 **Goal:** Add an `E` key that renders the current site to HTML from inside the TUI. Export is gated by the validation modal (Plan 2) — errors block, clean passes through. Output directory is persisted per-site in the JSON (`site.export_dir`), prompted on first export with a `./web/` default.
 
-**Architecture:** One additive model field (`Site.export_dir: Option<String>`, `#[serde(default)]`). One new `Modal::ExportPathPrompt { path: String }` that mirrors `NewPageTitlePrompt`'s shape. Two helpers on `App`: `begin_export_flow()` (entry point from `E`) and `commit_export_to(path)` (does the work). Existing `crate::renderer::render_site_to_dir` is used unchanged. Source-image copy (`./source/imgs/` → `<out>/assets/imgs/`) is best-effort — skipped silently when the source folder doesn't exist, to keep this plan independent of Plan 4 (Image Assets).
+**Architecture:** One additive model field (`Site.export_dir: Option<String>`, `#[serde(default)]`). One new `Modal::ExportPathPrompt { path: String }` that mirrors `NewPageTitlePrompt`'s shape. Two helpers on `App`: `begin_export_flow()` (entry point from `E`) and `commit_export_to(path)` (does the work). Existing `crate::renderer::render_site_to_dir` is used unchanged. Source-image copy (`./source/images/` → `<out>/assets/images/`) is best-effort — skipped silently when the source folder doesn't exist, to keep this plan independent of Plan 4 (Image Assets).
 
 **Tech Stack:** Rust 2024, `ratatui`, `crossterm`. Adds `std::fs` recursive copy (hand-rolled, no new dep).
 
@@ -262,16 +262,16 @@ fn commit_export_to(&mut self, rel: String) {
     }
 }
 
-/// Recursively copy `base/source/imgs/` → `<out>/assets/imgs/` if the
+/// Recursively copy `base/source/images/` → `<out>/assets/images/` if the
 /// source exists. Silently skips when the folder is absent so projects
 /// that don't use local images still export cleanly. Any copy failure is
 /// surfaced as a warning toast but does not fail the export.
 fn copy_source_images_to(&mut self, base: &std::path::Path, out: &std::path::Path) {
-    let src = base.join("source").join("imgs");
+    let src = base.join("source").join("images");
     if !src.exists() {
         return;
     }
-    let dst = out.join("assets").join("imgs");
+    let dst = out.join("assets").join("images");
     if let Err(e) = copy_dir_recursive(&src, &dst) {
         let msg = format!("Images copy skipped: {}", e);
         self.push_toast(ToastLevel::Warning, msg);
@@ -443,7 +443,7 @@ Walk:
 
 - [ ] **Step 3: (Optional) Verify image copy behaves**
 
-Create `/tmp/<smoke-dir>/source/imgs/foo.jpg` (a tiny file). Re-export. Confirm `./web/assets/imgs/foo.jpg` exists.
+Create `/tmp/<smoke-dir>/source/images/foo.jpg` (a tiny file). Re-export. Confirm `./web/assets/images/foo.jpg` exists.
 
 ---
 
@@ -460,9 +460,9 @@ Create `/tmp/<smoke-dir>/source/imgs/foo.jpg` (a tiny file). Re-export. Confirm 
 - **Type consistency:** `Modal::ExportPathPrompt`, `begin_export_flow`, `commit_export_to`, `copy_source_images_to`, `copy_dir_recursive`, `site.export_dir` appear consistently across all task steps.
 
 - **Deferred to Plan 4 (Image Assets, §3):**
-  - The `Ctrl+P` image picker over `./source/imgs/`.
-  - The validator's `missing-image` check for `assets/imgs/*` URLs.
-  - Plan 3 just mechanically copies whatever is in `./source/imgs/`; absence is silent.
+  - The `Ctrl+P` image picker over `./source/images/`.
+  - The validator's `missing-image` check for `assets/images/*` URLs.
+  - Plan 3 just mechanically copies whatever is in `./source/images/`; absence is silent.
 
 - **Caveats:**
   - `render_site_to_dir` behavior on errors is pass-through — no partial cleanup. Subsequent exports overwrite.

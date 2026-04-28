@@ -2955,22 +2955,25 @@ impl App {
 
     /// Resolve `rel` against the site JSON's directory (or cwd if no path),
     /// run the renderer, best-effort copy source images, and surface the
-    /// outcome as toasts. Persists the `rel` as `site.export_dir` on success.
+    /// outcome as toasts. Persists the normalized `rel` as `site.export_dir`
+    /// on success.
     fn commit_export_to(&mut self, rel: String) {
         use std::path::{Path, PathBuf};
+        let normalized = normalize_relative_path(&rel);
         let base = self
             .path
             .as_ref()
             .and_then(|p| p.parent().map(PathBuf::from))
             .unwrap_or_else(|| PathBuf::from("."));
-        let out = base.join(Path::new(&rel));
+        let out = base.join(Path::new(&normalized));
 
         match crate::renderer::render_site_to_dir(&self.site, &out) {
             Ok(()) => {
-                self.site.export_dir = Some(rel);
+                self.site.export_dir = Some(normalized.clone());
                 self.copy_source_images_to(&base, &out);
                 let page_count = self.site.pages.len();
-                let msg = format!("Exported {} page(s) to {}", page_count, out.display());
+                let display = display_relative_path(&base, &out, &normalized);
+                let msg = format!("Exported {} page(s) to {}", page_count, display);
                 self.push_toast(ToastLevel::Success, msg);
             }
             Err(e) => {
@@ -2980,15 +2983,17 @@ impl App {
         }
     }
 
-    /// Recursively copy `base/source/imgs/` → `<out>/assets/imgs/` when the
-    /// source exists. Silently skips when absent. Copy errors surface as a
-    /// warning toast but don't fail the export.
+    /// Recursively copy `base/source/images/` → `<out>/assets/images/` when
+    /// the source exists. Silently skips when absent. Copy errors surface
+    /// as a warning toast but don't fail the export. The folder name
+    /// matches the path convention used in `parent_image_url` defaults
+    /// (`/assets/images/...`).
     fn copy_source_images_to(&mut self, base: &std::path::Path, out: &std::path::Path) {
-        let src = base.join("source").join("imgs");
+        let src = base.join("source").join("images");
         if !src.exists() {
             return;
         }
-        let dst = out.join("assets").join("imgs");
+        let dst = out.join("assets").join("images");
         if let Err(e) = copy_dir_recursive(&src, &dst) {
             let msg = format!("Images copy skipped: {}", e);
             self.push_toast(ToastLevel::Warning, msg);
@@ -18396,6 +18401,31 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::
         }
     }
     Ok(())
+}
+
+/// Strip a leading `./` (and any extra `/`) from a user-supplied relative
+/// path so joining against a base of `.` doesn't produce `././foo` paths.
+/// Trailing slashes are also trimmed for consistent display.
+fn normalize_relative_path(raw: &str) -> String {
+    let mut s = raw.trim();
+    while let Some(rest) = s.strip_prefix("./") {
+        s = rest.trim_start_matches('/');
+    }
+    s.trim_end_matches('/').to_string()
+}
+
+/// Build a clean display path. Prefer `./<rel>` when the export sits inside
+/// the site JSON's directory; otherwise fall back to the absolute-ish form.
+fn display_relative_path(
+    _base: &std::path::Path,
+    out: &std::path::Path,
+    normalized: &str,
+) -> String {
+    if normalized.is_empty() {
+        out.display().to_string()
+    } else {
+        format!("./{}/", normalized)
+    }
 }
 
 impl Modal {
