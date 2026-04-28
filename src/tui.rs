@@ -18700,6 +18700,37 @@ fn chrono_like_format(t: std::time::SystemTime) -> Option<String> {
     Some(format!("{}s since epoch", secs))
 }
 
+/// Spawn the OS-default opener on the given file path. Returns the spawn
+/// error if the command can't be invoked. The browser may take time to
+/// open after this returns; we don't wait.
+#[allow(dead_code)]
+fn open_in_browser(path: &std::path::Path) -> std::io::Result<()> {
+    use std::process::Command;
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open").arg(path).spawn()?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").arg(path).spawn()?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/C", "start", ""])
+            .arg(path)
+            .spawn()?;
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "no known browser opener for this target",
+        ));
+    }
+    Ok(())
+}
+
 fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
