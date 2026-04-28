@@ -174,6 +174,10 @@ enum Modal {
     ExportPathPrompt {
         path: String,
     },
+    /// Path entry prompt shown when previewing the site in a browser.
+    PreviewPathPrompt {
+        path: String,
+    },
     /// Title-edit prompt shown when renaming an existing page.
     RenamePagePrompt {
         title: String,
@@ -721,6 +725,9 @@ impl App {
             }
             Modal::ExportPathPrompt { path } => {
                 self.render_export_path_prompt(frame, path);
+            }
+            Modal::PreviewPathPrompt { path } => {
+                self.render_preview_path_prompt(frame, path);
             }
             Modal::RenamePagePrompt { title, page_idx } => {
                 self.render_rename_page_prompt(frame, title, *page_idx);
@@ -1608,6 +1615,16 @@ impl App {
         );
     }
 
+    fn render_preview_path_prompt(&self, frame: &mut ratatui::Frame, path: &str) {
+        self.render_single_input_modal(
+            frame,
+            " Preview — output directory ",
+            "Path (relative to site JSON)",
+            path,
+            "Enter or Ctrl+S: preview  |  Esc: cancel",
+        );
+    }
+
     fn render_rename_page_prompt(&self, frame: &mut ratatui::Frame, title: &str, _page_idx: usize) {
         self.render_single_input_modal(
             frame,
@@ -2066,6 +2083,9 @@ impl App {
                 }
                 Modal::ExportPathPrompt { .. } => {
                     return self.handle_export_path_prompt_event(key)
+                }
+                Modal::PreviewPathPrompt { .. } => {
+                    return self.handle_preview_path_prompt_event(key)
                 }
                 Modal::RenamePagePrompt { .. } => {
                     return self.handle_rename_page_prompt_event(key)
@@ -2924,6 +2944,58 @@ impl App {
                 Some(ModalResult::Continue)
             }
         }
+    }
+
+    fn handle_preview_path_prompt_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
+        use crossterm::event::KeyCode;
+        let path = if let Some(Modal::PreviewPathPrompt { path }) = self.modal.take() {
+            path
+        } else {
+            return Some(ModalResult::CloseCancel);
+        };
+        match key.code {
+            KeyCode::Esc => {
+                self.push_toast(ToastLevel::Info, "Preview cancelled.");
+                Some(ModalResult::CloseCancel)
+            }
+            KeyCode::Enter => self.commit_preview_path_from_prompt(path),
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.commit_preview_path_from_prompt(path)
+            }
+            KeyCode::Backspace => {
+                let mut new_path = path;
+                new_path.pop();
+                self.modal = Some(Modal::PreviewPathPrompt { path: new_path });
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let mut new_path = path;
+                new_path.push(c);
+                self.modal = Some(Modal::PreviewPathPrompt { path: new_path });
+                Some(ModalResult::Continue)
+            }
+            _ => {
+                self.modal = Some(Modal::PreviewPathPrompt { path });
+                Some(ModalResult::Continue)
+            }
+        }
+    }
+
+    fn commit_preview_path_from_prompt(&mut self, path: String) -> Option<ModalResult> {
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            self.push_toast(ToastLevel::Warning, "Preview path required.");
+            self.modal = Some(Modal::PreviewPathPrompt { path });
+            Some(ModalResult::Continue)
+        } else {
+            self.commit_preview_to(trimmed.to_string());
+            Some(ModalResult::CloseSuccess)
+        }
+    }
+
+    /// Stub — real body lands in Task 3.
+    fn commit_preview_to(&mut self, _rel: String) {
+        self.push_toast(ToastLevel::Info, "Preview wiring lands in Task 3.");
     }
 
     /// Entry point for the `E` key. Validates first; opens ValidationErrors
@@ -18783,6 +18855,7 @@ impl Modal {
             Modal::TemplatePicker { .. } => "TemplatePicker",
             Modal::NewPageTitlePrompt { .. } => "NewPageTitlePrompt",
             Modal::ExportPathPrompt { .. } => "ExportPathPrompt",
+            Modal::PreviewPathPrompt { .. } => "PreviewPathPrompt",
             Modal::RenamePagePrompt { .. } => "RenamePagePrompt",
             Modal::ConfirmPrompt { .. } => "ConfirmPrompt",
             Modal::ValidationErrors { .. } => "ValidationErrors",
