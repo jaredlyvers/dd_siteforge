@@ -3348,6 +3348,7 @@ impl App {
             if event::poll(Duration::from_millis(100))? {
                 let evt = event::read()?;
                 self.handle_event(evt)?;
+                self.mark_dirty_if_changed();
             }
         }
 
@@ -14639,6 +14640,23 @@ impl App {
         let next = self.details_scroll_row as isize + delta;
         self.details_scroll_row = next.clamp(0, max_scroll) as usize;
     }
+
+    /// Recompute the JSON snapshot of `self.site` and set `dirty` if it
+    /// differs from `last_saved_json`. Idempotent: re-calling on an already
+    /// dirty app does NOT advance `dirty_since`, preserving the original
+    /// debounce anchor.
+    fn mark_dirty_if_changed(&mut self) {
+        let current = match serde_json::to_string(&self.site) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        if current != self.last_saved_json {
+            if !self.dirty {
+                self.dirty_since = Some(std::time::Instant::now());
+            }
+            self.dirty = true;
+        }
+    }
 }
 
 fn contains(rect: Rect, x: u16, y: u16) -> bool {
@@ -18397,6 +18415,46 @@ mod tests {
         let mut app = App::new(Site::starter(), None, AppTheme::default());
         send_key(&mut app, KeyCode::Char('E'), KeyModifiers::SHIFT);
         assert!(matches!(app.modal, Some(Modal::ExportPathPrompt { .. })));
+    }
+
+    #[test]
+    fn fresh_app_is_clean() {
+        let app = App::new(Site::starter(), None, AppTheme::default());
+        assert!(!app.dirty);
+        assert!(app.dirty_since.is_none());
+    }
+
+    #[test]
+    fn editing_a_page_title_marks_app_dirty() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.site.pages[0].head.title = "Mutated".to_string();
+        app.mark_dirty_if_changed();
+        assert!(app.dirty);
+        assert!(app.dirty_since.is_some());
+    }
+
+    #[test]
+    fn unchanged_model_stays_clean() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.mark_dirty_if_changed();
+        assert!(!app.dirty);
+        assert!(app.dirty_since.is_none());
+    }
+
+    #[test]
+    fn dirty_since_does_not_reset_on_subsequent_mutations() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.site.pages[0].head.title = "First".to_string();
+        app.mark_dirty_if_changed();
+        let first = app.dirty_since.expect("dirty_since should be set");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        app.site.pages[0].head.title = "Second".to_string();
+        app.mark_dirty_if_changed();
+        assert_eq!(
+            app.dirty_since,
+            Some(first),
+            "subsequent mutations must NOT push dirty_since forward"
+        );
     }
 }
 
