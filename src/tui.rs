@@ -17759,6 +17759,7 @@ fn help_text() -> String {
         "Edit modal:",
         "  Any edit command opens a modal with editable fields",
         "  Tab / Shift+Tab: Next/previous editable field for selected row",
+        "  Ctrl+P (in any URL field): Open image picker (./source/images/)",
         "  hero.copy / alternating_copy / accordion_copy / parent_copy / child_copy / child_copy / parent_copy: Up/Down move line, wheel scroll, Enter newline, Ctrl+S save",
         "  Left / Right: Cycle section/hero/cta/banner/accordion/alternating/blockquote/card/filmstrip/milestones/slider option fields when active",
         "  Enter: Confirm edit",
