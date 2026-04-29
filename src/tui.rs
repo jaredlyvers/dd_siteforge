@@ -18895,31 +18895,41 @@ fn chrono_like_format(t: std::time::SystemTime) -> Option<String> {
 /// Spawn the OS-default opener on the given file path. Returns the spawn
 /// error if the command can't be invoked. The browser may take time to
 /// open after this returns; we don't wait.
+///
+/// All three stdio streams are redirected to /dev/null. Without this, any
+/// output the opener (or its forked browser) writes to stdout/stderr lands
+/// on the same TTY as the TUI in raw mode and scrambles the screen layout.
 #[allow(dead_code)]
 fn open_in_browser(path: &std::path::Path) -> std::io::Result<()> {
-    use std::process::Command;
+    use std::process::{Command, Stdio};
+    let mut cmd: Command;
     #[cfg(target_os = "linux")]
     {
-        Command::new("xdg-open").arg(path).spawn()?;
+        cmd = Command::new("xdg-open");
+        cmd.arg(path);
     }
     #[cfg(target_os = "macos")]
     {
-        Command::new("open").arg(path).spawn()?;
+        cmd = Command::new("open");
+        cmd.arg(path);
     }
     #[cfg(target_os = "windows")]
     {
-        Command::new("cmd")
-            .args(["/C", "start", ""])
-            .arg(path)
-            .spawn()?;
+        cmd = Command::new("cmd");
+        cmd.args(["/C", "start", ""]).arg(path);
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
+        let _ = path;
         return Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "no known browser opener for this target",
         ));
     }
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
     Ok(())
 }
 
