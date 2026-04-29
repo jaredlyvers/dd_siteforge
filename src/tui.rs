@@ -126,6 +126,10 @@ struct App {
     show_help: bool,
     /// Vertical scroll offset (in rows) for the F1 help modal.
     help_scroll: u16,
+    /// Maximum legal `help_scroll` value, recomputed every render based on
+    /// the current modal area + wrapped row count. Read by event handlers
+    /// to clamp scroll keystrokes without needing the frame.
+    help_scroll_max: u16,
     expanded_sections: HashSet<(usize, usize)>,
     expanded_accordion_items: HashSet<(usize, usize, usize, usize)>,
     expanded_alternating_items: HashSet<(usize, usize, usize, usize)>,
@@ -2068,32 +2072,62 @@ impl App {
 
     /// Unified modal event handling
     fn handle_modal_event(&mut self, evt: Event) -> Option<ModalResult> {
-        let modal = self.modal.as_ref()?;
+        let _ = self.modal.as_ref()?;
 
-        if let Event::Key(key) = evt {
-            match modal {
-                Modal::Edit { .. } => return self.handle_edit_modal_event_unified(key),
+        if let Event::Key(key) = &evt {
+            let key = *key;
+            return match self.modal.as_ref()? {
+                Modal::Edit { .. } => self.handle_edit_modal_event_unified(key),
                 Modal::ComponentPicker { .. } => {
-                    return self.handle_component_picker_event_unified(key)
+                    self.handle_component_picker_event_unified(key)
                 }
-                Modal::SavePrompt { .. } => return self.handle_save_prompt_event_unified(key),
-                Modal::SingleField { .. } => return self.handle_single_field_event_unified(key),
-                Modal::FormEdit { .. } => return self.handle_form_edit_event(key),
-                Modal::TemplatePicker { .. } => return self.handle_template_picker_event(key),
-                Modal::NewPageTitlePrompt { .. } => {
-                    return self.handle_new_page_title_prompt_event(key)
+                Modal::SavePrompt { .. } => self.handle_save_prompt_event_unified(key),
+                Modal::SingleField { .. } => self.handle_single_field_event_unified(key),
+                Modal::FormEdit { .. } => self.handle_form_edit_event(key),
+                Modal::TemplatePicker { .. } => self.handle_template_picker_event(key),
+                Modal::NewPageTitlePrompt { .. } => self.handle_new_page_title_prompt_event(key),
+                Modal::ExportPathPrompt { .. } => self.handle_export_path_prompt_event(key),
+                Modal::PreviewPathPrompt { .. } => self.handle_preview_path_prompt_event(key),
+                Modal::RenamePagePrompt { .. } => self.handle_rename_page_prompt_event(key),
+                Modal::ConfirmPrompt { .. } => self.handle_confirm_prompt_event(key),
+                Modal::ValidationErrors { .. } => self.handle_validation_errors_event(key),
+            };
+        }
+
+        if let Event::Mouse(m) = &evt {
+            let kind = m.kind;
+            match kind {
+                MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                    let delta: i32 = if matches!(kind, MouseEventKind::ScrollUp) { -3 } else { 3 };
+                    if let Some(modal) = self.modal.as_mut() {
+                        match modal {
+                            Modal::ValidationErrors { errors, scroll_offset } => {
+                                let max = errors.len().saturating_sub(1);
+                                let next = (*scroll_offset as i32 + delta).max(0) as usize;
+                                *scroll_offset = next.min(max);
+                            }
+                            Modal::FormEdit { scroll_offset, .. } => {
+                                let next = (*scroll_offset as i32 + delta).max(0) as u16;
+                                *scroll_offset = next;
+                            }
+                            Modal::Edit { selected_field, scroll_offset, visible_fields, fields, .. } => {
+                                let total = fields.len();
+                                let next = (*scroll_offset as i32 + delta).max(0) as usize;
+                                let cap = total.saturating_sub((*visible_fields).max(1));
+                                *scroll_offset = next.min(cap);
+                                if *selected_field < *scroll_offset {
+                                    *selected_field = *scroll_offset;
+                                } else if *selected_field >= *scroll_offset + *visible_fields {
+                                    *selected_field =
+                                        (*scroll_offset + *visible_fields).saturating_sub(1);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    return Some(ModalResult::Continue);
                 }
-                Modal::ExportPathPrompt { .. } => {
-                    return self.handle_export_path_prompt_event(key)
-                }
-                Modal::PreviewPathPrompt { .. } => {
-                    return self.handle_preview_path_prompt_event(key)
-                }
-                Modal::RenamePagePrompt { .. } => {
-                    return self.handle_rename_page_prompt_event(key)
-                }
-                Modal::ConfirmPrompt { .. } => return self.handle_confirm_prompt_event(key),
-                Modal::ValidationErrors { .. } => return self.handle_validation_errors_event(key),
+                _ => {}
             }
         }
 
@@ -3471,6 +3505,7 @@ impl App {
             component_kind: ComponentKind::Banner,
             show_help: false,
             help_scroll: 0,
+            help_scroll_max: 0,
             expanded_sections: HashSet::new(),
             expanded_accordion_items: HashSet::new(),
             expanded_alternating_items: HashSet::new(),
@@ -3854,7 +3889,14 @@ impl App {
             let wrapped_total = wrap_help_lines(&raw, body_w as usize);
             let visible = inner.height as usize;
             let max_scroll = wrapped_total.saturating_sub(visible) as u16;
-            let scroll = (self.help_scroll).min(max_scroll);
+            // Publish the max so event handlers can clamp on key/wheel events.
+            self.help_scroll_max = max_scroll;
+            // Clamp on render too so an inflated stored value (e.g. from
+            // pressing G/End before wrapping was known) snaps back into range.
+            if self.help_scroll > max_scroll {
+                self.help_scroll = max_scroll;
+            }
+            let scroll = self.help_scroll;
 
             let body = Paragraph::new(raw)
                 .style(
@@ -4535,20 +4577,26 @@ impl App {
         }
 
         if self.show_help {
-            if let Event::Key(k) = evt {
-                match k.code {
+            match evt {
+                Event::Key(k) => match k.code {
                     KeyCode::F(1) | KeyCode::Esc => {
                         self.show_help = false;
                         self.help_scroll = 0;
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
-                        self.help_scroll = self.help_scroll.saturating_add(1);
+                        self.help_scroll = self
+                            .help_scroll
+                            .saturating_add(1)
+                            .min(self.help_scroll_max);
                     }
                     KeyCode::Up | KeyCode::Char('k') => {
                         self.help_scroll = self.help_scroll.saturating_sub(1);
                     }
                     KeyCode::PageDown => {
-                        self.help_scroll = self.help_scroll.saturating_add(10);
+                        self.help_scroll = self
+                            .help_scroll
+                            .saturating_add(10)
+                            .min(self.help_scroll_max);
                     }
                     KeyCode::PageUp => {
                         self.help_scroll = self.help_scroll.saturating_sub(10);
@@ -4557,10 +4605,23 @@ impl App {
                         self.help_scroll = 0;
                     }
                     KeyCode::End | KeyCode::Char('G') => {
-                        self.help_scroll = u16::MAX;
+                        self.help_scroll = self.help_scroll_max;
                     }
                     _ => {}
-                }
+                },
+                Event::Mouse(m) => match m.kind {
+                    MouseEventKind::ScrollUp => {
+                        self.help_scroll = self.help_scroll.saturating_sub(3);
+                    }
+                    MouseEventKind::ScrollDown => {
+                        self.help_scroll = self
+                            .help_scroll
+                            .saturating_add(3)
+                            .min(self.help_scroll_max);
+                    }
+                    _ => {}
+                },
+                _ => {}
             }
             return Ok(());
         }
@@ -5598,6 +5659,33 @@ impl App {
     }
 
     fn handle_edit_modal_event(&mut self, evt: Event) -> anyhow::Result<()> {
+        if let Event::Mouse(m) = &evt {
+            if let Some(modal) = self.edit_modal.as_mut() {
+                let total = modal.fields.len();
+                let visible = modal.visible_fields.max(1);
+                let cap = total.saturating_sub(visible);
+                match m.kind {
+                    MouseEventKind::ScrollUp => {
+                        modal.scroll_offset = modal.scroll_offset.saturating_sub(3);
+                        if modal.selected_field
+                            >= modal.scroll_offset + visible
+                        {
+                            modal.selected_field =
+                                (modal.scroll_offset + visible).saturating_sub(1);
+                        }
+                    }
+                    MouseEventKind::ScrollDown => {
+                        modal.scroll_offset =
+                            (modal.scroll_offset + 3).min(cap);
+                        if modal.selected_field < modal.scroll_offset {
+                            modal.selected_field = modal.scroll_offset;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            return Ok(());
+        }
         if let Event::Key(key) = evt {
             match key.code {
                 KeyCode::Esc => {
