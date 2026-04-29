@@ -2164,10 +2164,123 @@ impl App {
         );
     }
 
-    fn handle_image_picker_event(&mut self, _key: event::KeyEvent) -> Option<ModalResult> {
-        // Real body lands in Task 3.
-        self.modal = None;
-        Some(ModalResult::CloseCancel)
+    fn handle_image_picker_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let Some(Modal::ImagePicker { state }) = self.modal.as_mut() else {
+            return Some(ModalResult::CloseCancel);
+        };
+
+        match key.code {
+            KeyCode::Esc => {
+                self.modal = None;
+                self.push_toast(ToastLevel::Info, "Image pick cancelled.");
+                Some(ModalResult::CloseCancel)
+            }
+            KeyCode::Up | KeyCode::Char('k')
+                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                state.selected = state.selected.saturating_sub(1);
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Down | KeyCode::Char('j')
+                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                let entries = list_dir_entries(&state.cwd);
+                let filtered = filter_entries(&entries, &state.filter);
+                if !filtered.is_empty() {
+                    state.selected = (state.selected + 1).min(filtered.len() - 1);
+                }
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Char('h') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if state.cwd != state.root {
+                    if let Some(parent) = state.cwd.parent() {
+                        state.cwd = parent.to_path_buf();
+                        state.filter.clear();
+                        state.selected = 0;
+                    }
+                }
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Char('l') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.image_picker_descend_or_pick();
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Enter => {
+                self.image_picker_descend_or_pick();
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Backspace => {
+                state.filter.pop();
+                state.selected = 0;
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Char(c)
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && (c.is_alphanumeric() || c == '-' || c == '_' || c == '.') =>
+            {
+                state.filter.push(c);
+                state.selected = 0;
+                Some(ModalResult::Continue)
+            }
+            _ => Some(ModalResult::Continue),
+        }
+    }
+
+    /// Resolve the current selection: descend into a directory or commit a
+    /// file pick. Called by both `l` and `Enter`.
+    fn image_picker_descend_or_pick(&mut self) {
+        let (cwd, root, selected_name, is_dir, binding) = {
+            let Some(Modal::ImagePicker { state }) = self.modal.as_ref() else {
+                return;
+            };
+            let entries = list_dir_entries(&state.cwd);
+            let filtered = filter_entries(&entries, &state.filter);
+            let Some(entry) = filtered.get(state.selected) else {
+                return;
+            };
+            (
+                state.cwd.clone(),
+                state.root.clone(),
+                entry.name.clone(),
+                entry.is_dir,
+                state.binding.clone(),
+            )
+        };
+
+        if is_dir {
+            if let Some(Modal::ImagePicker { state }) = self.modal.as_mut() {
+                state.cwd = cwd.join(&selected_name);
+                state.filter.clear();
+                state.selected = 0;
+            }
+            return;
+        }
+
+        // File pick: build the output-relative path under assets/images/.
+        let target_full = cwd.join(&selected_name);
+        let rel_under_root = target_full
+            .strip_prefix(&root)
+            .unwrap_or(&target_full)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let stored = format!("assets/images/{}", rel_under_root);
+
+        self.commit_image_pick(stored, binding);
+    }
+
+    /// Apply the picked path to the binding's target. Task 4 replaces this
+    /// body to restore the paused FormEdit modal and write the URL field.
+    fn commit_image_pick(&mut self, value: String, binding: ImagePickBinding) {
+        match binding {
+            ImagePickBinding::FormEditField { field_id: _ } => {
+                self.modal = None;
+                self.push_toast(
+                    ToastLevel::Warning,
+                    format!("Picked {}; FormEdit restore lands in Task 4.", value),
+                );
+            }
+        }
     }
 
     /// Unified single field renderer (legacy mode)
