@@ -21,12 +21,17 @@ A terminal-UI CMS for authoring framework-native static pages. Single Rust binar
 ## Install
 
 ```bash
-cargo install --path .
-# or
-cargo build --release
+./install.sh
 ```
 
-Binary: `target/release/dd_staticsite`.
+Builds release, drops the binary at `$HOME/.local/bin/dd_staticsite`, and installs the default theme at `$HOME/.config/ldnddev/dd_staticsite_theme.yml` (only when no theme is already there). Override paths via `PREFIX`, `BIN_DIR`, or `CONFIG_DIR` env vars.
+
+Manual alternatives:
+
+```bash
+cargo install --path .            # cargo's bin dir (~/.cargo/bin)
+cargo build --release             # binary at target/release/dd_staticsite
+```
 
 ## Usage
 
