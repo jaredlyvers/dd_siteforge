@@ -2156,7 +2156,7 @@ impl App {
         let footer_y = inner.y + inner.height.saturating_sub(1);
         frame.render_widget(
             Paragraph::new(
-                "j/k or arrows: move  |  l/Enter: descend or pick  |  h: parent  |  type: filter  |  Esc: cancel",
+                "↑/↓: move  |  →/Enter: descend or pick  |  ←: parent  |  type: filter  |  Esc: cancel",
             )
             .style(
                 Style::default()
@@ -2179,15 +2179,11 @@ impl App {
                 self.push_toast(ToastLevel::Info, "Image pick cancelled.");
                 Some(ModalResult::CloseCancel)
             }
-            KeyCode::Up | KeyCode::Char('k')
-                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
+            KeyCode::Up if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 state.selected = state.selected.saturating_sub(1);
                 Some(ModalResult::Continue)
             }
-            KeyCode::Down | KeyCode::Char('j')
-                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
+            KeyCode::Down if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let entries = list_dir_entries(&state.cwd);
                 let filtered = filter_entries(&entries, &state.filter);
                 if !filtered.is_empty() {
@@ -2195,7 +2191,7 @@ impl App {
                 }
                 Some(ModalResult::Continue)
             }
-            KeyCode::Char('h') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Left if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 if state.cwd != state.root {
                     if let Some(parent) = state.cwd.parent() {
                         state.cwd = parent.to_path_buf();
@@ -2205,7 +2201,7 @@ impl App {
                 }
                 Some(ModalResult::Continue)
             }
-            KeyCode::Char('l') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Right if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.image_picker_descend_or_pick();
                 Some(ModalResult::Continue)
             }
@@ -19492,7 +19488,7 @@ mod tests {
     }
 
     #[test]
-    fn image_picker_h_at_root_does_not_escape() {
+    fn image_picker_left_arrow_at_root_does_not_escape() {
         let tmp = std::env::temp_dir().join(format!(
             "dd_imgpicker_root_{}",
             std::time::SystemTime::now()
@@ -19513,7 +19509,7 @@ mod tests {
                 },
             },
         });
-        send_key(&mut app, KeyCode::Char('h'), KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Left, KeyModifiers::NONE);
         match &app.modal {
             Some(Modal::ImagePicker { state }) => assert_eq!(state.cwd, tmp),
             _ => panic!("picker should still be open at root"),
