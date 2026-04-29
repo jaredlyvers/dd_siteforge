@@ -3443,7 +3443,8 @@ impl App {
     /// Entry point for the `p` key. Mirrors `begin_export_flow` but routes
     /// success to `commit_preview_to` so the browser opens after rendering.
     fn begin_preview_flow(&mut self) {
-        let errors = crate::validate::validate_site(&self.site);
+        let root = self.path.as_ref().and_then(|p| p.parent().map(std::path::Path::to_path_buf));
+        let errors = crate::validate::validate_site_with_root(&self.site, root.as_deref());
         if !errors.is_empty() {
             self.modal = Some(Modal::ValidationErrors {
                 errors,
@@ -3467,7 +3468,8 @@ impl App {
     /// modal on failures. Otherwise resolves the output dir (prompting on first
     /// use) and either opens the prompt or commits the export directly.
     fn begin_export_flow(&mut self) {
-        let errors = crate::validate::validate_site(&self.site);
+        let root = self.path.as_ref().and_then(|p| p.parent().map(std::path::Path::to_path_buf));
+        let errors = crate::validate::validate_site_with_root(&self.site, root.as_deref());
         if !errors.is_empty() {
             self.modal = Some(Modal::ValidationErrors {
                 errors,
@@ -10635,7 +10637,8 @@ impl App {
     /// Run `validate_site` on the current site. Open `Modal::ValidationErrors`
     /// if any errors; otherwise set a green status and leave no modal open.
     fn open_validation_modal(&mut self) {
-        let errors = crate::validate::validate_site(&self.site);
+        let root = self.path.as_ref().and_then(|p| p.parent().map(std::path::Path::to_path_buf));
+        let errors = crate::validate::validate_site_with_root(&self.site, root.as_deref());
         if errors.is_empty() {
             self.push_toast(ToastLevel::Success, "No validation errors.");
         } else {
@@ -19222,7 +19225,9 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        std::fs::create_dir_all(&tmp).unwrap();
+        let imgs = tmp.join("source").join("images");
+        std::fs::create_dir_all(&imgs).unwrap();
+        std::fs::write(imgs.join("hero.jpg"), b"fake").unwrap();
         let json_path = tmp.join("site.json");
         let mut app = App::new(Site::starter(), Some(json_path.clone()), AppTheme::default());
         app.site.export_dir = Some("web".to_string());

@@ -695,9 +695,122 @@ fn is_valid_url(url: &str) -> bool {
             || v.starts_with("https://"))
 }
 
+pub fn validate_site_with_root(
+    site: &Site,
+    root: Option<&std::path::Path>,
+) -> Vec<String> {
+    let mut errors = validate_site(site);
+    let Some(root) = root else {
+        return errors;
+    };
+    for page in &site.pages {
+        let refs = collect_image_refs(page);
+        for (label, value) in refs {
+            check_local_image(root, &label, &value, &mut errors);
+        }
+    }
+    errors
+}
+
+fn check_local_image(
+    root: &std::path::Path,
+    label: &str,
+    value: &str,
+    errors: &mut Vec<String>,
+) {
+    let prefix = "assets/images/";
+    let v = value.trim_start_matches('/');
+    let Some(rest) = v.strip_prefix(prefix) else {
+        return;
+    };
+    let resolved = root.join("source").join("images").join(rest);
+    if !resolved.exists() {
+        errors.push(format!(
+            "Missing local image: {} → {} (expected at source/images/{})",
+            label, value, rest
+        ));
+    }
+}
+
+fn collect_image_refs(page: &crate::model::Page) -> Vec<(String, String)> {
+    let mut refs: Vec<(String, String)> = Vec::new();
+    for node in &page.nodes {
+        match node {
+            crate::model::PageNode::Hero(hero) => {
+                refs.push((
+                    format!("page '{}' hero parent_image_url", page.id),
+                    hero.parent_image_url.clone(),
+                ));
+                if let Some(s) = hero.parent_image_mobile.as_deref() {
+                    refs.push((
+                        format!("page '{}' hero parent_image_mobile", page.id),
+                        s.to_string(),
+                    ));
+                }
+                if let Some(s) = hero.parent_image_tablet.as_deref() {
+                    refs.push((
+                        format!("page '{}' hero parent_image_tablet", page.id),
+                        s.to_string(),
+                    ));
+                }
+                if let Some(s) = hero.parent_image_desktop.as_deref() {
+                    refs.push((
+                        format!("page '{}' hero parent_image_desktop", page.id),
+                        s.to_string(),
+                    ));
+                }
+            }
+            crate::model::PageNode::Section(section) => {
+                for col in &section.columns {
+                    for comp in &col.components {
+                        collect_component_image_refs(page, comp, &mut refs);
+                    }
+                }
+            }
+        }
+    }
+    refs
+}
+
+fn collect_component_image_refs(
+    page: &crate::model::Page,
+    comp: &crate::model::SectionComponent,
+    refs: &mut Vec<(String, String)>,
+) {
+    use crate::model::SectionComponent::*;
+    let lbl = |suffix: &str| format!("page '{}' {}", page.id, suffix);
+    match comp {
+        Banner(b) => refs.push((lbl("banner image"), b.parent_image_url.clone())),
+        Cta(c) => refs.push((lbl("cta image"), c.parent_image_url.clone())),
+        Image(i) => refs.push((lbl("image"), i.parent_image_url.clone())),
+        Blockquote(b) => refs.push((lbl("blockquote image"), b.parent_image_url.clone())),
+        Card(c) => {
+            for (n, item) in c.items.iter().enumerate() {
+                refs.push((lbl(&format!("card item {} image", n + 1)), item.child_image_url.clone()));
+            }
+        }
+        Filmstrip(f) => {
+            for (n, item) in f.items.iter().enumerate() {
+                refs.push((lbl(&format!("filmstrip item {} image", n + 1)), item.child_image_url.clone()));
+            }
+        }
+        Slider(s) => {
+            for (n, item) in s.items.iter().enumerate() {
+                refs.push((lbl(&format!("slider item {} image", n + 1)), item.child_image_url.clone()));
+            }
+        }
+        Alternating(a) => {
+            for (n, item) in a.items.iter().enumerate() {
+                refs.push((lbl(&format!("alternating item {} image", n + 1)), item.child_image_url.clone()));
+            }
+        }
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::validate_site;
+    use super::{validate_site, validate_site_with_root};
     use crate::model::{PageNode, Site};
 
     #[test]
@@ -733,5 +846,56 @@ mod tests {
         site.pages.push(site.pages[0].clone());
         let errors = validate_site(&site);
         assert!(errors.iter().any(|e| e.contains("Duplicate page slug")));
+    }
+
+    #[test]
+    fn validate_with_root_flags_missing_local_image() {
+        let tmp = std::env::temp_dir().join(format!(
+            "dd_missing_img_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let mut site = Site::starter();
+        if let PageNode::Hero(hero) = &mut site.pages[0].nodes[0] {
+            hero.parent_image_url = "/assets/images/missing.jpg".to_string();
+            hero.parent_image_alt = Some("alt".to_string());
+        }
+        let errors = validate_site_with_root(&site, Some(&tmp));
+        assert!(
+            errors.iter().any(|e| e.contains("Missing local image")),
+            "expected missing-image error, got: {:?}",
+            errors
+        );
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn validate_with_root_passes_when_image_exists() {
+        let tmp = std::env::temp_dir().join(format!(
+            "dd_present_img_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let imgs = tmp.join("source").join("images");
+        std::fs::create_dir_all(&imgs).unwrap();
+        std::fs::write(imgs.join("hero.jpg"), b"fake").unwrap();
+
+        let mut site = Site::starter();
+        if let PageNode::Hero(hero) = &mut site.pages[0].nodes[0] {
+            hero.parent_image_url = "assets/images/hero.jpg".to_string();
+            hero.parent_image_alt = Some("alt".to_string());
+        }
+        let errors = validate_site_with_root(&site, Some(&tmp));
+        assert!(
+            errors.iter().all(|e| !e.contains("Missing local image")),
+            "no missing-image error expected, got: {:?}",
+            errors
+        );
+        std::fs::remove_dir_all(&tmp).ok();
     }
 }
