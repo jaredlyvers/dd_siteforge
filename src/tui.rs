@@ -204,6 +204,10 @@ enum Modal {
         errors: Vec<String>,
         scroll_offset: usize,
     },
+    /// File picker rooted at `./source/images/`.
+    ImagePicker {
+        state: ImagePickerState,
+    },
     /// Unified form editor: all fields of a component rendered together,
     /// Tab moves between fields, Left/Right cycles enums, Ctrl+S saves via
     /// `cursor::apply_edit_form_to_component`.
@@ -246,6 +250,23 @@ enum ModalResult {
 #[derive(Debug, Clone)]
 enum ConfirmKind {
     DeletePage,
+}
+
+/// Live state of an open image picker. `root` and `cwd` are absolute
+/// paths; `cwd` is always equal to or a descendant of `root`.
+#[derive(Debug, Clone)]
+struct ImagePickerState {
+    root: std::path::PathBuf,
+    cwd: std::path::PathBuf,
+    filter: String,
+    selected: usize,
+    binding: ImagePickBinding,
+}
+
+#[derive(Debug, Clone)]
+enum ImagePickBinding {
+    /// Write back into the FormEdit modal's currently-focused URL field.
+    FormEditField { field_id: String },
 }
 
 /// Visual/semantic class of a toast notification.
@@ -749,6 +770,7 @@ impl App {
             Modal::ValidationErrors { errors, scroll_offset } => {
                 self.render_validation_errors_modal(frame, errors, *scroll_offset);
             }
+            Modal::ImagePicker { state } => self.render_image_picker_modal(frame, state),
         }
     }
 
@@ -2025,6 +2047,20 @@ impl App {
         }
     }
 
+    fn render_image_picker_modal(
+        &self,
+        _frame: &mut ratatui::Frame,
+        _state: &ImagePickerState,
+    ) {
+        // Real body lands in Task 2.
+    }
+
+    fn handle_image_picker_event(&mut self, _key: event::KeyEvent) -> Option<ModalResult> {
+        // Real body lands in Task 3.
+        self.modal = None;
+        Some(ModalResult::CloseCancel)
+    }
+
     /// Unified single field renderer (legacy mode)
     fn render_single_field_unified(
         &self,
@@ -2107,6 +2143,7 @@ impl App {
                 Modal::RenamePagePrompt { .. } => self.handle_rename_page_prompt_event(key),
                 Modal::ConfirmPrompt { .. } => self.handle_confirm_prompt_event(key),
                 Modal::ValidationErrors { .. } => self.handle_validation_errors_event(key),
+                Modal::ImagePicker { .. } => self.handle_image_picker_event(key),
             };
         }
 
@@ -19303,6 +19340,7 @@ impl Modal {
             Modal::RenamePagePrompt { .. } => "RenamePagePrompt",
             Modal::ConfirmPrompt { .. } => "ConfirmPrompt",
             Modal::ValidationErrors { .. } => "ValidationErrors",
+            Modal::ImagePicker { .. } => "ImagePicker",
         }
     }
 }
