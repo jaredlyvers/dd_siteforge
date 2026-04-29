@@ -211,6 +211,10 @@ enum Modal {
     ImagePicker {
         state: ImagePickerState,
     },
+    /// Page picker — lists site pages and writes `/<slug>` to a URL field.
+    PagePicker {
+        state: PagePickerState,
+    },
     /// Unified form editor: all fields of a component rendered together,
     /// Tab moves between fields, Left/Right cycles enums, Ctrl+S saves via
     /// `cursor::apply_edit_form_to_component`.
@@ -268,6 +272,25 @@ struct ImagePickerState {
 
 #[derive(Debug, Clone)]
 enum ImagePickBinding {
+    /// Write back into the FormEdit modal's currently-focused URL field.
+    FormEditField { field_id: String },
+}
+
+/// Live state of an open page picker. Lists site pages by title; on Enter
+/// writes `/<slug>` into the bound URL field.
+#[derive(Debug, Clone)]
+struct PagePickerState {
+    /// Snapshot of (slug, title) pairs at modal-open time. The picker
+    /// doesn't track site mutations while open — it operates on a frozen
+    /// list and the underlying site is back-burnered while paused.
+    pages: Vec<(String, String)>,
+    filter: String,
+    selected: usize,
+    binding: PagePickBinding,
+}
+
+#[derive(Debug, Clone)]
+enum PagePickBinding {
     /// Write back into the FormEdit modal's currently-focused URL field.
     FormEditField { field_id: String },
 }
@@ -774,6 +797,7 @@ impl App {
                 self.render_validation_errors_modal(frame, errors, *scroll_offset);
             }
             Modal::ImagePicker { state } => self.render_image_picker_modal(frame, state),
+            Modal::PagePicker { state } => self.render_page_picker_modal(frame, state),
         }
     }
 
@@ -2290,6 +2314,184 @@ impl App {
         }
     }
 
+    fn render_page_picker_modal(
+        &self,
+        frame: &mut ratatui::Frame,
+        state: &PagePickerState,
+    ) {
+        let area = centered_rect(60, 60, frame.area());
+        frame.render_widget(Clear, area);
+        let outer = Block::default()
+            .title(" Pick page ")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(self.theme.popup_background))
+            .border_style(Style::default().fg(self.theme.border_active))
+            .title_style(
+                Style::default()
+                    .fg(self.theme.title)
+                    .add_modifier(Modifier::BOLD),
+            );
+        let inner = outer.inner(area);
+        frame.render_widget(outer, area);
+        if inner.height < 5 || inner.width < 10 {
+            return;
+        }
+        let pad: u16 = 2;
+        let content_x = inner.x + pad;
+        let content_w = inner.width.saturating_sub(pad * 2);
+
+        // Filter row.
+        let filter_label = format!("Filter: {}_", state.filter);
+        frame.render_widget(
+            Paragraph::new(filter_label).style(
+                Style::default()
+                    .fg(self.theme.text_active_focus)
+                    .bg(self.theme.popup_background),
+            ),
+            Rect::new(content_x, inner.y, content_w, 1),
+        );
+
+        // Filtered list.
+        let filtered = filter_pages(&state.pages, &state.filter);
+        let body_y = inner.y + 2;
+        let body_h = inner.height.saturating_sub(3);
+        let visible = body_h as usize;
+        let start = if filtered.is_empty() {
+            0
+        } else if state.selected >= visible {
+            state.selected + 1 - visible
+        } else {
+            0
+        };
+
+        if filtered.is_empty() {
+            frame.render_widget(
+                Paragraph::new("(no matches)").style(
+                    Style::default()
+                        .fg(self.theme.muted)
+                        .bg(self.theme.popup_background),
+                ),
+                Rect::new(content_x, body_y, content_w, 1),
+            );
+        } else {
+            for (i, (slug, title)) in
+                filtered.iter().skip(start).take(visible).enumerate()
+            {
+                let row = body_y + i as u16;
+                let is_selected = (start + i) == state.selected;
+                let line = format!("{}  /{}", title, slug);
+                let (fg, bg) = if is_selected {
+                    (
+                        self.theme.selected_foreground,
+                        self.theme.selected_background,
+                    )
+                } else {
+                    (self.theme.foreground, self.theme.popup_background)
+                };
+                frame.render_widget(
+                    Paragraph::new(line).style(Style::default().fg(fg).bg(bg)),
+                    Rect::new(content_x, row, content_w, 1),
+                );
+            }
+        }
+
+        let footer_y = inner.y + inner.height.saturating_sub(1);
+        frame.render_widget(
+            Paragraph::new(
+                "↑/↓: move  |  Enter: pick  |  type: filter  |  Esc: cancel",
+            )
+            .style(
+                Style::default()
+                    .fg(self.theme.muted)
+                    .bg(self.theme.popup_background),
+            ),
+            Rect::new(content_x, footer_y, content_w, 1),
+        );
+    }
+
+    fn handle_page_picker_event(
+        &mut self,
+        key: event::KeyEvent,
+    ) -> Option<ModalResult> {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let Some(Modal::PagePicker { state }) = self.modal.as_mut() else {
+            return Some(ModalResult::CloseCancel);
+        };
+        match key.code {
+            KeyCode::Esc => {
+                self.modal = self.paused_form_edit_modal.take();
+                self.push_toast(ToastLevel::Info, "Page pick cancelled.");
+                Some(ModalResult::CloseCancel)
+            }
+            KeyCode::Up if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                state.selected = state.selected.saturating_sub(1);
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Down if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let filtered = filter_pages(&state.pages, &state.filter);
+                if !filtered.is_empty() {
+                    state.selected =
+                        (state.selected + 1).min(filtered.len() - 1);
+                }
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Enter => {
+                self.commit_page_pick();
+                Some(ModalResult::CloseSuccess)
+            }
+            KeyCode::Backspace => {
+                state.filter.pop();
+                state.selected = 0;
+                Some(ModalResult::Continue)
+            }
+            KeyCode::Char(c)
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && (c.is_alphanumeric() || c == '-' || c == '_' || c == ' ') =>
+            {
+                state.filter.push(c);
+                state.selected = 0;
+                Some(ModalResult::Continue)
+            }
+            _ => Some(ModalResult::Continue),
+        }
+    }
+
+    /// Resolve the highlighted page → write `/<slug>` to the bound field.
+    fn commit_page_pick(&mut self) {
+        let (slug, binding) = {
+            let Some(Modal::PagePicker { state }) = self.modal.as_ref() else {
+                return;
+            };
+            let filtered = filter_pages(&state.pages, &state.filter);
+            let Some((slug, _)) = filtered.get(state.selected).cloned() else {
+                return;
+            };
+            (slug, state.binding.clone())
+        };
+        match binding {
+            PagePickBinding::FormEditField { field_id } => {
+                self.modal = self.paused_form_edit_modal.take();
+                if let Some(Modal::FormEdit {
+                    state, cursor_pos, ..
+                }) = self.modal.as_mut()
+                {
+                    let value = format!("/{}", slug);
+                    state.set(&field_id, value.clone());
+                    *cursor_pos = state.get(&field_id).len();
+                    self.push_toast(
+                        ToastLevel::Success,
+                        format!("Picked page: {}", value),
+                    );
+                } else {
+                    self.push_toast(
+                        ToastLevel::Warning,
+                        "Page pick lost: parent form modal closed.",
+                    );
+                }
+            }
+        }
+    }
+
     /// Unified single field renderer (legacy mode)
     fn render_single_field_unified(
         &self,
@@ -2373,6 +2575,7 @@ impl App {
                 Modal::ConfirmPrompt { .. } => self.handle_confirm_prompt_event(key),
                 Modal::ValidationErrors { .. } => self.handle_validation_errors_event(key),
                 Modal::ImagePicker { .. } => self.handle_image_picker_event(key),
+                Modal::PagePicker { .. } => self.handle_page_picker_event(key),
             };
         }
 
@@ -2450,7 +2653,9 @@ impl App {
     fn handle_form_edit_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
         use crossterm::event::{KeyCode, KeyModifiers};
 
-        // Ctrl+P: open image picker on a Url field.
+        // Ctrl+P: open image picker on image_url fields, page picker on
+        // link_url fields. Heuristic on field id since both kinds are
+        // FieldKind::Url today.
         if matches!(key.code, KeyCode::Char('p'))
             && key.modifiers.contains(KeyModifiers::CONTROL)
         {
@@ -2463,31 +2668,63 @@ impl App {
                 _ => return Some(ModalResult::Continue),
             };
 
-            let base = self
-                .path
-                .as_ref()
-                .and_then(|p| p.parent().map(std::path::PathBuf::from))
-                .unwrap_or_else(|| std::path::PathBuf::from("."));
-            let root = base.join("source").join("images");
-            if !root.exists() {
-                self.push_toast(
-                    ToastLevel::Warning,
-                    format!("Source folder not found: {}", root.display()),
-                );
+            if field_id.contains("image") {
+                let base = self
+                    .path
+                    .as_ref()
+                    .and_then(|p| p.parent().map(std::path::PathBuf::from))
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                let root = base.join("source").join("images");
+                if !root.exists() {
+                    self.push_toast(
+                        ToastLevel::Warning,
+                        format!("Source folder not found: {}", root.display()),
+                    );
+                    return Some(ModalResult::Continue);
+                }
+                let paused = self.modal.take();
+                self.paused_form_edit_modal = paused;
+                self.modal = Some(Modal::ImagePicker {
+                    state: ImagePickerState {
+                        root: root.clone(),
+                        cwd: root,
+                        filter: String::new(),
+                        selected: 0,
+                        binding: ImagePickBinding::FormEditField { field_id },
+                    },
+                });
                 return Some(ModalResult::Continue);
             }
 
-            let paused = self.modal.take();
-            self.paused_form_edit_modal = paused;
-            self.modal = Some(Modal::ImagePicker {
-                state: ImagePickerState {
-                    root: root.clone(),
-                    cwd: root,
-                    filter: String::new(),
-                    selected: 0,
-                    binding: ImagePickBinding::FormEditField { field_id },
-                },
-            });
+            if field_id.contains("link") {
+                let pages: Vec<(String, String)> = self
+                    .site
+                    .pages
+                    .iter()
+                    .map(|p| (p.slug.clone(), p.head.title.clone()))
+                    .collect();
+                if pages.is_empty() {
+                    self.push_toast(
+                        ToastLevel::Warning,
+                        "No pages to pick from.".to_string(),
+                    );
+                    return Some(ModalResult::Continue);
+                }
+                let paused = self.modal.take();
+                self.paused_form_edit_modal = paused;
+                self.modal = Some(Modal::PagePicker {
+                    state: PagePickerState {
+                        pages,
+                        filter: String::new(),
+                        selected: 0,
+                        binding: PagePickBinding::FormEditField { field_id },
+                    },
+                });
+                return Some(ModalResult::Continue);
+            }
+
+            // URL field with neither "image" nor "link" in its id — no
+            // picker fits. Fall through silently so Ctrl+P is a no-op.
             return Some(ModalResult::Continue);
         }
 
@@ -17755,7 +17992,8 @@ fn help_text() -> String {
         "Edit modal:",
         "  Any edit command opens a modal with editable fields",
         "  Tab / Shift+Tab: Next/previous editable field for selected row",
-        "  Ctrl+P (in any URL field): Open image picker (./source/images/)",
+        "  Ctrl+P (in image URL field): Open image picker (./source/images/)",
+        "  Ctrl+P (in link URL field): Open page picker (lists site pages, writes /<slug>)",
         "  hero.copy / alternating_copy / accordion_copy / parent_copy / child_copy / child_copy / parent_copy: Up/Down move line, wheel scroll, Enter newline, Ctrl+S save",
         "  Left / Right: Cycle section/hero/cta/banner/accordion/alternating/blockquote/card/filmstrip/milestones/slider option fields when active",
         "  Enter: Confirm edit",
@@ -19691,6 +19929,21 @@ fn filter_entries(entries: &[DirEntryRow], filter: &str) -> Vec<DirEntryRow> {
         .collect()
 }
 
+/// Substring filter for page (slug, title) pairs. Empty filter passes all.
+fn filter_pages(pages: &[(String, String)], filter: &str) -> Vec<(String, String)> {
+    if filter.is_empty() {
+        return pages.to_vec();
+    }
+    let needle = filter.to_lowercase();
+    pages
+        .iter()
+        .filter(|(slug, title)| {
+            title.to_lowercase().contains(&needle) || slug.to_lowercase().contains(&needle)
+        })
+        .cloned()
+        .collect()
+}
+
 /// Strip a leading `./` (and any extra `/`) from a user-supplied relative
 /// path so joining against a base of `.` doesn't produce `././foo` paths.
 /// Trailing slashes are also trimmed for consistent display.
@@ -19733,6 +19986,7 @@ impl Modal {
             Modal::ConfirmPrompt { .. } => "ConfirmPrompt",
             Modal::ValidationErrors { .. } => "ValidationErrors",
             Modal::ImagePicker { .. } => "ImagePicker",
+            Modal::PagePicker { .. } => "PagePicker",
         }
     }
 }
