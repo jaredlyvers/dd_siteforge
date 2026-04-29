@@ -2049,10 +2049,119 @@ impl App {
 
     fn render_image_picker_modal(
         &self,
-        _frame: &mut ratatui::Frame,
-        _state: &ImagePickerState,
+        frame: &mut ratatui::Frame,
+        state: &ImagePickerState,
     ) {
-        // Real body lands in Task 2.
+        let area = centered_rect(70, 70, frame.area());
+        frame.render_widget(Clear, area);
+
+        let outer = Block::default()
+            .title(" Pick image ")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(self.theme.popup_background))
+            .border_style(Style::default().fg(self.theme.border_active))
+            .title_style(
+                Style::default()
+                    .fg(self.theme.title)
+                    .add_modifier(Modifier::BOLD),
+            );
+        let inner = outer.inner(area);
+        frame.render_widget(outer, area);
+        if inner.height < 5 || inner.width < 10 {
+            return;
+        }
+
+        let pad: u16 = 2;
+        let content_x = inner.x + pad;
+        let content_w = inner.width.saturating_sub(pad * 2);
+
+        // Row 0: cwd path (relative to root).
+        let rel = state.cwd.strip_prefix(&state.root).unwrap_or(&state.cwd);
+        let rel_str = rel.to_string_lossy();
+        let cwd_label = if rel_str.is_empty() {
+            "Folder: ./source/images/".to_string()
+        } else {
+            format!("Folder: ./source/images/{}", rel_str)
+        };
+        frame.render_widget(
+            Paragraph::new(cwd_label).style(
+                Style::default()
+                    .fg(self.theme.muted)
+                    .bg(self.theme.popup_background),
+            ),
+            Rect::new(content_x, inner.y, content_w, 1),
+        );
+
+        // Row 1: filter input (with a trailing underscore as a fake cursor).
+        let filter_label = format!("Filter: {}_", state.filter);
+        frame.render_widget(
+            Paragraph::new(filter_label).style(
+                Style::default()
+                    .fg(self.theme.text_active_focus)
+                    .bg(self.theme.popup_background),
+            ),
+            Rect::new(content_x, inner.y + 1, content_w, 1),
+        );
+
+        // Body: filtered entry list, with vertical scroll keeping selection in view.
+        let entries = list_dir_entries(&state.cwd);
+        let filtered = filter_entries(&entries, &state.filter);
+        let body_y = inner.y + 3;
+        let body_h = inner.height.saturating_sub(5);
+        let visible = body_h as usize;
+        let start = if filtered.is_empty() {
+            0
+        } else if state.selected >= visible {
+            state.selected + 1 - visible
+        } else {
+            0
+        };
+
+        if filtered.is_empty() {
+            frame.render_widget(
+                Paragraph::new("(no matches)").style(
+                    Style::default()
+                        .fg(self.theme.muted)
+                        .bg(self.theme.popup_background),
+                ),
+                Rect::new(content_x, body_y, content_w, 1),
+            );
+        } else {
+            for (i, entry) in filtered.iter().skip(start).take(visible).enumerate() {
+                let row = body_y + i as u16;
+                let is_selected = (start + i) == state.selected;
+                let glyph = if entry.is_dir { "/" } else { " " };
+                let line = format!("{} {}", glyph, entry.name);
+                let (fg, bg) = if is_selected {
+                    (
+                        self.theme.selected_foreground,
+                        self.theme.selected_background,
+                    )
+                } else if entry.is_dir {
+                    (self.theme.folders, self.theme.popup_background)
+                } else {
+                    (self.theme.files, self.theme.popup_background)
+                };
+                frame.render_widget(
+                    Paragraph::new(line).style(Style::default().fg(fg).bg(bg)),
+                    Rect::new(content_x, row, content_w, 1),
+                );
+            }
+        }
+
+        // Footer hint.
+        let footer_y = inner.y + inner.height.saturating_sub(1);
+        frame.render_widget(
+            Paragraph::new(
+                "j/k or arrows: move  |  l/Enter: descend or pick  |  h: parent  |  type: filter  |  Esc: cancel",
+            )
+            .style(
+                Style::default()
+                    .fg(self.theme.muted)
+                    .bg(self.theme.popup_background),
+            ),
+            Rect::new(content_x, footer_y, content_w, 1),
+        );
     }
 
     fn handle_image_picker_event(&mut self, _key: event::KeyEvent) -> Option<ModalResult> {
@@ -19297,6 +19406,54 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct DirEntryRow {
+    name: String,
+    is_dir: bool,
+}
+
+/// List immediate children of `dir`, sorted: subdirs first (alpha), then
+/// files (alpha). Hidden entries (leading dot) are skipped. Returns an
+/// empty Vec when the directory is unreadable.
+fn list_dir_entries(dir: &std::path::Path) -> Vec<DirEntryRow> {
+    let read = match std::fs::read_dir(dir) {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    let mut dirs = Vec::new();
+    let mut files = Vec::new();
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let row = DirEntryRow { name, is_dir };
+        if is_dir {
+            dirs.push(row);
+        } else {
+            files.push(row);
+        }
+    }
+    dirs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    dirs.extend(files);
+    dirs
+}
+
+/// Substring filter (case-insensitive). Empty filter passes all entries.
+fn filter_entries(entries: &[DirEntryRow], filter: &str) -> Vec<DirEntryRow> {
+    if filter.is_empty() {
+        return entries.to_vec();
+    }
+    let needle = filter.to_lowercase();
+    entries
+        .iter()
+        .filter(|e| e.name.to_lowercase().contains(&needle))
+        .cloned()
+        .collect()
 }
 
 /// Strip a leading `./` (and any extra `/`) from a user-supplied relative
