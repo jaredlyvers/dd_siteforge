@@ -3824,6 +3824,58 @@ impl App {
             .wrap(Wrap { trim: true });
         frame.render_widget(details, main[1]);
 
+        // Scrollbar on the right edge of the Details panel — only painted
+        // when the content exceeds the visible window. Track lives on the
+        // last column inside the border; thumb height is proportional to
+        // visible/total rows.
+        if details_total_rows > details_visible_rows
+            && main[1].width >= 3
+            && main[1].height >= 4
+        {
+            let track_x = main[1].x + main[1].width.saturating_sub(2);
+            let track_y0 = main[1].y + 1;
+            let track_h = main[1].height.saturating_sub(2);
+            for row in 0..track_h {
+                let cell = Paragraph::new("│").style(
+                    Style::default()
+                        .fg(self.theme.scrollbar)
+                        .bg(self.theme.panel_background),
+                );
+                frame.render_widget(
+                    cell,
+                    Rect {
+                        x: track_x,
+                        y: track_y0 + row,
+                        width: 1,
+                        height: 1,
+                    },
+                );
+            }
+            let total = details_total_rows;
+            let visible = details_visible_rows.max(1);
+            let track_h_usize = track_h as usize;
+            let thumb_h = ((track_h_usize * visible) / total.max(1)).max(1);
+            let scroll_range = total.saturating_sub(visible).max(1);
+            let thumb_top = (self.details_scroll_row * track_h_usize.saturating_sub(thumb_h))
+                / scroll_range;
+            for i in 0..thumb_h {
+                let cell = Paragraph::new("█").style(
+                    Style::default()
+                        .fg(self.theme.scrollbar_hover)
+                        .bg(self.theme.panel_background),
+                );
+                frame.render_widget(
+                    cell,
+                    Rect {
+                        x: track_x,
+                        y: track_y0 + (thumb_top + i) as u16,
+                        width: 1,
+                        height: 1,
+                    },
+                );
+            }
+        }
+
         let footer_text = format!(
             "F1 help | q quit | s save | / insert | Enter edit | Space expand/collapse | A add collection item | X remove collection item | {}",
             self.status
