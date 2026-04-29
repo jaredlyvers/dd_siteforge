@@ -135,6 +135,9 @@ struct App {
     /// search this cache; render writes it. Empty when no eligible modal
     /// is open.
     modal_field_areas: std::cell::RefCell<Vec<(usize, Rect)>>,
+    /// FormEdit modal that was paused when the image picker opened on top
+    /// of it. Restored when the picker closes (Esc or after a commit).
+    paused_form_edit_modal: Option<Modal>,
     expanded_sections: HashSet<(usize, usize)>,
     expanded_accordion_items: HashSet<(usize, usize, usize, usize)>,
     expanded_alternating_items: HashSet<(usize, usize, usize, usize)>,
@@ -2172,7 +2175,7 @@ impl App {
 
         match key.code {
             KeyCode::Esc => {
-                self.modal = None;
+                self.modal = self.paused_form_edit_modal.take();
                 self.push_toast(ToastLevel::Info, "Image pick cancelled.");
                 Some(ModalResult::CloseCancel)
             }
@@ -2269,16 +2272,24 @@ impl App {
         self.commit_image_pick(stored, binding);
     }
 
-    /// Apply the picked path to the binding's target. Task 4 replaces this
-    /// body to restore the paused FormEdit modal and write the URL field.
+    /// Apply the picked path to the binding's target and restore the paused FormEdit modal.
     fn commit_image_pick(&mut self, value: String, binding: ImagePickBinding) {
         match binding {
-            ImagePickBinding::FormEditField { field_id: _ } => {
-                self.modal = None;
-                self.push_toast(
-                    ToastLevel::Warning,
-                    format!("Picked {}; FormEdit restore lands in Task 4.", value),
-                );
+            ImagePickBinding::FormEditField { field_id } => {
+                self.modal = self.paused_form_edit_modal.take();
+                if let Some(Modal::FormEdit { state, cursor_pos, .. }) = self.modal.as_mut() {
+                    state.set(&field_id, value.clone());
+                    *cursor_pos = state.get(&field_id).len();
+                    self.push_toast(
+                        ToastLevel::Success,
+                        format!("Picked image: {}", value),
+                    );
+                } else {
+                    self.push_toast(
+                        ToastLevel::Warning,
+                        "Image pick lost: parent form modal closed.",
+                    );
+                }
             }
         }
     }
@@ -2442,6 +2453,47 @@ impl App {
     /// Handle keyboard events while `Modal::FormEdit` is active.
     fn handle_form_edit_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
         use crossterm::event::{KeyCode, KeyModifiers};
+
+        // Ctrl+P: open image picker on a Url field.
+        if matches!(key.code, KeyCode::Char('p'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            let Some(Modal::FormEdit { state, .. }) = self.modal.as_ref() else {
+                return Some(ModalResult::Continue);
+            };
+            let field_opt = state.form.fields.get(state.focused_field);
+            let field_id = match field_opt {
+                Some(f) if matches!(f.kind, editform::FieldKind::Url { .. }) => f.id.to_string(),
+                _ => return Some(ModalResult::Continue),
+            };
+
+            let base = self
+                .path
+                .as_ref()
+                .and_then(|p| p.parent().map(std::path::PathBuf::from))
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            let root = base.join("source").join("images");
+            if !root.exists() {
+                self.push_toast(
+                    ToastLevel::Warning,
+                    format!("Source folder not found: {}", root.display()),
+                );
+                return Some(ModalResult::Continue);
+            }
+
+            let paused = self.modal.take();
+            self.paused_form_edit_modal = paused;
+            self.modal = Some(Modal::ImagePicker {
+                state: ImagePickerState {
+                    root: root.clone(),
+                    cwd: root,
+                    filter: String::new(),
+                    selected: 0,
+                    binding: ImagePickBinding::FormEditField { field_id },
+                },
+            });
+            return Some(ModalResult::Continue);
+        }
 
         // Ctrl+S: drilled-down form returns to its parent; top-level form
         // commits to the model.
@@ -3812,6 +3864,7 @@ impl App {
             help_scroll: 0,
             help_scroll_max: 0,
             modal_field_areas: std::cell::RefCell::new(Vec::new()),
+            paused_form_edit_modal: None,
             expanded_sections: HashSet::new(),
             expanded_accordion_items: HashSet::new(),
             expanded_alternating_items: HashSet::new(),
@@ -19430,6 +19483,73 @@ mod tests {
         let mut app = App::new(Site::starter(), None, AppTheme::default());
         send_key(&mut app, KeyCode::Char('p'), KeyModifiers::NONE);
         assert!(matches!(app.modal, Some(Modal::PreviewPathPrompt { .. })));
+    }
+
+    #[test]
+    fn image_picker_h_at_root_does_not_escape() {
+        let tmp = std::env::temp_dir().join(format!(
+            "dd_imgpicker_root_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        app.modal = Some(Modal::ImagePicker {
+            state: ImagePickerState {
+                root: tmp.clone(),
+                cwd: tmp.clone(),
+                filter: String::new(),
+                selected: 0,
+                binding: ImagePickBinding::FormEditField {
+                    field_id: "x".to_string(),
+                },
+            },
+        });
+        send_key(&mut app, KeyCode::Char('h'), KeyModifiers::NONE);
+        match &app.modal {
+            Some(Modal::ImagePicker { state }) => assert_eq!(state.cwd, tmp),
+            _ => panic!("picker should still be open at root"),
+        }
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn image_picker_esc_restores_paused_form_edit_modal() {
+        let tmp = std::env::temp_dir().join(format!(
+            "dd_imgpicker_esc_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let dummy_form_state = editform::EditFormState::new(&editform::CTA_FORM);
+        let paused = Modal::FormEdit {
+            state: dummy_form_state,
+            cursor: cursor::Cursor::PageHero { page: 0, node: 0 },
+            cursor_pos: 0,
+            drill_stack: Vec::new(),
+            scroll_offset: 0,
+        };
+        app.paused_form_edit_modal = Some(paused);
+        app.modal = Some(Modal::ImagePicker {
+            state: ImagePickerState {
+                root: tmp.clone(),
+                cwd: tmp.clone(),
+                filter: String::new(),
+                selected: 0,
+                binding: ImagePickBinding::FormEditField {
+                    field_id: "x".to_string(),
+                },
+            },
+        });
+        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+        assert!(app.paused_form_edit_modal.is_none());
+        std::fs::remove_dir_all(&tmp).ok();
     }
 }
 
