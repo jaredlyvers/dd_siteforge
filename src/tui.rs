@@ -130,6 +130,11 @@ struct App {
     /// the current modal area + wrapped row count. Read by event handlers
     /// to clamp scroll keystrokes without needing the frame.
     help_scroll_max: u16,
+    /// Per-frame cache of (field_idx, input_area_rect) for whichever
+    /// multi-field modal is currently rendered. Click-to-focus lookups
+    /// search this cache; render writes it. Empty when no eligible modal
+    /// is open.
+    modal_field_areas: std::cell::RefCell<Vec<(usize, Rect)>>,
     expanded_sections: HashSet<(usize, usize)>,
     expanded_accordion_items: HashSet<(usize, usize, usize, usize)>,
     expanded_alternating_items: HashSet<(usize, usize, usize, usize)>,
@@ -845,6 +850,9 @@ impl App {
         let max_scroll = total_height.saturating_sub(content_height);
         let scroll = scroll_offset.min(max_scroll);
 
+        // Refresh the per-frame click-to-focus cache for this modal.
+        self.modal_field_areas.borrow_mut().clear();
+
         for slot in &slots {
             let field = &state.form.fields[slot.idx];
             let focused = slot.idx == state.focused_field;
@@ -904,6 +912,9 @@ impl App {
                     .style(Style::default().bg(self.theme.popup_background));
                 let inner_rect = field_block.inner(box_rect);
                 frame.render_widget(field_block, box_rect);
+                self.modal_field_areas
+                    .borrow_mut()
+                    .push((slot.idx, box_rect));
                 self.render_form_field_value(
                     frame,
                     field,
@@ -1182,6 +1193,8 @@ impl App {
 
         // Render visible fields
         let mut cursor_pos: Option<(u16, u16)> = None;
+        // Refresh the per-frame click-to-focus cache for this modal.
+        self.modal_field_areas.borrow_mut().clear();
 
         for (idx, rel_y) in y_offsets {
             let field = &fields[idx];
@@ -1268,6 +1281,9 @@ impl App {
                 height: input_height,
             };
             frame.render_widget(input_box, input_area);
+            self.modal_field_areas
+                .borrow_mut()
+                .push((idx, input_area));
 
             // Position cursor for selected field
             if is_selected {
@@ -2096,6 +2112,36 @@ impl App {
 
         if let Event::Mouse(m) = &evt {
             let kind = m.kind;
+            // Click-to-focus inside multi-field modals: pick the input box
+            // whose cached rect contains the click.
+            if matches!(kind, MouseEventKind::Down(MouseButton::Left)) {
+                let (col, row) = (m.column, m.row);
+                let hit = self
+                    .modal_field_areas
+                    .borrow()
+                    .iter()
+                    .find(|(_, r)| {
+                        col >= r.x
+                            && col < r.x + r.width
+                            && row >= r.y
+                            && row < r.y + r.height
+                    })
+                    .map(|(idx, _)| *idx);
+                if let Some(idx) = hit {
+                    if let Some(modal) = self.modal.as_mut() {
+                        match modal {
+                            Modal::Edit { selected_field, .. } => {
+                                *selected_field = idx;
+                            }
+                            Modal::FormEdit { state, .. } => {
+                                state.focused_field = idx;
+                            }
+                            _ => {}
+                        }
+                    }
+                    return Some(ModalResult::Continue);
+                }
+            }
             match kind {
                 MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
                     let delta: i32 = if matches!(kind, MouseEventKind::ScrollUp) { -3 } else { 3 };
@@ -3506,6 +3552,7 @@ impl App {
             show_help: false,
             help_scroll: 0,
             help_scroll_max: 0,
+            modal_field_areas: std::cell::RefCell::new(Vec::new()),
             expanded_sections: HashSet::new(),
             expanded_accordion_items: HashSet::new(),
             expanded_alternating_items: HashSet::new(),
@@ -5712,6 +5759,27 @@ impl App {
 
     fn handle_edit_modal_event(&mut self, evt: Event) -> anyhow::Result<()> {
         if let Event::Mouse(m) = &evt {
+            // Click-to-focus inside the legacy EditModalState fields.
+            if matches!(m.kind, MouseEventKind::Down(MouseButton::Left)) {
+                let (col, row) = (m.column, m.row);
+                let hit = self
+                    .modal_field_areas
+                    .borrow()
+                    .iter()
+                    .find(|(_, r)| {
+                        col >= r.x
+                            && col < r.x + r.width
+                            && row >= r.y
+                            && row < r.y + r.height
+                    })
+                    .map(|(idx, _)| *idx);
+                if let Some(idx) = hit {
+                    if let Some(modal) = self.edit_modal.as_mut() {
+                        modal.selected_field = idx;
+                    }
+                    return Ok(());
+                }
+            }
             if let Some(modal) = self.edit_modal.as_mut() {
                 let total = modal.fields.len();
                 let visible = modal.visible_fields.max(1);
