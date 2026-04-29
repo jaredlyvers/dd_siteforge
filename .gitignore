@@ -53,3 +53,10 @@ Thumbs.db
 # Added by cargo
 
 /target
+
+# Per-author local state (test site, exports, image source, agent tooling)
+/site.json
+/site.json.backup
+/source/
+/web/
+/.kilo/
