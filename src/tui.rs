@@ -1031,8 +1031,13 @@ impl App {
             }
             editform::FieldKind::Textarea { .. } => {
                 let value = state.get(field.id);
+                let display = if focused {
+                    render_cursor_line(value, cursor_pos)
+                } else {
+                    value.to_string()
+                };
                 frame.render_widget(
-                    Paragraph::new(value.to_string())
+                    Paragraph::new(display)
                         .style(value_style)
                         .wrap(Wrap { trim: false }),
                     rect,
@@ -10814,6 +10819,11 @@ impl App {
         if self.try_open_form_edit(&row) {
             return;
         }
+        // Child item rows drill straight into the parent's FormEdit at the
+        // selected item, replacing the legacy single-field InputMode flow.
+        if self.try_open_form_edit_drilled_into_item(&row) {
+            return;
+        }
         match row.kind {
             TreeRowKind::HeaderRoot { .. } => self.open_header_root_edit_modal(),
             TreeRowKind::HeaderSection { .. } => self.begin_edit_selected(),
@@ -11004,6 +11014,140 @@ impl App {
             scroll_offset: 0,
         });
         self.status = format!("Editing {}.", title);
+        true
+    }
+
+    /// If `row` is a child item row inside a SubForm-bearing component
+    /// (CardItem, AccordionItem, etc.), open the parent's FormEdit modal
+    /// pre-drilled into the selected item — the same state the user would
+    /// reach by opening the parent and pressing Enter on the items field
+    /// at the right index.
+    fn try_open_form_edit_drilled_into_item(&mut self, row: &TreeRow) -> bool {
+        let (node_idx, column_idx, component_idx, item_idx) = match row.kind {
+            TreeRowKind::AccordionItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            }
+            | TreeRowKind::AlternatingItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            }
+            | TreeRowKind::CardItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            }
+            | TreeRowKind::FilmstripItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            }
+            | TreeRowKind::MilestonesItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            }
+            | TreeRowKind::SliderItem {
+                node_idx,
+                column_idx,
+                component_idx,
+                item_idx,
+            } => (node_idx, column_idx, component_idx, item_idx),
+            _ => return false,
+        };
+        let page_idx = self.selected_page;
+        let component = self
+            .site
+            .pages
+            .get(page_idx)
+            .and_then(|p| p.nodes.get(node_idx))
+            .and_then(|n| match n {
+                PageNode::Section(s) => Some(s),
+                _ => None,
+            })
+            .and_then(|s| s.columns.get(column_idx))
+            .and_then(|c| c.components.get(component_idx))
+            .cloned();
+        let Some(component) = component else {
+            return false;
+        };
+        let Some(mut parent_state) = cursor::component_to_form_state(&component) else {
+            return false;
+        };
+        // Find the SubForm field (by convention named "items"). If the
+        // parent doesn't have one, give up.
+        let items_field_idx = parent_state.form.fields.iter().position(|f| {
+            f.id == "items" && matches!(f.kind, editform::FieldKind::SubForm { .. })
+        });
+        let Some(items_field_idx) = items_field_idx else {
+            return false;
+        };
+        let items_field_id = parent_state.form.fields[items_field_idx].id.to_string();
+        // Clamp item_idx into the actual sub_state list.
+        let len = parent_state
+            .sub_state
+            .get(&items_field_id)
+            .map(|v| v.len())
+            .unwrap_or(0);
+        if len == 0 {
+            return false;
+        }
+        let safe_item_idx = item_idx.min(len - 1);
+        parent_state.focused_field = items_field_idx;
+        parent_state
+            .selected_sub_item
+            .insert(items_field_id.clone(), safe_item_idx);
+
+        // Drill: replace the live item state with a placeholder, push a
+        // DrillFrame, install the item state as the active modal.
+        let template = match &parent_state.form.fields[items_field_idx].kind {
+            editform::FieldKind::SubForm { template, .. } => *template,
+            _ => return false,
+        };
+        let placeholder = editform::EditFormState::new(template);
+        let items_vec = parent_state
+            .sub_state
+            .get_mut(&items_field_id)
+            .expect("sub_state present for SubForm field");
+        let item_state = std::mem::replace(&mut items_vec[safe_item_idx], placeholder);
+        let item_cursor_pos = item_state
+            .get(item_state.form.fields[item_state.focused_field].id)
+            .len();
+
+        let parent_cursor_pos = parent_state
+            .get(parent_state.form.fields[parent_state.focused_field].id)
+            .len();
+        let mut drill_stack: Vec<DrillFrame> = Vec::new();
+        drill_stack.push(DrillFrame {
+            parent_state,
+            parent_cursor_pos,
+            parent_scroll_offset: 0,
+            subform_field_id: items_field_id.clone(),
+            item_idx: safe_item_idx,
+        });
+
+        let title = item_state.form.title;
+        self.modal = Some(Modal::FormEdit {
+            state: item_state,
+            cursor: cursor::Cursor::PageComponent {
+                page: page_idx,
+                node: node_idx,
+                col: column_idx,
+                comp: component_idx,
+                items: vec![safe_item_idx],
+            },
+            cursor_pos: item_cursor_pos,
+            drill_stack,
+            scroll_offset: 0,
+        });
+        self.status = format!("Editing {} (item {}).", title, safe_item_idx + 1);
         true
     }
 
