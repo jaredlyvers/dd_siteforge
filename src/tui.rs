@@ -124,6 +124,8 @@ struct App {
     modal: Option<Modal>,
     component_kind: ComponentKind,
     show_help: bool,
+    /// Vertical scroll offset (in rows) for the F1 help modal.
+    help_scroll: u16,
     expanded_sections: HashSet<(usize, usize)>,
     expanded_accordion_items: HashSet<(usize, usize, usize, usize)>,
     expanded_alternating_items: HashSet<(usize, usize, usize, usize)>,
@@ -3468,6 +3470,7 @@ impl App {
             modal: None,
             component_kind: ComponentKind::Banner,
             show_help: false,
+            help_scroll: 0,
             expanded_sections: HashSet::new(),
             expanded_accordion_items: HashSet::new(),
             expanded_alternating_items: HashSet::new(),
@@ -3817,30 +3820,94 @@ impl App {
         if self.show_help {
             let area = centered_rect(80, 80, frame.area());
             frame.render_widget(Clear, area);
-            let help = Paragraph::new(help_text())
+            let block = Block::default()
+                .title("Keybindings (F1 / Esc to close, j/k or arrows to scroll)")
+                .borders(Borders::ALL)
                 .style(
                     Style::default()
                         .fg(self.theme.foreground)
                         .bg(self.theme.popup_background),
                 )
-                .block(
-                    Block::default()
-                        .title("Keybindings (F1 to close)")
-                        .borders(Borders::ALL)
-                        .style(
-                            Style::default()
-                                .fg(self.theme.foreground)
-                                .bg(self.theme.popup_background),
-                        )
-                        .border_style(Style::default().fg(self.theme.border))
-                        .title_style(
-                            Style::default()
-                                .fg(self.theme.title)
-                                .add_modifier(Modifier::BOLD),
-                        ),
+                .border_style(Style::default().fg(self.theme.border_active))
+                .title_style(
+                    Style::default()
+                        .fg(self.theme.title)
+                        .add_modifier(Modifier::BOLD),
+                );
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+
+            // Reserve a 1-col gutter on the right for the scrollbar so the
+            // body wraps before reaching the modal border.
+            let scrollbar_width: u16 = 1;
+            let body_w = inner.width.saturating_sub(scrollbar_width + 1);
+            let body_area = Rect {
+                x: inner.x,
+                y: inner.y,
+                width: body_w,
+                height: inner.height,
+            };
+
+            // Pre-wrap the help text against `body_w` so we know the total
+            // wrapped row count and can clamp + size the scrollbar thumb.
+            let raw = help_text();
+            let wrapped_total = wrap_help_lines(&raw, body_w as usize);
+            let visible = inner.height as usize;
+            let max_scroll = wrapped_total.saturating_sub(visible) as u16;
+            let scroll = (self.help_scroll).min(max_scroll);
+
+            let body = Paragraph::new(raw)
+                .style(
+                    Style::default()
+                        .fg(self.theme.foreground)
+                        .bg(self.theme.popup_background),
                 )
-                .wrap(Wrap { trim: true });
-            frame.render_widget(help, area);
+                .wrap(Wrap { trim: false })
+                .scroll((scroll, 0));
+            frame.render_widget(body, body_area);
+
+            // Scrollbar: track + thumb at the right edge of `inner`.
+            if (wrapped_total as u16) > inner.height {
+                let track_x = inner.x + inner.width.saturating_sub(1);
+                for row in 0..inner.height {
+                    let cell = Paragraph::new("│").style(
+                        Style::default()
+                            .fg(self.theme.scrollbar)
+                            .bg(self.theme.popup_background),
+                    );
+                    frame.render_widget(
+                        cell,
+                        Rect {
+                            x: track_x,
+                            y: inner.y + row,
+                            width: 1,
+                            height: 1,
+                        },
+                    );
+                }
+                // Thumb size proportional to visible/total.
+                let total_h = inner.height as usize;
+                let thumb_h = ((total_h * total_h) / wrapped_total.max(1)).max(1);
+                let scroll_range = wrapped_total.saturating_sub(total_h).max(1);
+                let thumb_top = ((scroll as usize) * total_h.saturating_sub(thumb_h))
+                    / scroll_range;
+                for i in 0..thumb_h {
+                    let cell = Paragraph::new("█").style(
+                        Style::default()
+                            .fg(self.theme.scrollbar_hover)
+                            .bg(self.theme.popup_background),
+                    );
+                    frame.render_widget(
+                        cell,
+                        Rect {
+                            x: track_x,
+                            y: inner.y + (thumb_top + i) as u16,
+                            width: 1,
+                            height: 1,
+                        },
+                    );
+                }
+            }
         }
 
         // Render edit modal if open
@@ -4470,7 +4537,28 @@ impl App {
         if self.show_help {
             if let Event::Key(k) = evt {
                 match k.code {
-                    KeyCode::F(1) | KeyCode::Esc => self.show_help = false,
+                    KeyCode::F(1) | KeyCode::Esc => {
+                        self.show_help = false;
+                        self.help_scroll = 0;
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        self.help_scroll = self.help_scroll.saturating_add(1);
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.help_scroll = self.help_scroll.saturating_sub(1);
+                    }
+                    KeyCode::PageDown => {
+                        self.help_scroll = self.help_scroll.saturating_add(10);
+                    }
+                    KeyCode::PageUp => {
+                        self.help_scroll = self.help_scroll.saturating_sub(10);
+                    }
+                    KeyCode::Home | KeyCode::Char('g') => {
+                        self.help_scroll = 0;
+                    }
+                    KeyCode::End | KeyCode::Char('G') => {
+                        self.help_scroll = u16::MAX;
+                    }
                     _ => {}
                 }
             }
@@ -18931,6 +19019,24 @@ fn open_in_browser(path: &std::path::Path) -> std::io::Result<()> {
         .stderr(Stdio::null())
         .spawn()?;
     Ok(())
+}
+
+/// Approximate ratatui Paragraph::wrap line splitting so the help modal can
+/// know its total wrapped row count up front (for scroll clamp + scrollbar
+/// thumb sizing). Splits on '\n' first, then breaks long lines into
+/// `width`-char chunks. Empty lines stay one row tall.
+fn wrap_help_lines(text: &str, width: usize) -> usize {
+    let w = width.max(1);
+    let mut total = 0usize;
+    for raw in text.split('\n') {
+        if raw.is_empty() {
+            total += 1;
+            continue;
+        }
+        let chars = raw.chars().count();
+        total += chars.div_ceil(w);
+    }
+    total
 }
 
 fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
