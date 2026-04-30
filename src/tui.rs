@@ -21,6 +21,7 @@ use serde::Deserialize;
 
 use crate::model::{PageNode, SectionColumn, Site};
 const AUTOSAVE_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(2);
+const TEXTAREA_MAX_DISPLAY_ROWS: u16 = 35;
 
 pub mod cursor;
 pub mod editform;
@@ -870,7 +871,15 @@ impl App {
                 continue;
             }
             let content_rows: u16 = match &field.kind {
-                editform::FieldKind::Textarea { rows, .. } => (*rows).max(1),
+                editform::FieldKind::Textarea { rows, .. } => {
+                    let max_rows = textarea_max_rows_for_window(content_height);
+                    textarea_display_rows(
+                        state.get(field.id),
+                        (*rows).max(1),
+                        Some(content_rect.width.saturating_sub(2)),
+                        max_rows,
+                    )
+                }
                 editform::FieldKind::SubForm { .. } => {
                     let items_len = state
                         .sub_state
@@ -940,18 +949,25 @@ impl App {
                 );
             }
 
-            // Input box — only drawn when fully visible so partial borders don't flash.
-            if box_top_screen >= 0 && box_bottom_screen <= content_height as i32 {
+            // Input box. Textareas may be taller than the current viewport, so
+            // clamp the drawn box instead of dropping it entirely.
+            if box_top_screen >= 0 && box_top_screen < content_height as i32 {
                 let border_color = if focused {
                     self.theme.input_border_focus
                 } else {
                     self.theme.input_border_default
                 };
+                let visible_box_height = slot
+                    .box_height
+                    .min(content_height.saturating_sub(box_top_screen as u16));
+                if visible_box_height < 3 {
+                    continue;
+                }
                 let box_rect = Rect::new(
                     content_rect.x,
                     content_rect.y + box_top_screen as u16,
                     content_rect.width,
-                    slot.box_height,
+                    visible_box_height,
                 );
                 let field_block = Block::default()
                     .borders(Borders::ALL)
@@ -1029,17 +1045,38 @@ impl App {
             }
             editform::FieldKind::Textarea { .. } => {
                 let value = state.get(field.id);
-                let display = if focused {
-                    render_cursor_line(value, cursor_pos)
+                let visible_rows = rect.height as usize;
+                let (display, first_visible_row, total_rows) =
+                    render_textarea_display_window(value, cursor_pos, focused, visible_rows);
+                let text_rect = if total_rows > visible_rows {
+                    Rect {
+                        width: rect.width.saturating_sub(1),
+                        ..rect
+                    }
                 } else {
-                    value.to_string()
+                    rect
                 };
                 frame.render_widget(
                     Paragraph::new(display)
-                        .style(value_style)
-                        .wrap(Wrap { trim: false }),
-                    rect,
+                        .style(value_style),
+                    text_rect,
                 );
+                if total_rows > visible_rows {
+                    render_textarea_scrollbar(
+                        frame,
+                        Rect {
+                            x: rect.x + rect.width.saturating_sub(1),
+                            y: rect.y,
+                            width: 1,
+                            height: rect.height,
+                        },
+                        first_visible_row,
+                        visible_rows,
+                        total_rows,
+                        self.theme.scrollbar,
+                        self.theme.popup_background,
+                    );
+                }
             }
             editform::FieldKind::Enum { options, .. } => {
                 let value = state.get(field.id);
@@ -1103,7 +1140,14 @@ fn focused_field_virtual_rows(state: &editform::EditFormState) -> (u16, u16) {
             continue;
         }
         let content_rows: u16 = match &field.kind {
-            editform::FieldKind::Textarea { rows, .. } => (*rows).max(1),
+            editform::FieldKind::Textarea { rows, .. } => {
+                textarea_display_rows(
+                    state.get(field.id),
+                    (*rows).max(1),
+                    None,
+                    TEXTAREA_MAX_DISPLAY_ROWS,
+                )
+            }
             editform::FieldKind::SubForm { .. } => {
                 let items_len = state
                     .sub_state
@@ -1122,6 +1166,166 @@ fn focused_field_virtual_rows(state: &editform::EditFormState) -> (u16, u16) {
         y = y.saturating_add(entry_height);
     }
     (0, 0)
+}
+
+fn textarea_display_rows(
+    value: &str,
+    base_rows: u16,
+    wrap_width: Option<u16>,
+    max_rows: u16,
+) -> u16 {
+    let content_rows = textarea_visual_line_count(value, wrap_width).min(u16::MAX as usize) as u16;
+    base_rows
+        .max(content_rows.max(1))
+        .min(max_rows.max(1))
+}
+
+fn textarea_max_rows_for_window(content_height: u16) -> u16 {
+    content_height
+        .saturating_sub(3)
+        .max(1)
+        .min(TEXTAREA_MAX_DISPLAY_ROWS)
+}
+
+fn textarea_visual_line_count(value: &str, wrap_width: Option<u16>) -> usize {
+    let Some(width) = wrap_width.map(|w| w.max(1) as usize) else {
+        return input_lines_preserve(value).len().max(1);
+    };
+
+    input_lines_preserve(value)
+        .iter()
+        .map(|line| {
+            let chars = line.chars().count();
+            chars.div_ceil(width).max(1)
+        })
+        .sum::<usize>()
+        .max(1)
+}
+
+#[cfg(test)]
+fn render_textarea_display(
+    value: &str,
+    cursor_pos: usize,
+    focused: bool,
+    visible_rows: usize,
+) -> String {
+    render_textarea_display_window(value, cursor_pos, focused, visible_rows).0
+}
+
+fn render_textarea_display_window(
+    value: &str,
+    cursor_pos: usize,
+    focused: bool,
+    visible_rows: usize,
+) -> (String, usize, usize) {
+    let visible_rows = visible_rows.max(1);
+    let mut lines = input_lines_preserve(value);
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+
+    let cursor_row = textarea_cursor_row(value, cursor_pos).min(lines.len().saturating_sub(1));
+    let start = if focused {
+        cursor_row.saturating_sub(visible_rows.saturating_sub(1))
+    } else {
+        0
+    };
+    let end = (start + visible_rows).min(lines.len());
+
+    let mut display = Vec::with_capacity(visible_rows);
+    for (idx, line) in lines.iter().enumerate().take(end).skip(start) {
+        if focused && idx == cursor_row {
+            let cursor_col = textarea_cursor_col(value, cursor_pos);
+            display.push(render_cursor_line(line, cursor_col));
+        } else {
+            display.push(line.clone());
+        }
+    }
+    while display.len() < visible_rows {
+        display.push(String::new());
+    }
+    (display.join("\n"), start, lines.len())
+}
+
+fn render_textarea_scrollbar(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    first_visible_row: usize,
+    visible_rows: usize,
+    total_rows: usize,
+    scrollbar_color: Color,
+    background: Color,
+) {
+    if area.height == 0 || total_rows <= visible_rows {
+        return;
+    }
+
+    for y in 0..area.height {
+        frame.render_widget(
+            Paragraph::new(" ").style(Style::default().bg(background)),
+            Rect {
+                x: area.x,
+                y: area.y + y,
+                width: 1,
+                height: 1,
+            },
+        );
+    }
+
+    let track_height = area.height as usize;
+    let thumb_height = ((visible_rows.max(1) * track_height) / total_rows.max(1))
+        .max(1)
+        .min(track_height);
+    let max_scroll = total_rows.saturating_sub(visible_rows.max(1));
+    let travel = track_height.saturating_sub(thumb_height);
+    let thumb_top = if max_scroll == 0 {
+        0
+    } else {
+        (first_visible_row.min(max_scroll) * travel) / max_scroll
+    };
+
+    for y in thumb_top..thumb_top + thumb_height {
+        frame.render_widget(
+            Paragraph::new("█").style(Style::default().fg(scrollbar_color).bg(background)),
+            Rect {
+                x: area.x,
+                y: area.y + y as u16,
+                width: 1,
+                height: 1,
+            },
+        );
+    }
+}
+
+fn textarea_cursor_row(value: &str, cursor_pos: usize) -> usize {
+    value
+        .chars()
+        .take(cursor_pos.min(value.chars().count()))
+        .filter(|c| *c == '\n')
+        .count()
+}
+
+fn textarea_cursor_col(value: &str, cursor_pos: usize) -> usize {
+    let mut col = 0;
+    for c in value.chars().take(cursor_pos.min(value.chars().count())) {
+        if c == '\n' {
+            col = 0;
+        } else {
+            col += 1;
+        }
+    }
+    col
+}
+
+fn textarea_move_cursor_vertical(value: &str, cursor_pos: usize, row_delta: isize) -> usize {
+    let lines = input_lines_preserve(value);
+    let current_row = textarea_cursor_row(value, cursor_pos).min(lines.len().saturating_sub(1));
+    let current_col = textarea_cursor_col(value, cursor_pos);
+    let target_row = current_row
+        .saturating_add_signed(row_delta)
+        .min(lines.len().saturating_sub(1));
+
+    cursor_from_row_col(&lines, target_row, current_col)
 }
 
 /// Compute a new scroll offset that keeps the focused field in view given
@@ -3043,14 +3247,32 @@ impl App {
                 }
             }
             KeyCode::Up => {
-                state.focus_prev();
+                if is_textarea {
+                    *cursor_pos =
+                        textarea_move_cursor_vertical(state.get(field_id), *cursor_pos, -1);
+                } else {
+                    state.focus_prev();
                     *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
-                *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
+                    *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
+                }
             }
             KeyCode::Down => {
-                state.focus_next();
+                if is_textarea {
+                    *cursor_pos =
+                        textarea_move_cursor_vertical(state.get(field_id), *cursor_pos, 1);
+                } else {
+                    state.focus_next();
                     *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
-                *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
+                    *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
+                }
+            }
+            KeyCode::PageUp if is_textarea => {
+                *cursor_pos =
+                    textarea_move_cursor_vertical(state.get(field_id), *cursor_pos, -10);
+            }
+            KeyCode::PageDown if is_textarea => {
+                *cursor_pos =
+                    textarea_move_cursor_vertical(state.get(field_id), *cursor_pos, 10);
             }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 if accepts_text {
@@ -5847,14 +6069,22 @@ impl App {
     }
 
     fn multiline_rows(&self) -> usize {
-        self.input_mode
+        let base_rows = self
+            .input_mode
             .map(Self::multiline_rows_for_mode)
-            .unwrap_or(1)
+            .unwrap_or(1);
+        if !self.is_multiline_input_mode() {
+            return base_rows;
+        }
+        let content_rows = input_lines_preserve(&self.input_buffer).len().max(1);
+        base_rows
+            .max(content_rows)
+            .min(TEXTAREA_MAX_DISPLAY_ROWS as usize)
     }
 
     fn multiline_max_rows_for_mode(mode: InputMode) -> Option<usize> {
         match mode {
-            InputMode::EditHeroCopy => Some(3),
+            InputMode::EditHeroCopy => None,
             InputMode::EditAlternatingItemCopy
             | InputMode::EditCtaCopy
             | InputMode::EditBlockquoteCopy
@@ -19049,6 +19279,47 @@ mod tests {
             _ => panic!("expected FormEdit"),
         };
         assert_eq!(after, before + 1, "A should add one item");
+    }
+
+    #[test]
+    fn textarea_display_rows_grows_with_content_and_caps() {
+        assert_eq!(textarea_display_rows("one line", 3, None, 35), 3);
+        assert_eq!(
+            textarea_display_rows("one\ntwo\nthree\nfour", 3, None, 35),
+            4
+        );
+
+        let many_lines = (0..80).map(|_| "line").collect::<Vec<_>>().join("\n");
+        assert_eq!(
+            textarea_display_rows(&many_lines, 3, None, TEXTAREA_MAX_DISPLAY_ROWS),
+            TEXTAREA_MAX_DISPLAY_ROWS
+        );
+
+        assert_eq!(textarea_display_rows(&many_lines, 3, None, 10), 10);
+        assert_eq!(textarea_display_rows("abcdef", 1, Some(2), 35), 3);
+    }
+
+    #[test]
+    fn textarea_display_scrolls_to_cursor_without_truncating_value() {
+        let value = "one\ntwo\nthree\nfour\nfive";
+        let rendered = render_textarea_display(value, value.chars().count(), true, 3);
+
+        assert_eq!(rendered, "three\nfour\nfive▋");
+    }
+
+    #[test]
+    fn textarea_vertical_cursor_movement_keeps_column_when_possible() {
+        let value = "abc\ndefgh\nij";
+        let cursor = cursor_from_row_col(&input_lines_preserve(value), 1, 4);
+
+        assert_eq!(
+            textarea_move_cursor_vertical(value, cursor, -1),
+            cursor_from_row_col(&input_lines_preserve(value), 0, 3)
+        );
+        assert_eq!(
+            textarea_move_cursor_vertical(value, cursor, 1),
+            cursor_from_row_col(&input_lines_preserve(value), 2, 2)
+        );
     }
 
     fn open_form_edit_on_selected_cta(app: &mut App) {
