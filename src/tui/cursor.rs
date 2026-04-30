@@ -26,6 +26,7 @@ use crate::model::{
 use crate::tui::editform::{self, EditFormState, FieldKind};
 
 /// Address of any editable node in the site.
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cursor {
     // --- Header region ---
@@ -225,10 +226,6 @@ pub fn apply_edit_form_to_component(
             SectionComponent::Accordion(a) => apply_accordion_values(a, state),
             SectionComponent::Alternating(a) => apply_alternating_values(a, state),
             SectionComponent::Navigation(n) => apply_navigation_values(n, state),
-            other => Err(anyhow!(
-                "apply_edit_form_to_component: component type not migrated to unified editor yet ({:?})",
-                std::mem::discriminant(other)
-            )),
         },
         CursorRef::Hero(hero) => apply_hero_values(hero, state),
         CursorRef::Section(section) => apply_section_values(section, state),

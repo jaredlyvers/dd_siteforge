@@ -20,8 +20,6 @@ use ratatui::Terminal;
 use serde::Deserialize;
 
 use crate::model::{PageNode, SectionColumn, Site};
-use crate::storage::save_site;
-
 const AUTOSAVE_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(2);
 
 pub mod cursor;
@@ -146,7 +144,6 @@ struct App {
     expanded_milestones_items: HashSet<(usize, usize, usize, usize)>,
     expanded_slider_items: HashSet<(usize, usize, usize, usize)>,
     header_column_expanded: bool,
-    header_components_expanded: HashSet<usize>,
 }
 
 // ============================================================================
@@ -315,7 +312,6 @@ struct Toast {
 struct ModalConfig {
     width_percent: u16,
     height_percent: u16,
-    show_scrollbar: bool,
     footer_text: String,
 }
 
@@ -324,7 +320,6 @@ impl Default for ModalConfig {
         Self {
             width_percent: 80,
             height_percent: 80,
-            show_scrollbar: true,
             footer_text: "Tab/Up/Down: navigate | Ctrl+S: save | Esc: cancel".to_string(),
         }
     }
@@ -355,6 +350,7 @@ struct EditModalState {
     visible_fields: usize,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum InputMode {
     EditHeroImage,
@@ -511,6 +507,7 @@ enum ComponentKind {
     HeaderMenu,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 struct AppTheme {
     // Core UI backgrounds
@@ -708,6 +705,7 @@ enum TreeRowKind {
 
 impl App {
     /// Check if any modal is currently open
+    #[allow(dead_code)]
     fn is_modal_open(&self) -> bool {
         self.modal.is_some()
             || self.edit_modal.is_some()
@@ -1420,7 +1418,6 @@ impl App {
         }
 
         // Footer
-        let visible_count = visible_end.saturating_sub(visible_start);
         let footer_text = format!(
             "{}-{} of {} fields | Tab/Up/Down: navigate | Ctrl+S: save | Esc: cancel",
             visible_start + 1,
@@ -1462,6 +1459,7 @@ impl App {
     }
 
     /// Render scrollbar
+    #[allow(dead_code)]
     fn render_scrollbar(
         &self,
         frame: &mut ratatui::Frame,
@@ -1526,7 +1524,6 @@ impl App {
         let config = ModalConfig {
             width_percent: 70,
             height_percent: 70,
-            show_scrollbar: false,
             footer_text: "Type to filter | Up/Down: select | Enter: insert | Esc: cancel"
                 .to_string(),
         };
@@ -1610,7 +1607,6 @@ impl App {
         let config = ModalConfig {
             width_percent: 70,
             height_percent: 35,
-            show_scrollbar: false,
             footer_text: "Enter: save | Esc: cancel".to_string(),
         };
 
@@ -4113,7 +4109,6 @@ impl App {
             expanded_milestones_items: HashSet::new(),
             expanded_slider_items: HashSet::new(),
             header_column_expanded: true,
-            header_components_expanded: HashSet::new(),
             dirty: false,
             dirty_since: None,
             last_saved_json,
@@ -7601,6 +7596,7 @@ impl App {
                 .to_string();
     }
 
+    #[allow(dead_code)]
     fn old_begin_edit_selected(&mut self) {
         // Deprecated - keeping for reference
         let selected = {
@@ -16792,6 +16788,7 @@ fn parse_alert_type(raw: &str) -> Option<crate::model::AlertType> {
     }
 }
 
+#[allow(dead_code)]
 fn next_alert_type(current: crate::model::AlertType, forward: bool) -> crate::model::AlertType {
     use crate::model::AlertType;
     let all = [
@@ -16827,6 +16824,7 @@ fn parse_alert_class(raw: &str) -> Option<crate::model::AlertClass> {
     }
 }
 
+#[allow(dead_code)]
 fn next_alert_class(current: crate::model::AlertClass, forward: bool) -> crate::model::AlertClass {
     use crate::model::AlertClass;
     let all = [AlertClass::Default, AlertClass::Compact];
@@ -17337,6 +17335,7 @@ fn parse_navigation_type(raw: &str) -> Option<crate::model::NavigationType> {
     }
 }
 
+#[allow(dead_code)]
 fn next_navigation_type(
     current: crate::model::NavigationType,
     forward: bool,
@@ -17377,6 +17376,7 @@ fn parse_navigation_class(raw: &str) -> Option<crate::model::NavigationClass> {
     }
 }
 
+#[allow(dead_code)]
 fn next_navigation_class(
     current: crate::model::NavigationClass,
     forward: bool,
@@ -17400,6 +17400,7 @@ fn next_navigation_class(
     all[next]
 }
 
+#[allow(dead_code)]
 fn navigation_kind_to_str(v: crate::model::NavigationKind) -> &'static str {
     match v {
         crate::model::NavigationKind::Link => "link",
@@ -17407,6 +17408,7 @@ fn navigation_kind_to_str(v: crate::model::NavigationKind) -> &'static str {
     }
 }
 
+#[allow(dead_code)]
 fn parse_navigation_kind(raw: &str) -> Option<crate::model::NavigationKind> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "link" => Some(crate::model::NavigationKind::Link),
@@ -17415,6 +17417,7 @@ fn parse_navigation_kind(raw: &str) -> Option<crate::model::NavigationKind> {
     }
 }
 
+#[allow(dead_code)]
 fn next_navigation_kind(
     current: crate::model::NavigationKind,
     forward: bool,
@@ -17446,6 +17449,7 @@ fn parse_robots_directive(raw: &str) -> Option<crate::model::RobotsDirective> {
     }
 }
 
+#[allow(dead_code)]
 fn next_robots_directive(
     current: crate::model::RobotsDirective,
     forward: bool,
@@ -17495,6 +17499,7 @@ fn parse_schema_type(raw: &str) -> Option<crate::model::SchemaType> {
     }
 }
 
+#[allow(dead_code)]
 fn next_schema_type(
     current: crate::model::SchemaType,
     forward: bool,
@@ -18908,7 +18913,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn tier_c_hero_form_edit_round_trip() {
         let mut app = App::new(Site::starter(), None, AppTheme::default());
         app.selected_page = 0;
@@ -19021,6 +19025,7 @@ mod tests {
         assert_eq!(visible_count, 4);
     }
 
+    #[test]
     #[allow(non_snake_case)]
     fn tier_b_add_item_via_A_key() {
         let mut app = app_with_component(ComponentKind::Accordion);

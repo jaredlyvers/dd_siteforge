@@ -44,7 +44,8 @@ pub fn render_site_to_dir(site: &Site, output_dir: &Path) -> anyhow::Result<()> 
     Ok(())
 }
 
-pub fn render_page_html(page: &Page) -> anyhow::Result<String> {
+#[cfg(test)]
+fn render_page_html(page: &Page) -> anyhow::Result<String> {
     // Render a single page without header/footer chrome — used by tests and callers
     // that don't have access to the full site (e.g. previews).
     render_page_html_with_chrome(page, "", "")

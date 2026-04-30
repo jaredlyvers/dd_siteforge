@@ -28,6 +28,7 @@ pub struct FormField {
     pub id: &'static str,
     pub label: &'static str,
     pub kind: FieldKind,
+    #[allow(dead_code)]
     pub required: bool,
     pub visible_when: Option<FieldPredicate>,
 }
@@ -50,6 +51,7 @@ pub enum FieldKind {
     /// Three-in-one optional link: url + target + label, rendered as one
     /// logical field with three child inputs. Submits the triple together
     /// only when all three non-empty.
+    #[allow(dead_code)]
     OptionalLinkTriple {
         url_id: &'static str,
         target_id: &'static str,
