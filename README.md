@@ -108,4 +108,4 @@ cargo test -q
 
 ## License
 
-Proprietary; internal ldnddev tooling.
+MIT License. Use, fork, modify, and build from it freely.
