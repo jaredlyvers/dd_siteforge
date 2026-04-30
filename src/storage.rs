@@ -172,7 +172,7 @@ mod tests {
             panic!("starter site expected section at node index 1");
         }
 
-        let path = unique_temp_path("dd_staticsite_storage_roundtrip");
+        let path = unique_temp_path("dd_siteforge_storage_roundtrip");
         save_site(&path, &site).expect("save should succeed");
         let loaded = load_site(&path).expect("load should succeed");
         let _ = std::fs::remove_file(&path);
@@ -329,7 +329,7 @@ mod tests {
             panic!("starter site expected section at node index 1");
         }
 
-        let path = unique_temp_path("dd_staticsite_nested_roundtrip");
+        let path = unique_temp_path("dd_siteforge_nested_roundtrip");
         save_site(&path, &site).expect("save should succeed");
         let loaded = load_site(&path).expect("load should succeed");
         let _ = std::fs::remove_file(&path);

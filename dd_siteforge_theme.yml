@@ -1,6 +1,7 @@
-# dd_staticsite TUI Theme Configuration
+# dd_siteforge TUI Theme Configuration
 # Based on dd_framework color system
-# Lookup order: ./theme.yml, ./.theme.yml, ~/.config/ldnddev/dd_staticsite/.theme.yml
+# Lookup order: ./dd_siteforge_theme.yml, ./theme.yml, ./.theme.yml,
+# ~/.config/ldnddev/dd_siteforge_theme.yml, ~/.config/ldnddev/dd_siteforge/.theme.yml
 #
 
 colors:

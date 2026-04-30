@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — build + install dd_staticsite, or remove an existing install.
+# install.sh — build + install dd_siteforge, or remove an existing install.
 #
 # Usage:
 #   ./install.sh                # build (release) and install
@@ -8,7 +8,7 @@
 #   ./install.sh --help         # this help
 #
 # Override defaults via env vars:
-#   PREFIX=$HOME/.local                       # binary lives at $PREFIX/bin/dd_staticsite
+#   PREFIX=$HOME/.local                       # binary lives at $PREFIX/bin/dd_siteforge
 #   CONFIG_DIR=$HOME/.config/ldnddev          # theme lives here
 #
 # Re-run safe: existing themes are left alone on install; the binary is overwritten.
@@ -19,8 +19,8 @@ set -euo pipefail
 PREFIX="${PREFIX:-$HOME/.local}"
 BIN_DIR="${BIN_DIR:-$PREFIX/bin}"
 CONFIG_DIR="${CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/ldnddev}"
-BIN_NAME="dd_staticsite"
-THEME_FILE="dd_staticsite_theme.yml"
+BIN_NAME="dd_siteforge"
+THEME_FILE="dd_siteforge_theme.yml"
 
 # ---- pretty -----------------------------------------------------------------
 if [ -t 1 ]; then

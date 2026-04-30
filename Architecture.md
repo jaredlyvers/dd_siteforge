@@ -104,7 +104,7 @@ loop:
 
 ## Theme
 
-Tokens load from (in order): `./dd_staticsite_theme.yml`, `./theme.yml`, `./.theme.yml`, `~/.config/ldnddev/dd_staticsite_theme.yml`. Fall through to built-in defaults.
+Tokens load from (in order): `./dd_siteforge_theme.yml`, `./theme.yml`, `./.theme.yml`, `~/.config/ldnddev/dd_siteforge_theme.yml`, `~/.config/ldnddev/dd_siteforge/.theme.yml`. Fall through to built-in defaults.
 
 Schema follows `THEME_STRUCTURE_STANDARD.md`. Tokens used: `base_background`, `body_background`, `popup_background` (modal), `text_primary`, `text_secondary`/`muted`, `text_labels`, `text_active_focus`, `modal_labels`, `modal_text`, `selected_*`, `border_default`/`border_active`, `input_border_*`, `input_text_*`, `cursor`, `scrollbar`/`scrollbar_hover`, `success`/`info`/`warning`/`error`, `folders`/`files`/`links`.
 

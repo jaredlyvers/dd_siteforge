@@ -4,7 +4,7 @@ Guidance for Claude / agent sessions working on this repo.
 
 ## What this is
 
-`dd_staticsite` is a Rust terminal-UI CMS shipped at `v1.0.0`. The pre-1.0 punch list (page CRUD, validation modal, in-TUI export, autosave + backup, preview, image picker, theme schema) is complete. The code is on `master`, tagged `v1.0.0`. Architecture lives in `Architecture.md`; per-feature design + implementation history lives under `docs/superpowers/`.
+`dd_siteforge` is a Rust terminal-UI CMS shipped at `v1.0.0`. The pre-1.0 punch list (page CRUD, validation modal, in-TUI export, autosave + backup, preview, image picker, theme schema) is complete. The code is on `master`, tagged `v1.0.0`. Architecture lives in `Architecture.md`; per-feature design + implementation history lives under `docs/superpowers/`.
 
 ## Project conventions
 
@@ -64,7 +64,7 @@ components/dd-*.md     component specs (humans + agents read these)
 docs/superpowers/      design specs + implementation plans
 Architecture.md        always start here for a high-level orientation
 THEME_STRUCTURE_STANDARD.md   token schema
-dd_staticsite_theme.yml       default theme values
+dd_siteforge_theme.yml       default theme values
 ```
 
 ## Build + test

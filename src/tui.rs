@@ -17779,13 +17779,13 @@ fn theme_file_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     // Per THEME_STRUCTURE_STANDARD.md: project-local override wins over
     // user-global default, which wins over built-in defaults.
-    candidates.push(PathBuf::from("dd_staticsite_theme.yml"));
+    candidates.push(PathBuf::from("dd_siteforge_theme.yml"));
     candidates.push(PathBuf::from("theme.yml"));
     candidates.push(PathBuf::from(".theme.yml"));
     if let Some(home) = std::env::var_os("HOME") {
         let base = Path::new(&home).join(".config").join("ldnddev");
-        candidates.push(base.join("dd_staticsite_theme.yml"));
-        candidates.push(base.join("dd_staticsite").join(".theme.yml"));
+        candidates.push(base.join("dd_siteforge_theme.yml"));
+        candidates.push(base.join("dd_siteforge").join(".theme.yml"));
     }
     candidates
 }

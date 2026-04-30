@@ -1,4 +1,4 @@
-# dd_staticsite
+# dd_siteforge
 
 A terminal-UI CMS for authoring framework-native static pages. Single Rust binary; edit pages in a TUI, export typed HTML.
 
@@ -24,32 +24,32 @@ A terminal-UI CMS for authoring framework-native static pages. Single Rust binar
 ./install.sh
 ```
 
-Builds release, drops the binary at `$HOME/.local/bin/dd_staticsite`, and installs the default theme at `$HOME/.config/ldnddev/dd_staticsite_theme.yml` (only when no theme is already there). Override paths via `PREFIX`, `BIN_DIR`, or `CONFIG_DIR` env vars.
+Builds release, drops the binary at `$HOME/.local/bin/dd_siteforge`, and installs the default theme at `$HOME/.config/ldnddev/dd_siteforge_theme.yml` (only when no theme is already there). Override paths via `PREFIX`, `BIN_DIR`, or `CONFIG_DIR` env vars.
 
 Manual alternatives:
 
 ```bash
 cargo install --path .            # cargo's bin dir (~/.cargo/bin)
-cargo build --release             # binary at target/release/dd_staticsite
+cargo build --release             # binary at target/release/dd_siteforge
 ```
 
 ## Usage
 
 ```bash
 # Create a starter site at site.json
-dd_staticsite init-site site.json
+dd_siteforge init-site site.json
 
 # Edit interactively
-dd_staticsite tui site.json
+dd_siteforge tui site.json
 
 # Validate (exits non-zero on errors)
-dd_staticsite validate-site site.json
+dd_siteforge validate-site site.json
 
 # Export to ./web/ (or whatever site.export_dir is set to)
-dd_staticsite export-html site.json ./web/
+dd_siteforge export-html site.json ./web/
 
 # Inspect serialized state
-dd_staticsite show-site site.json
+dd_siteforge show-site site.json
 ```
 
 ## TUI cheatsheet
@@ -78,7 +78,7 @@ dd_staticsite show-site site.json
 ├── docs/superpowers/{specs,plans}/  design + implementation plan archive
 ├── Architecture.md                module map, render/validation rules, key bindings
 ├── THEME_STRUCTURE_STANDARD.md    theme token schema
-├── dd_staticsite_theme.yml        default theme
+├── dd_siteforge_theme.yml         default theme
 └── Cargo.toml
 ```
 
@@ -93,11 +93,12 @@ dd_staticsite show-site site.json
 ## Theme
 
 Customize colors by writing one of these (first found wins):
-- `./dd_staticsite_theme.yml`
+- `./dd_siteforge_theme.yml`
 - `./theme.yml` or `./.theme.yml`
-- `~/.config/ldnddev/dd_staticsite_theme.yml`
+- `~/.config/ldnddev/dd_siteforge_theme.yml`
+- `~/.config/ldnddev/dd_siteforge/.theme.yml`
 
-Schema in `THEME_STRUCTURE_STANDARD.md`. Built-in default ships at `dd_staticsite_theme.yml`.
+Schema in `THEME_STRUCTURE_STANDARD.md`. Built-in default ships at `dd_siteforge_theme.yml`.
 
 ## Tests
 

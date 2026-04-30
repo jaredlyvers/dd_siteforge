@@ -301,7 +301,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dd_staticsite"
+name = "dd_siteforge"
 version = "1.0.0"
 dependencies = [
  "anyhow",
