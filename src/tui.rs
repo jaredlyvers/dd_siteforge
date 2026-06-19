@@ -509,7 +509,7 @@ enum ComponentKind {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct AppTheme {
     // Core UI backgrounds
     background: Color,
@@ -555,10 +555,17 @@ struct AppTheme {
     // migrated to the split border/text inputs yet).
     input_default: Color,
     input_focus: Color,
+    app_shell: Style,
+    active_border: Style,
+    header_quotes: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ThemeFile {
+    #[serde(default)]
+    version: Option<u32>,
+    #[serde(default)]
+    header_quotes: Vec<String>,
     colors: PaletteFile,
 }
 
@@ -17825,22 +17832,86 @@ fn next_hero_link_1_target(
 }
 
 impl AppTheme {
-    fn load() -> anyhow::Result<Self> {
-        let path = theme_file_candidates()
-            .into_iter()
-            .find(|candidate| candidate.exists());
-        let Some(path) = path else {
-            return Ok(Self::default());
+    fn load() -> (Self, String, Option<String>) {
+        let candidates: Vec<(PathBuf, &'static str)> = {
+            let mut c = vec![
+                (PathBuf::from("dd_siteforge_theme.yml"), "local"),
+            ];
+            if let Some(home) = std::env::var_os("HOME") {
+                let base = Path::new(&home).join(".config").join("ldnddev");
+                c.push((base.join("dd_siteforge_theme.yml"), "global"));
+            }
+            c
         };
 
-        let raw = std::fs::read_to_string(&path)
-            .map_err(|e| anyhow::anyhow!("could not read '{}': {}", path.display(), e))?;
-        let theme_file: ThemeFile = serde_yaml::from_str(&raw)
-            .map_err(|e| anyhow::anyhow!("invalid theme file '{}': {}", path.display(), e))?;
-        Self::from_palette(theme_file.colors)
+        let mut warning: Option<String> = None;
+
+        for (path, src) in candidates {
+            if !path.exists() {
+                continue;
+            }
+            let raw = match std::fs::read_to_string(&path) {
+                Ok(r) => r,
+                Err(e) => {
+                    warning = Some(format!("could not read '{}': {}", path.display(), e));
+                    continue;
+                }
+            };
+            let theme_file: ThemeFile = match serde_yaml::from_str(&raw) {
+                Ok(f) => f,
+                Err(e) => {
+                    warning = Some(format!("invalid theme file '{}': {}", path.display(), e));
+                    continue;
+                }
+            };
+
+            // Strict version enforcement per LDNDDEV_TUI_VISUAL_STANDARD.md
+            match theme_file.version {
+                Some(1) => {}
+                Some(v) => {
+                    warning = Some(format!(
+                        "theme '{}' declares version {} (expected 1); using built-in defaults",
+                        path.display(),
+                        v
+                    ));
+                    continue;
+                }
+                None => {
+                    warning = Some(format!(
+                        "theme '{}' is missing required 'version: 1'; using built-in defaults",
+                        path.display()
+                    ));
+                    continue;
+                }
+            }
+
+            let quotes = if !theme_file.header_quotes.is_empty() {
+                theme_file.header_quotes
+            } else {
+                default_header_quotes()
+            };
+
+            match Self::from_palette(theme_file.colors, quotes) {
+                Ok(t) => return (t, src.to_string(), warning),
+                Err(e) => {
+                    warning = Some(format!(
+                        "theme '{}' color parse error: {}; using defaults",
+                        path.display(),
+                        e
+                    ));
+                    continue;
+                }
+            }
+        }
+
+        // Built-in fallback
+        (Self::default(), "default".to_string(), warning)
     }
 
-    fn from_palette(p: PaletteFile) -> anyhow::Result<Self> {
+    fn from_palette(
+        p: PaletteFile,
+        header_quotes: Vec<String>,
+    ) -> anyhow::Result<Self> {
         // Core backgrounds
         let background = parse_hex_color(p.base_background.as_str())?;
         let panel_background = parse_hex_color(
@@ -17930,6 +18001,11 @@ impl AppTheme {
         let files = parse_hex_color(p.files.as_deref().unwrap_or("#ffaf46"))?;
         let links = parse_hex_color(p.links.as_deref().unwrap_or("#ffa087"))?;
 
+        let app_shell = Style::default()
+            .bg(background)
+            .fg(foreground);
+        let active_border = Style::default().fg(border_active);
+
         Ok(Self {
             background,
             panel_background,
@@ -17964,6 +18040,9 @@ impl AppTheme {
             links,
             input_default,
             input_focus,
+            app_shell,
+            active_border,
+            header_quotes,
         })
     }
 }
@@ -18006,8 +18085,23 @@ impl Default for AppTheme {
             links: Color::Rgb(255, 160, 135),
             input_default: border_def,
             input_focus: border_focus,
+            app_shell: Style::default()
+                .bg(Color::Rgb(15, 17, 20))
+                .fg(Color::Rgb(245, 246, 247)),
+            active_border: Style::default().fg(border_focus),
+            header_quotes: default_header_quotes(),
         }
     }
+}
+
+fn default_header_quotes() -> Vec<String> {
+    vec![
+        "Drafts are just commits that lost their nerve.".to_string(),
+        "Saved. Probably. Hopefully. Definitely. (It saved.).".to_string(),
+        "This post is live, which means it's officially out of your hands.".to_string(),
+        "Scheduled for later — future you can deal with the typos.".to_string(),
+        "Deleted. We won't talk about it again. (We both saw it.)".to_string(),
+    ]
 }
 
 fn theme_file_candidates() -> Vec<PathBuf> {
