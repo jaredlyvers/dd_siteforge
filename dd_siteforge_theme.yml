@@ -1,9 +1,22 @@
 # dd_siteforge TUI Theme Configuration
-# Based on dd_framework color system
-# Lookup order: ./dd_siteforge_theme.yml, ./theme.yml, ./.theme.yml,
-# ~/.config/ldnddev/dd_siteforge_theme.yml, ~/.config/ldnddev/dd_siteforge/.theme.yml
+# Lookup order (per LDNDDEV_TUI_VISUAL_STANDARD.md):
+# 1. ./dd_siteforge_theme.yml (local override)
+# 2. ~/.config/ldnddev/dd_siteforge_theme.yml (global)
+# 3. Built-in defaults inside the app
 #
+# All files must declare:
+# version: 1
+#
+# Optional top-level header_quotes (non-empty list replaces built-in taglines):
+# header_quotes:
+#   - "Your first override."
+#   - "Second override."
+#
+# Colors follow the canonical tokens. Do not invent new ones.
 
+version: 1
+
+# header_quotes: []   # uncomment + populate to customize the rotating header banner
 colors:
   # Core backgrounds (dd_framework neutrals dark)
   base_background: "#0F1114"       # Main app background
