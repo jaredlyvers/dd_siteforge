@@ -20189,6 +20189,7 @@ mod tests {
             Site::starter(),
             Some(json_path.clone()),
             AppTheme::default(),
+            "default".to_string(),
         );
         let toast = app
             .toasts
@@ -20221,6 +20222,7 @@ mod tests {
             Site::starter(),
             Some(json_path.clone()),
             AppTheme::default(),
+            "default".to_string(),
         );
         assert!(app
             .toasts
@@ -20338,6 +20340,23 @@ mod tests {
         assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
         assert!(app.paused_form_edit_modal.is_none());
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn app_selects_header_copy_from_defaults_at_construction() {
+        let app = App::new(
+            Site::starter(),
+            None,
+            AppTheme::default(),
+            "default".to_string(),
+        );
+        let defs = default_header_quotes();
+        assert!(
+            defs.iter().any(|q| q == &app.header_copy),
+            "header_copy '{}' should be one of the defaults",
+            app.header_copy
+        );
+        assert_eq!(app.theme_source, "default");
     }
 }
 
