@@ -4395,13 +4395,20 @@ impl App {
     fn draw(&mut self, frame: &mut ratatui::Frame) {
         self.prune_toasts();
         self.multiline_value_area = None;
+
+        // Full-screen app shell base layer (base_background + text_primary).
+        frame.render_widget(
+            Block::default().style(self.theme.app_shell),
+            frame.area(),
+        );
+
         let page = self.current_page();
         let root = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1),
-                Constraint::Min(1),
-                Constraint::Length(3),
+                Constraint::Length(3), // HEADER (fixed, per LDNDDEV standard)
+                Constraint::Min(0),    // Main content area
+                Constraint::Length(1), // FOOTER (fixed, decluttered keys only)
             ])
             .split(frame.area());
         let main = Layout::default()
@@ -4409,14 +4416,29 @@ impl App {
             .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
             .split(root[1]);
 
-        // Header with "dd | Page: {name}" format
-        let header_text = format!("dd | Page: {}", page.head.title);
-        let header = Paragraph::new(header_text).style(
-            Style::default()
-                .fg(self.theme.foreground)
-                .bg(self.theme.background),
-        );
-        frame.render_widget(header, root[0]);
+        // === NEW 3-line header (bordered, title=project, content=header_copy) ===
+        let header_block = Block::default()
+            .title("dd_siteforge")
+            .borders(Borders::ALL)
+            .border_style(self.theme.active_border)
+            .style(self.theme.app_shell)
+            .title_style(
+                Style::default()
+                    .fg(self.theme.title)
+                    .add_modifier(Modifier::BOLD),
+            );
+        frame.render_widget(header_block.clone(), root[0]);
+
+        if root[0].height >= 3 {
+            let inner = header_block.inner(root[0]);
+            let quote = Paragraph::new(self.header_copy.as_str()).style(
+                Style::default()
+                    .fg(self.theme.foreground)
+                    .bg(self.theme.background),
+            );
+            frame.render_widget(quote, inner);
+        }
+        // (no mouse/keyboard capture for header — purely decorative)
 
         // Split sidebar into three sections: Regions, Pages, Layouts
         let sidebar = Layout::default()
@@ -4623,6 +4645,14 @@ impl App {
         let details_visible_rows = main[1].height.saturating_sub(2) as usize;
         let details_max_scroll = details_total_rows.saturating_sub(details_visible_rows);
         self.details_scroll_row = self.details_scroll_row.min(details_max_scroll);
+        let page_idx = self.selected_page + 1;
+        let page_label = if page.head.title.trim().is_empty() {
+            page.slug.as_str()
+        } else {
+            page.head.title.as_str()
+        };
+        let details_title = format!("Details — {:02}: {}", page_idx, page_label);
+
         let details = Paragraph::new(details_content)
             .style(
                 Style::default()
@@ -4631,7 +4661,7 @@ impl App {
             )
             .block(
                 Block::default()
-                    .title("Details")
+                    .title(details_title)
                     .borders(Borders::ALL)
                     .style(
                         Style::default()
@@ -4701,32 +4731,15 @@ impl App {
             }
         }
 
-        let footer_text = format!(
-            "F1 help | q quit | s save | / insert | Enter edit | Space expand/collapse | A add collection item | X remove collection item | {}",
-            self.status
-        );
-        let footer = Paragraph::new(footer_text)
-            .style(
-                Style::default()
-                    .fg(self.theme.muted)
-                    .bg(self.theme.background),
-            )
-            .block(
-                Block::default()
-                    .title("Status")
-                    .borders(Borders::ALL)
-                    .style(
-                        Style::default()
-                            .fg(self.theme.foreground)
-                            .bg(self.theme.background),
-                    )
-                    .border_style(Style::default().fg(self.theme.border))
-                    .title_style(
-                        Style::default()
-                            .fg(self.theme.title)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-            );
+        // === NEW 1-line adaptive footer (borderless, keys only, app_shell, always F1:Help first) ===
+        let footer_text = if root[2].width < 75 {
+            "F1:Help  q:Quit  s:Save  /:Insert  Enter:Edit  j/k:Nav  Spc:Toggle  1/2/3:Focus"
+        } else if root[2].width < 110 {
+            "F1: Help   s: Save   /: Insert   Enter: Edit   Tab: Switch page   Shift+E: Export   p: Preview   q: Quit"
+        } else {
+            "F1: Help   s: Save   /: Insert component   Enter: Edit   Tab/Shift+Tab: switch page   Shift+E: Export   p: Preview   F3: Validate   Ctrl+Q: Quit   (mouse: click/scroll/drag)"
+        };
+        let footer = Paragraph::new(footer_text).style(self.theme.app_shell);
         frame.render_widget(footer, root[2]);
 
         if self.show_help {
