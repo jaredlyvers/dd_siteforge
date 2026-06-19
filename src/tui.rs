@@ -2963,7 +2963,7 @@ impl App {
                     } else {
                         items.push(state);
                     }
-                    self.status = "Item saved — editing parent.".to_string();
+                    self.push_toast(ToastLevel::Success, "Item saved — editing parent.");
                     self.modal = Some(Modal::FormEdit {
                         state: parent,
                         cursor,
@@ -2981,7 +2981,7 @@ impl App {
                         return Some(ModalResult::CloseSuccess);
                     }
                     Err(e) => {
-                        self.status = format!("Save failed: {e}");
+                        self.push_toast(ToastLevel::Warning, format!("Save failed: {e}"));
                         self.modal = Some(Modal::FormEdit {
                             state,
                             cursor,
@@ -3007,7 +3007,7 @@ impl App {
             }) = taken
             {
                 if let Some(frame) = drill_stack.pop() {
-                    self.status = "Item edit cancelled.".to_string();
+                    self.push_toast(ToastLevel::Info, "Item edit cancelled.");
                     self.modal = Some(Modal::FormEdit {
                         state: frame.parent_state,
                         cursor,
@@ -3074,7 +3074,7 @@ impl App {
                         state
                             .selected_sub_item
                             .insert(field_id.to_string(), insert_at);
-                        self.status = "Item added.".to_string();
+                        self.push_toast(ToastLevel::Success, "Item added.");
                     }
                     return Some(ModalResult::Continue);
                 }
@@ -3096,10 +3096,10 @@ impl App {
                             state
                                 .selected_sub_item
                                 .insert(field_id.to_string(), new_sel);
-                            self.status = "Item removed.".to_string();
+                            self.push_toast(ToastLevel::Info, "Item removed.");
                         }
                     } else {
-                        self.status = format!("Must keep at least {min_items} item(s).");
+                        self.push_toast(ToastLevel::Warning, format!("Must keep at least {min_items} item(s)."));
                     }
                     return Some(ModalResult::Continue);
                 }
@@ -3205,7 +3205,7 @@ impl App {
                                 drill_stack,
                                 scroll_offset: 0,
                             });
-                            self.status = "Editing item. Ctrl+S returns to parent.".to_string();
+                            self.push_toast(ToastLevel::Info, "Editing item. Ctrl+S returns to parent.");
                         } else {
                             // Nothing to drill into; restore modal unchanged.
                             self.modal = Some(Modal::FormEdit {
@@ -3506,7 +3506,7 @@ impl App {
 
         match key.code {
             KeyCode::Esc => {
-                self.status = "Component picker cancelled.".to_string();
+                self.push_toast(ToastLevel::Info, "Component picker cancelled.");
                 return Some(ModalResult::CloseCancel);
             }
             KeyCode::Up => {
@@ -3545,7 +3545,7 @@ impl App {
                     self.insert_selected_component_kind();
                     return Some(ModalResult::CloseSuccess);
                 }
-                self.status = "No component selected.".to_string();
+                self.push_toast(ToastLevel::Warning, "No component selected.");
                 return Some(ModalResult::CloseCancel);
             }
             KeyCode::Char(c) => {
@@ -3578,19 +3578,19 @@ impl App {
 
         match key.code {
             KeyCode::Esc => {
-                self.status = "Save cancelled.".to_string();
+                self.push_toast(ToastLevel::Info, "Save cancelled.");
                 Some(ModalResult::CloseCancel)
             }
             KeyCode::Enter => {
                 let raw = path.trim();
                 if raw.is_empty() {
-                    self.status = "Save path cannot be empty.".to_string();
+                    self.push_toast(ToastLevel::Warning, "Save path cannot be empty.");
                     self.modal = Some(Modal::SavePrompt { path });
                     Some(ModalResult::Continue)
                 } else {
                     let path_buf = std::path::PathBuf::from(raw);
                     if let Err(e) = self.commit_save_with_backup(&path_buf) {
-                        self.status = format!("Failed to save: {}", e);
+                        self.push_toast(ToastLevel::Warning, format!("Failed to save: {}", e));
                         self.modal = Some(Modal::SavePrompt { path });
                         Some(ModalResult::Continue)
                     } else {
@@ -3627,7 +3627,7 @@ impl App {
         match key.code {
             KeyCode::Esc => {
                 self.modal = None;
-                self.status = "Add page cancelled.".to_string();
+                self.push_toast(ToastLevel::Info, "Add page cancelled.");
                 Some(ModalResult::CloseCancel)
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -3647,7 +3647,7 @@ impl App {
                 let title = self.pending_new_page_title.take().unwrap_or_default();
                 if title.is_empty() {
                     self.modal = None;
-                    self.status = "Cancelled — no title.".to_string();
+                    self.push_toast(ToastLevel::Info, "Cancelled — no title.");
                     return Some(ModalResult::CloseCancel);
                 }
                 let mut new_page = match picked {
@@ -3719,13 +3719,13 @@ impl App {
 
         match key.code {
             KeyCode::Esc => {
-                self.status = "Add page cancelled.".to_string();
+                self.push_toast(ToastLevel::Info, "Add page cancelled.");
                 Some(ModalResult::CloseCancel)
             }
             KeyCode::Enter => {
                 let trimmed = title.trim().to_string();
                 if trimmed.is_empty() {
-                    self.status = "Title required.".to_string();
+                    self.push_toast(ToastLevel::Warning, "Title required.");
                     self.modal = Some(Modal::NewPageTitlePrompt { title });
                     Some(ModalResult::Continue)
                 } else {
@@ -3737,7 +3737,7 @@ impl App {
             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let trimmed = title.trim().to_string();
                 if trimmed.is_empty() {
-                    self.status = "Title required.".to_string();
+                    self.push_toast(ToastLevel::Warning, "Title required.");
                     self.modal = Some(Modal::NewPageTitlePrompt { title });
                     Some(ModalResult::Continue)
                 } else {
@@ -4018,7 +4018,7 @@ impl App {
         match key.code {
             KeyCode::Esc => {
                 self.modal = None;
-                self.status = "Rename cancelled.".to_string();
+                self.push_toast(ToastLevel::Info, "Rename cancelled.");
                 Some(ModalResult::CloseCancel)
             }
             KeyCode::Enter => self.commit_rename_page(title, page_idx),
@@ -4049,11 +4049,11 @@ impl App {
 
     /// Commit the rename modal's current title to the given page_idx.
     /// Regenerates slug from title only when the page's slug is not locked.
-    /// Empty titles keep the modal open with a "Title required." status.
+    /// Empty titles keep the modal open with a "Title required." toast.
     fn commit_rename_page(&mut self, title: String, page_idx: usize) -> Option<ModalResult> {
         let trimmed = title.trim();
         if trimmed.is_empty() {
-            self.status = "Title required.".to_string();
+            self.push_toast(ToastLevel::Warning, "Title required.");
             self.modal = Some(Modal::RenamePagePrompt { title, page_idx });
             return Some(ModalResult::Continue);
         }
@@ -4065,7 +4065,7 @@ impl App {
             let msg = format!("Renamed page: {}", page.head.title);
             self.push_toast(ToastLevel::Success, msg);
         } else {
-            self.status = "Page no longer exists.".to_string();
+            self.push_toast(ToastLevel::Warning, "Page no longer exists.");
         }
         self.modal = None;
         Some(ModalResult::CloseSuccess)
@@ -4087,7 +4087,7 @@ impl App {
             }
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                 self.modal = None;
-                self.status = "Cancelled.".to_string();
+                self.push_toast(ToastLevel::Info, "Cancelled.");
                 Some(ModalResult::CloseCancel)
             }
             _ => Some(ModalResult::Continue),
@@ -4440,6 +4440,16 @@ impl App {
         }
         // (no mouse/keyboard capture for header — purely decorative)
 
+        // Compute page context early so the & from current_page() does not live across later
+        // self.* field assigns (list_area etc) in the panel rendering.
+        let page_idx = self.selected_page + 1;
+        let page_label = if page.head.title.trim().is_empty() {
+            page.slug.as_str()
+        } else {
+            page.head.title.as_str()
+        };
+        let details_title = format!("Details — {:02}: {}", page_idx, page_label);
+
         // Split sidebar into three sections: Regions, Pages, Layouts
         let sidebar = Layout::default()
             .direction(Direction::Vertical)
@@ -4645,13 +4655,6 @@ impl App {
         let details_visible_rows = main[1].height.saturating_sub(2) as usize;
         let details_max_scroll = details_total_rows.saturating_sub(details_visible_rows);
         self.details_scroll_row = self.details_scroll_row.min(details_max_scroll);
-        let page_idx = self.selected_page + 1;
-        let page_label = if page.head.title.trim().is_empty() {
-            page.slug.as_str()
-        } else {
-            page.head.title.as_str()
-        };
-        let details_title = format!("Details — {:02}: {}", page_idx, page_label);
 
         let details = Paragraph::new(details_content)
             .style(
@@ -5391,7 +5394,7 @@ impl App {
                 self.modal = Some(Modal::NewPageTitlePrompt {
                     title: String::new(),
                 });
-                self.status = "New page: type a title, Enter to continue.".to_string();
+                self.push_toast(ToastLevel::Info, "New page: type a title, Enter to continue.");
                 true
             }
             KeyCode::Char('X') if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -5449,7 +5452,7 @@ impl App {
                     title: current_title,
                     page_idx: idx,
                 });
-                self.status = "Rename page. Edit and press Enter.".to_string();
+                self.push_toast(ToastLevel::Info, "Rename page. Edit and press Enter.");
                 true
             }
             _ => false,
@@ -5580,21 +5583,21 @@ impl App {
                 KeyCode::Char('X') => self.remove_selected_collection_item(),
                 KeyCode::Char('1') => {
                     self.selected_sidebar_section = SidebarSection::Regions;
-                    self.status = "Switched to Regions section.".to_string();
+                    self.push_toast(ToastLevel::Info, "Switched to Regions section.");
                 }
                 KeyCode::Char('2') => {
                     self.selected_sidebar_section = SidebarSection::Pages;
                     self.selected_region = SelectedRegion::Page;
                     self.selected_tree_row = 0;
                     self.sync_tree_row_with_selection();
-                    self.status = "Switched to Pages section.".to_string();
+                    self.push_toast(ToastLevel::Info, "Switched to Pages section.");
                 }
                 KeyCode::Char('3') => {
                     self.selected_sidebar_section = SidebarSection::Layouts;
-                    self.status = "Switched to Layout section.".to_string();
+                    self.push_toast(ToastLevel::Info, "Switched to Layout section.");
                 }
                 KeyCode::Char('4') => {
-                    self.status = "Details panel active.".to_string();
+                    self.push_toast(ToastLevel::Info, "Details panel active.");
                 }
                 _ => {}
                 }
@@ -5633,7 +5636,7 @@ impl App {
                     self.input_buffer.clear();
                     self.input_cursor = 0;
                     self.multiline_scroll_row = 0;
-                    self.status = "Edit cancelled.".to_string();
+                    self.push_toast(ToastLevel::Info, "Edit cancelled.");
                     self.sync_tree_row_with_selection();
                 }
                 KeyCode::Enter => {
@@ -5645,13 +5648,14 @@ impl App {
                         if max_rows.map(|limit| rows < limit).unwrap_or(true) {
                             self.insert_char_at_cursor('\n');
                         } else {
-                            self.status = match self.input_mode {
+                            let msg = match self.input_mode {
                                 Some(InputMode::EditHeroCopy) => {
                                     "hero.copy supports up to 3 lines. Press Ctrl+S to save."
                                         .to_string()
                                 }
                                 _ => "Line limit reached. Press Ctrl+S to save.".to_string(),
                             };
+                            self.push_toast(ToastLevel::Info, msg);
                         }
                         return Ok(());
                     }
@@ -6210,12 +6214,13 @@ impl App {
             candidate.insert(at, '\n');
             if let Some(max_rows) = self.multiline_max_rows() {
                 if input_lines_preserve(&candidate).len().max(1) > max_rows {
-                    self.status = match self.input_mode {
+                    let msg = match self.input_mode {
                         Some(InputMode::EditHeroCopy) => {
                             "hero.copy supports up to 3 lines.".to_string()
                         }
                         _ => "Line limit reached.".to_string(),
                     };
+                    self.push_toast(ToastLevel::Info, msg);
                     return;
                 }
             }
@@ -6274,8 +6279,7 @@ impl App {
             return;
         };
         let Some(group) = self.component_edit_group_for_active_mode(current) else {
-            self.status = "Tab field navigation is available while editing hero/component fields."
-                .to_string();
+            self.push_toast(ToastLevel::Info, "Tab field navigation is available while editing hero/component fields.");
             return;
         };
         let Some(idx) = group.iter().position(|m| *m == current) else {
@@ -6294,7 +6298,7 @@ impl App {
         };
         let next_mode = group[next_idx];
         if !self.set_component_input_mode(next_mode) {
-            self.status = "Could not switch to next component field.".to_string();
+            self.push_toast(ToastLevel::Warning, "Could not switch to next component field.");
         }
     }
 
@@ -6491,7 +6495,7 @@ impl App {
             match key.code {
                 KeyCode::Esc => {
                     self.component_picker = None;
-                    self.status = "Component picker cancelled.".to_string();
+                    self.push_toast(ToastLevel::Info, "Component picker cancelled.");
                 }
                 KeyCode::Up => {
                     let selected = self
@@ -6536,7 +6540,7 @@ impl App {
                         .get(selected.min(filtered.len().saturating_sub(1)))
                         .copied()
                     else {
-                        self.status = "No component selected.".to_string();
+                        self.push_toast(ToastLevel::Warning, "No component selected.");
                         return Ok(());
                     };
                     self.component_kind = kind;
@@ -6609,7 +6613,7 @@ impl App {
             match key.code {
                 KeyCode::Esc => {
                     self.edit_modal = None;
-                    self.status = "Edit cancelled.".to_string();
+                    self.push_toast(ToastLevel::Info, "Edit cancelled.");
                 }
                 KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.save_edit_modal_changes();
@@ -6742,14 +6746,14 @@ impl App {
         let saved = if modal.title == "dd-hero" {
             let idx = self.selected_node;
             let Some(page) = self.current_page_mut() else {
-                self.status = "Failed to save: no page.".to_string();
+                self.push_toast(ToastLevel::Warning, "Failed to save: no page.");
                 return;
             };
             let idx = idx.min(page.nodes.len().saturating_sub(1));
             let hero = match &mut page.nodes[idx] {
                 PageNode::Hero(h) => h,
                 _ => {
-                    self.status = "Failed to save: selected node is not a hero.".to_string();
+                    self.push_toast(ToastLevel::Warning, "Failed to save: selected node is not a hero.");
                     return;
                 }
             };
@@ -6795,14 +6799,14 @@ impl App {
         } else if modal.title == "dd-section" {
             let idx = self.selected_node;
             let Some(page) = self.current_page_mut() else {
-                self.status = "Failed to save: no page.".to_string();
+                self.push_toast(ToastLevel::Warning, "Failed to save: no page.");
                 return;
             };
             let idx = idx.min(page.nodes.len().saturating_sub(1));
             let section = match &mut page.nodes[idx] {
                 PageNode::Section(s) => s,
                 _ => {
-                    self.status = "Failed to save: selected node is not a section.".to_string();
+                    self.push_toast(ToastLevel::Warning, "Failed to save: selected node is not a section.");
                     return;
                 }
             };
@@ -6827,7 +6831,7 @@ impl App {
             let selected_column = self.selected_column;
             let selected_component = self.selected_component;
             let Some(page) = self.current_page_mut() else {
-                self.status = "Failed to save: no page.".to_string();
+                self.push_toast(ToastLevel::Warning, "Failed to save: no page.");
                 return;
             };
             let ni = selected_node.min(page.nodes.len().saturating_sub(1));
@@ -6864,7 +6868,7 @@ impl App {
                     false
                 }
             } else {
-                self.status = "Failed to save: selected node is not a section.".to_string();
+                self.push_toast(ToastLevel::Warning, "Failed to save: selected node is not a section.");
                 false
             }
         } else if modal.title == "dd-alert" {
@@ -6872,7 +6876,7 @@ impl App {
             let selected_column = self.selected_column;
             let selected_component = self.selected_component;
             let Some(page) = self.current_page_mut() else {
-                self.status = "Failed to save: no page.".to_string();
+                self.push_toast(ToastLevel::Warning, "Failed to save: no page.");
                 return;
             };
             let ni = selected_node.min(page.nodes.len().saturating_sub(1));
@@ -6920,7 +6924,7 @@ impl App {
                     false
                 }
             } else {
-                self.status = "Failed to save: selected node is not a section.".to_string();
+                self.push_toast(ToastLevel::Warning, "Failed to save: selected node is not a section.");
                 false
             }
         } else if modal.title == "dd-cta" {
@@ -6964,7 +6968,7 @@ impl App {
         let selected_column = self.selected_column;
         let selected_component = self.selected_component;
         let Some(page) = self.current_page_mut() else {
-            self.status = "Failed to save: no page.".to_string();
+            self.push_toast(ToastLevel::Warning, "Failed to save: no page.");
             return false;
         };
         let ni = selected_node.min(page.nodes.len().saturating_sub(1));
@@ -7018,7 +7022,7 @@ impl App {
                 false
             }
         } else {
-            self.status = "Failed to save: selected node is not a section.".to_string();
+            self.push_toast(ToastLevel::Warning, "Failed to save: selected node is not a section.");
             false
         }
     }
@@ -7028,7 +7032,7 @@ impl App {
         let selected_column = self.selected_column;
         let selected_component = self.selected_component;
         let Some(page) = self.current_page_mut() else {
-            self.status = "Failed to save: no page.".to_string();
+            self.push_toast(ToastLevel::Warning, "Failed to save: no page.");
             return false;
         };
         let ni = selected_node.min(page.nodes.len().saturating_sub(1));
@@ -7062,7 +7066,7 @@ impl App {
                 false
             }
         } else {
-            self.status = "Failed to save: selected node is not a section.".to_string();
+            self.push_toast(ToastLevel::Warning, "Failed to save: selected node is not a section.");
             false
         }
     }
@@ -7072,7 +7076,7 @@ impl App {
         let selected_column = self.selected_column;
         let selected_component = self.selected_component;
         let Some(page) = self.current_page_mut() else {
-            self.status = "Failed to save: no page.".to_string();
+            self.push_toast(ToastLevel::Warning, "Failed to save: no page.");
             return false;
         };
         let ni = selected_node.min(page.nodes.len().saturating_sub(1));
@@ -7098,7 +7102,7 @@ impl App {
                 false
             }
         } else {
-            self.status = "Failed to save: selected node is not a section.".to_string();
+            self.push_toast(ToastLevel::Warning, "Failed to save: selected node is not a section.");
             false
         }
     }
@@ -7108,7 +7112,7 @@ impl App {
         let selected_column = self.selected_column;
         let selected_component = self.selected_component;
         let Some(page) = self.current_page_mut() else {
-            self.status = "Failed to save: no page.".to_string();
+            self.push_toast(ToastLevel::Warning, "Failed to save: no page.");
             return false;
         };
         let ni = selected_node.min(page.nodes.len().saturating_sub(1));
@@ -7142,7 +7146,7 @@ impl App {
                 false
             }
         } else {
-            self.status = "Failed to save: selected node is not a section.".to_string();
+            self.push_toast(ToastLevel::Warning, "Failed to save: selected node is not a section.");
             false
         }
     }
@@ -7198,7 +7202,7 @@ impl App {
             return false;
         }
         let Some(page) = self.current_page_mut() else {
-            self.status = "Failed to save: no page.".to_string();
+            self.push_toast(ToastLevel::Warning, "Failed to save: no page.");
             return false;
         };
         let ni = selected_node.min(page.nodes.len().saturating_sub(1));
@@ -7267,7 +7271,7 @@ impl App {
             return false;
         }
         let Some(page) = self.current_page_mut() else {
-            self.status = "Failed to save: no page.".to_string();
+            self.push_toast(ToastLevel::Warning, "Failed to save: no page.");
             return false;
         };
         let ni = selected_node.min(page.nodes.len().saturating_sub(1));
@@ -7339,7 +7343,7 @@ impl App {
             return false;
         }
         let Some(page) = self.current_page_mut() else {
-            self.status = "Failed to save: no page.".to_string();
+            self.push_toast(ToastLevel::Warning, "Failed to save: no page.");
             return false;
         };
         let ni = selected_node.min(page.nodes.len().saturating_sub(1));
@@ -7602,7 +7606,7 @@ impl App {
         let selected_column = self.selected_column;
         let selected_component = self.selected_component;
         let Some(page) = self.current_page_mut() else {
-            self.status = "Failed to save: no page.".to_string();
+            self.push_toast(ToastLevel::Warning, "Failed to save: no page.");
             return false;
         };
         let ni = selected_node.min(page.nodes.len().saturating_sub(1));
@@ -7642,7 +7646,7 @@ impl App {
                 false
             }
         } else {
-            self.status = "Failed to save: selected node is not a section.".to_string();
+            self.push_toast(ToastLevel::Warning, "Failed to save: selected node is not a section.");
             false
         }
     }
@@ -7656,7 +7660,7 @@ impl App {
             .as_ref()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "site.json".to_string());
-        self.status = "Save prompt opened.".to_string();
+        self.push_toast(ToastLevel::Info, "Save prompt opened.");
     }
 
     fn handle_save_prompt_event(&mut self, evt: Event) -> anyhow::Result<()> {
@@ -7665,7 +7669,7 @@ impl App {
                 KeyCode::Esc => {
                     self.save_prompt_open = false;
                     self.save_input.clear();
-                    self.status = "Save cancelled.".to_string();
+                    self.push_toast(ToastLevel::Info, "Save cancelled.");
                 }
                 KeyCode::Enter => self.commit_save_prompt()?,
                 KeyCode::Backspace => {
@@ -7683,7 +7687,7 @@ impl App {
     fn commit_save_prompt(&mut self) -> anyhow::Result<()> {
         let raw = self.save_input.trim();
         if raw.is_empty() {
-            self.status = "Save path cannot be empty.".to_string();
+            self.push_toast(ToastLevel::Warning, "Save path cannot be empty.");
             return Ok(());
         }
         let path = PathBuf::from(raw);
@@ -7702,7 +7706,7 @@ impl App {
         }
         let page = self.current_page();
         if page.nodes.is_empty() {
-            self.status = "No node selected.".to_string();
+            self.push_toast(ToastLevel::Warning, "No node selected.");
             return;
         }
         let idx = self.selected_node.min(page.nodes.len() - 1);
@@ -7798,9 +7802,7 @@ impl App {
             scroll_offset: 0,
             visible_fields: 6,
         });
-        self.status =
-            "Multi-field edit: Tab/Up/Down to navigate fields, type to edit, Ctrl+S to save, Esc to cancel."
-                .to_string();
+        self.push_toast(ToastLevel::Info, "Multi-field edit: Tab/Up/Down to navigate fields, type to edit, Ctrl+S to save, Esc to cancel.");
     }
 
     fn open_edit_modal_for_section(&mut self, section: &crate::model::DdSection) {
@@ -7843,9 +7845,7 @@ impl App {
             scroll_offset: 0,
             visible_fields: 6,
         });
-        self.status =
-            "Multi-field edit: Tab/Up/Down to navigate fields, type to edit, Ctrl+S to save, Esc to cancel."
-                .to_string();
+        self.push_toast(ToastLevel::Info, "Multi-field edit: Tab/Up/Down to navigate fields, type to edit, Ctrl+S to save, Esc to cancel.");
     }
 
     #[allow(dead_code)]
@@ -7865,7 +7865,7 @@ impl App {
         };
 
         let Some((mode, value)) = selected else {
-            self.status = "No node selected.".to_string();
+            self.push_toast(ToastLevel::Warning, "No node selected.");
             return;
         };
 
@@ -7874,7 +7874,7 @@ impl App {
         self.clamp_multiline_input_if_needed();
         self.input_cursor = self.input_buffer.chars().count();
         self.ensure_multiline_cursor_visible();
-        self.status = match mode {
+        self.push_toast(ToastLevel::Info, match mode {
             InputMode::EditHeroImage => {
                 "Editing hero image URL. Enter to save, esc to cancel.".to_string()
             }
@@ -8174,7 +8174,7 @@ impl App {
                 "Editing header placeholder content. Enter to save, esc to cancel.".to_string()
             }
             _ => "Editing field. Enter/Ctrl+S to save, esc to cancel.".to_string(),
-        };
+        });
     }
 
     fn begin_edit_header(&mut self) {
@@ -8234,12 +8234,12 @@ impl App {
                 }
             }
             _ => {
-                self.status = "No header element selected.".to_string();
+                self.push_toast(ToastLevel::Warning, "No header element selected.");
                 return;
             }
         }
         self.input_cursor = self.input_buffer.chars().count();
-        self.status = "Editing header. Enter to save, esc to cancel.".to_string();
+        self.push_toast(ToastLevel::Info, "Editing header. Enter to save, esc to cancel.");
     }
 
     fn begin_edit_selected_column_id(&mut self) {
@@ -8260,13 +8260,13 @@ impl App {
             }
         };
         let Some((mode, value)) = selected else {
-            self.status = "Selected node is not a section.".to_string();
+            self.push_toast(ToastLevel::Warning, "Selected node is not a section.");
             return;
         };
         self.input_mode = Some(mode);
         self.input_buffer = value;
         self.input_cursor = self.input_buffer.chars().count();
-        self.status = "Editing selected column id. Enter to save, esc to cancel.".to_string();
+        self.push_toast(ToastLevel::Info, "Editing selected column id. Enter to save, esc to cancel.");
     }
 
     fn begin_edit_selected_column_width_class(&mut self) {
@@ -8290,14 +8290,13 @@ impl App {
             }
         };
         let Some((mode, value)) = selected else {
-            self.status = "Selected node is not a section.".to_string();
+            self.push_toast(ToastLevel::Warning, "Selected node is not a section.");
             return;
         };
         self.input_mode = Some(mode);
         self.input_buffer = value;
         self.input_cursor = self.input_buffer.chars().count();
-        self.status =
-            "Editing selected column width class. Enter to save, esc to cancel.".to_string();
+        self.push_toast(ToastLevel::Info, "Editing selected column width class. Enter to save, esc to cancel.");
     }
 
     fn commit_input_edit(&mut self) -> bool {
@@ -8333,7 +8332,7 @@ impl App {
                 | InputMode::EditCardItemLinkLabel
         );
         if value.is_empty() && !allow_empty {
-            self.status = "Value cannot be empty.".to_string();
+            self.push_toast(ToastLevel::Warning, "Value cannot be empty.");
             return false;
         }
         let selected = self.selected_node;
@@ -8344,11 +8343,11 @@ impl App {
         let mut clear_input = true;
         let mut applied = false;
         let Some(page) = self.current_page_mut() else {
-            self.status = status;
+            self.push_toast(ToastLevel::Info, status);
             return false;
         };
         if page.nodes.is_empty() {
-            self.status = "No node selected.".to_string();
+            self.push_toast(ToastLevel::Warning, "No node selected.");
             return false;
         }
         let idx = selected.min(page.nodes.len() - 1);
@@ -9664,7 +9663,7 @@ impl App {
             }
             _ => "Edit type no longer matches selected node.".to_string(),
         };
-        self.status = status;
+        self.push_toast(ToastLevel::Info, status);
         if clear_input {
             self.input_mode = None;
             self.input_buffer.clear();
@@ -9694,7 +9693,7 @@ impl App {
         if idx < tree_rows.len() {
             self.selected_tree_row = idx;
             self.apply_tree_row_selection(tree_rows[idx]);
-            self.status = format!("Selected {}", self.tree_row_label(&tree_rows[idx]));
+            self.push_toast(ToastLevel::Info, format!("Selected {}", self.tree_row_label(&tree_rows[idx])));
         }
     }
 
@@ -10869,7 +10868,7 @@ impl App {
         {
             let page = self.current_page();
             let Some(PageNode::Section(section)) = page.nodes.get(node_idx) else {
-                self.status = "Selected row is not a section.".to_string();
+                self.push_toast(ToastLevel::Warning, "Selected row is not a section.");
                 return;
             };
             let columns = section_columns_ref(section);
@@ -10885,11 +10884,12 @@ impl App {
                 self.selected_column = col_i;
                 self.selected_component = comp_i;
                 self.selected_nested_item = 0;
-                self.status = if expanded {
+                let msg = if expanded {
                     "Collapsed accordion items.".to_string()
                 } else {
                     "Expanded accordion items.".to_string()
                 };
+                self.push_toast(ToastLevel::Info, msg);
                 self.sync_tree_row_with_selection();
                 return;
             }
@@ -10903,11 +10903,12 @@ impl App {
                 self.selected_column = col_i;
                 self.selected_component = comp_i;
                 self.selected_nested_item = 0;
-                self.status = if expanded {
+                let msg = if expanded {
                     "Collapsed alternating items.".to_string()
                 } else {
                     "Expanded alternating items.".to_string()
                 };
+                self.push_toast(ToastLevel::Info, msg);
                 self.sync_tree_row_with_selection();
                 return;
             }
@@ -10921,11 +10922,12 @@ impl App {
                 self.selected_column = col_i;
                 self.selected_component = comp_i;
                 self.selected_nested_item = 0;
-                self.status = if expanded {
+                let msg = if expanded {
                     "Collapsed card items.".to_string()
                 } else {
                     "Expanded card items.".to_string()
                 };
+                self.push_toast(ToastLevel::Info, msg);
                 self.sync_tree_row_with_selection();
                 return;
             }
@@ -10939,11 +10941,12 @@ impl App {
                 self.selected_column = col_i;
                 self.selected_component = comp_i;
                 self.selected_nested_item = 0;
-                self.status = if expanded {
+                let msg = if expanded {
                     "Collapsed filmstrip items.".to_string()
                 } else {
                     "Expanded filmstrip items.".to_string()
                 };
+                self.push_toast(ToastLevel::Info, msg);
                 self.sync_tree_row_with_selection();
                 return;
             }
@@ -10957,11 +10960,12 @@ impl App {
                 self.selected_column = col_i;
                 self.selected_component = comp_i;
                 self.selected_nested_item = 0;
-                self.status = if expanded {
+                let msg = if expanded {
                     "Collapsed milestones items.".to_string()
                 } else {
                     "Expanded milestones items.".to_string()
                 };
+                self.push_toast(ToastLevel::Info, msg);
                 self.sync_tree_row_with_selection();
                 return;
             }
@@ -10975,11 +10979,12 @@ impl App {
                 self.selected_column = col_i;
                 self.selected_component = comp_i;
                 self.selected_nested_item = 0;
-                self.status = if expanded {
+                let msg = if expanded {
                     "Collapsed slider items.".to_string()
                 } else {
                     "Expanded slider items.".to_string()
                 };
+                self.push_toast(ToastLevel::Info, msg);
                 self.sync_tree_row_with_selection();
                 return;
             }
@@ -10987,11 +10992,12 @@ impl App {
         let node_idx = match row.kind {
             TreeRowKind::HeaderRoot { .. } => {
                 self.header_column_expanded = !self.header_column_expanded;
-                self.status = if self.header_column_expanded {
+                let msg = if self.header_column_expanded {
                     "Expanded header columns.".to_string()
                 } else {
                     "Collapsed header columns.".to_string()
                 };
+                self.push_toast(ToastLevel::Info, msg);
                 self.sync_tree_row_with_selection();
                 return;
             }
@@ -11001,27 +11007,28 @@ impl App {
                 self.selected_header_section = section_idx;
                 self.selected_header_column = 0;
                 self.selected_header_component = 0;
-                self.status = if expanded {
+                let msg = if expanded {
                     "Collapsed header section.".to_string()
                 } else {
                     "Expanded header section.".to_string()
                 };
+                self.push_toast(ToastLevel::Info, msg);
                 self.sync_tree_row_with_selection();
                 return;
             }
             TreeRowKind::HeaderColumn { .. } | TreeRowKind::HeaderComponent { .. } => {
-                self.status = "Press Enter to edit.".to_string();
+                self.push_toast(ToastLevel::Info, "Press Enter to edit.");
                 return;
             }
             TreeRowKind::FooterRoot
             | TreeRowKind::FooterSection { .. }
             | TreeRowKind::FooterColumn { .. }
             | TreeRowKind::FooterComponent { .. } => {
-                self.status = "Press Enter to edit.".to_string();
+                self.push_toast(ToastLevel::Info, "Press Enter to edit.");
                 return;
             }
             TreeRowKind::PageHead => {
-                self.status = "Press Enter to edit page head.".to_string();
+                self.push_toast(ToastLevel::Info, "Press Enter to edit page head.");
                 return;
             }
             TreeRowKind::Section { node_idx } => node_idx,
@@ -11034,13 +11041,13 @@ impl App {
             TreeRowKind::MilestonesItem { node_idx, .. } => node_idx,
             TreeRowKind::SliderItem { node_idx, .. } => node_idx,
             TreeRowKind::Hero { .. } => {
-                self.status = "Selected row is not a section.".to_string();
+                self.push_toast(ToastLevel::Warning, "Selected row is not a section.");
                 return;
             }
         };
         let page = self.current_page();
         let Some(PageNode::Section(_)) = page.nodes.get(node_idx) else {
-            self.status = "Selected row is not a section.".to_string();
+            self.push_toast(ToastLevel::Warning, "Selected row is not a section.");
             return;
         };
         let expanded = self.is_section_expanded(node_idx);
@@ -11049,11 +11056,12 @@ impl App {
         self.selected_column = 0;
         self.selected_component = 0;
         self.selected_nested_item = 0;
-        self.status = if expanded {
+        let msg = if expanded {
             "Collapsed section.".to_string()
         } else {
             "Expanded section.".to_string()
         };
+        self.push_toast(ToastLevel::Info, msg);
         self.sync_tree_row_with_selection();
     }
 
@@ -11146,7 +11154,7 @@ impl App {
             query: String::new(),
             selected: 0,
         });
-        self.status = "Insert picker opened.".to_string();
+        self.push_toast(ToastLevel::Info, "Insert picker opened.");
     }
 
     /// If the selected tree row points at a migrated section component
@@ -11164,7 +11172,7 @@ impl App {
                 drill_stack: Vec::new(),
                 scroll_offset: 0,
             });
-            self.status = format!("Editing {}.", title);
+            self.push_toast(ToastLevel::Info, format!("Editing {}.", title));
             return true;
         }
 
@@ -11261,7 +11269,7 @@ impl App {
             drill_stack: Vec::new(),
             scroll_offset: 0,
         });
-        self.status = format!("Editing {}.", title);
+        self.push_toast(ToastLevel::Info, format!("Editing {}.", title));
         true
     }
 
@@ -11395,7 +11403,7 @@ impl App {
             drill_stack,
             scroll_offset: 0,
         });
-        self.status = format!("Editing {} (item {}).", title, safe_item_idx + 1);
+        self.push_toast(ToastLevel::Info, format!("Editing {} (item {}).", title, safe_item_idx + 1));
         true
     }
 
@@ -11486,15 +11494,15 @@ impl App {
         self.selected_header_section = self.site.header.sections.len() - 1;
         self.selected_header_column = 0;
         self.selected_header_component = 0;
-        self.status = format!(
+        self.push_toast(ToastLevel::Info, format!(
             "Added dd-section to header at position {}.",
             self.selected_header_section + 1
-        );
+        ));
     }
 
     fn add_component_to_header_section(&mut self) {
         if self.site.header.sections.is_empty() {
-            self.status = "No header section available. Add a section first with '/'.".to_string();
+            self.push_toast(ToastLevel::Warning, "No header section available. Add a section first with '/'.");
             return;
         }
         let section_idx = self
@@ -11515,11 +11523,11 @@ impl App {
             .components
             .len()
             - 1;
-        self.status = format!(
+        self.push_toast(ToastLevel::Info, format!(
             "Added {} to header section column '{}'.",
             kind.label(),
             self.site.header.sections[section_idx].columns[col_idx].id
-        );
+        ));
     }
 
     fn normalize_component_picker_selection(&mut self) {
@@ -12206,7 +12214,7 @@ impl App {
         self.clamp_multiline_input_if_needed();
         self.input_cursor = self.input_buffer.chars().count();
         self.ensure_multiline_cursor_visible();
-        self.status = match mode {
+        self.push_toast(ToastLevel::Info, match mode {
             InputMode::EditHeroImage => {
                 "Editing hero image URL. Enter to save, esc to cancel.".to_string()
             }
@@ -12482,7 +12490,7 @@ impl App {
                     .to_string()
             }
             _ => "Editing field. Enter to save, esc to cancel.".to_string(),
-        };
+        });
         true
     }
 
@@ -12979,7 +12987,7 @@ impl App {
             SidebarSection::Regions => {
                 self.selected_region = SelectedRegion::Header;
                 self.selected_tree_row = 0;
-                self.status = "Selected Header region.".to_string();
+                self.push_toast(ToastLevel::Info, "Selected Header region.");
             }
             SidebarSection::Pages => {
                 if self.site.pages.is_empty() {
@@ -13009,7 +13017,7 @@ impl App {
             SidebarSection::Regions => {
                 self.selected_region = SelectedRegion::Footer;
                 self.selected_tree_row = 0;
-                self.status = "Selected Footer region (not yet implemented).".to_string();
+                self.push_toast(ToastLevel::Info, "Selected Footer region (not yet implemented).");
             }
             SidebarSection::Pages => {
                 if self.site.pages.is_empty() {
@@ -13225,7 +13233,7 @@ impl App {
         self.selected_column = 0;
         self.selected_component = 0;
         self.selected_nested_item = 0;
-        self.status = format!("Inserted dd-hero at position {}.", idx + 1);
+        self.push_toast(ToastLevel::Success, format!("Inserted dd-hero at position {}.", idx + 1));
     }
 
     fn add_section(&mut self) {
@@ -13253,7 +13261,7 @@ impl App {
         self.selected_column = 0;
         self.selected_component = 0;
         self.selected_nested_item = 0;
-        self.status = format!("Inserted dd-section at position {}.", idx + 1);
+        self.push_toast(ToastLevel::Success, format!("Inserted dd-section at position {}.", idx + 1));
     }
 
     fn delete_selected_node(&mut self) {
@@ -13262,7 +13270,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No node to delete.".to_string();
+            self.push_toast(ToastLevel::Warning, "No node to delete.");
             return;
         }
         let idx = selected.min(page.nodes.len() - 1);
@@ -13278,13 +13286,13 @@ impl App {
             self.selected_component = 0;
             self.selected_nested_item = 0;
         }
-        self.status = format!("Deleted node {}.", idx + 1);
+        self.push_toast(ToastLevel::Info, format!("Deleted node {}.", idx + 1));
     }
 
     fn add_selected_component_to_section(&mut self) {
         let kind = self.component_kind;
         if matches!(kind, ComponentKind::Hero | ComponentKind::Section) {
-            self.status = "dd-hero and dd-section are top-level insert types.".to_string();
+            self.push_toast(ToastLevel::Warning, "dd-hero and dd-section are top-level insert types.");
             return;
         }
         let selected = self.selected_node;
@@ -13293,7 +13301,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let idx = selected.min(page.nodes.len() - 1);
@@ -13319,7 +13327,7 @@ impl App {
             self.selected_component = new_selected_component;
             self.selected_nested_item = 0;
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn cycle_hero_parent_class(&mut self, forward: bool) {
@@ -13328,7 +13336,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected hero.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected hero.");
             return;
         }
         let idx = selected.min(page.nodes.len() - 1);
@@ -13339,11 +13347,10 @@ impl App {
                     .unwrap_or(crate::model::HeroImageClass::FullFull);
                 let next = next_hero_image_class(current, forward);
                 hero.parent_class = Some(next);
-                self.status = format!("Hero default class: {}", hero_image_class_to_str(next));
+                self.push_toast(ToastLevel::Info, format!("Hero default class: {}", hero_image_class_to_str(next)));
             }
             _ => {
-                self.status =
-                    "Left/Right hero class cycling works on a selected hero row.".to_string();
+                self.push_toast(ToastLevel::Info, "Left/Right hero class cycling works on a selected hero row.");
             }
         }
     }
@@ -13354,7 +13361,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected hero.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected hero.");
             return;
         }
         let idx = selected.min(page.nodes.len() - 1);
@@ -13363,11 +13370,10 @@ impl App {
                 let current = hero.parent_data_aos.unwrap_or(crate::model::HeroAos::FadeIn);
                 let next = next_parent_data_aos(current, forward);
                 hero.parent_data_aos = Some(next);
-                self.status = format!("Hero data-aos: {}", parent_data_aos_to_str(next));
+                self.push_toast(ToastLevel::Info, format!("Hero data-aos: {}", parent_data_aos_to_str(next)));
             }
             _ => {
-                self.status =
-                    "Left/Right hero data-aos cycling works on a selected hero row.".to_string();
+                self.push_toast(ToastLevel::Info, "Left/Right hero data-aos cycling works on a selected hero row.");
             }
         }
     }
@@ -13378,7 +13384,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected hero.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected hero.");
             return;
         }
         let idx = selected.min(page.nodes.len() - 1);
@@ -13397,15 +13403,15 @@ impl App {
                 } else {
                     hero.link_1_target = Some(next);
                 }
-                self.status = if secondary {
+                let msg = if secondary {
                     format!("Hero link_2 target: {}", link_1_target_to_str(next))
                 } else {
                     format!("Hero link_1 target: {}", link_1_target_to_str(next))
                 };
+                self.push_toast(ToastLevel::Info, msg);
             }
             _ => {
-                self.status =
-                    "Left/Right hero target cycling works on a selected hero row.".to_string();
+                self.push_toast(ToastLevel::Info, "Left/Right hero target cycling works on a selected hero row.");
             }
         }
     }
@@ -13476,7 +13482,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -13510,7 +13516,7 @@ impl App {
             }
             _ => "Selected node is not a section.".to_string(),
         };
-        self.status = result;
+        self.push_toast(ToastLevel::Info, result);
     }
 
     fn cycle_filmstrip_parent_type(&mut self, forward: bool) {
@@ -13599,7 +13605,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -13621,7 +13627,7 @@ impl App {
             }
             _ => "Selected node is not a section.".to_string(),
         };
-        self.status = result;
+        self.push_toast(ToastLevel::Info, result);
     }
 
     fn mutate_selected_banner<F>(&mut self, mutator: F, success_message: &str)
@@ -13635,7 +13641,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -13657,7 +13663,7 @@ impl App {
             }
             _ => "Selected node is not a section.".to_string(),
         };
-        self.status = result;
+        self.push_toast(ToastLevel::Info, result);
     }
 
     fn cycle_cta_parent_class(&mut self, forward: bool) {
@@ -13701,7 +13707,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -13723,7 +13729,7 @@ impl App {
             }
             _ => "Selected node is not a section.".to_string(),
         };
-        self.status = result;
+        self.push_toast(ToastLevel::Info, result);
     }
 
     fn mutate_selected_blockquote<F>(&mut self, mutator: F, success_message: &str)
@@ -13737,7 +13743,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -13761,7 +13767,7 @@ impl App {
             }
             _ => "Selected node is not a section.".to_string(),
         };
-        self.status = result;
+        self.push_toast(ToastLevel::Info, result);
     }
 
     fn mutate_selected_card<F>(&mut self, mutator: F, success_message: &str)
@@ -13775,7 +13781,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -13797,7 +13803,7 @@ impl App {
             }
             _ => "Selected node is not a section.".to_string(),
         };
-        self.status = result;
+        self.push_toast(ToastLevel::Info, result);
     }
 
     fn mutate_selected_filmstrip<F>(&mut self, mutator: F, success_message: &str)
@@ -13811,7 +13817,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -13835,7 +13841,7 @@ impl App {
             }
             _ => "Selected node is not a section.".to_string(),
         };
-        self.status = result;
+        self.push_toast(ToastLevel::Info, result);
     }
 
     fn mutate_selected_milestones<F>(&mut self, mutator: F, success_message: &str)
@@ -13849,7 +13855,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -13873,7 +13879,7 @@ impl App {
             }
             _ => "Selected node is not a section.".to_string(),
         };
-        self.status = result;
+        self.push_toast(ToastLevel::Info, result);
     }
 
     fn mutate_selected_slider<F>(&mut self, mutator: F, success_message: &str)
@@ -13887,7 +13893,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -13909,7 +13915,7 @@ impl App {
             }
             _ => "Selected node is not a section.".to_string(),
         };
-        self.status = result;
+        self.push_toast(ToastLevel::Info, result);
     }
 
     fn cycle_accordion_parent_type(&mut self, forward: bool) {
@@ -13950,7 +13956,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -13974,7 +13980,7 @@ impl App {
             }
             _ => "Selected node is not a section.".to_string(),
         };
-        self.status = result;
+        self.push_toast(ToastLevel::Info, result);
     }
 
     fn add_selected_collection_item(&mut self) {
@@ -13995,10 +14001,10 @@ impl App {
             }
             Some(crate::model::SectionComponent::Slider(_)) => self.add_selected_slider_item(),
             Some(_) => {
-                self.status = "Selected component does not support collection items.".to_string();
+                self.push_toast(ToastLevel::Warning, "Selected component does not support collection items.");
             }
             None => {
-                self.status = "No selected collection component.".to_string();
+                self.push_toast(ToastLevel::Warning, "No selected collection component.");
             }
         }
     }
@@ -14021,10 +14027,10 @@ impl App {
             }
             Some(crate::model::SectionComponent::Slider(_)) => self.remove_selected_slider_item(),
             Some(_) => {
-                self.status = "Selected component does not support collection items.".to_string();
+                self.push_toast(ToastLevel::Warning, "Selected component does not support collection items.");
             }
             None => {
-                self.status = "No selected collection component.".to_string();
+                self.push_toast(ToastLevel::Warning, "No selected collection component.");
             }
         }
     }
@@ -14032,7 +14038,7 @@ impl App {
     fn add_selected_accordion_item(&mut self) {
         let rows = self.build_page_tree_rows();
         if rows.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
@@ -14047,7 +14053,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -14089,7 +14095,7 @@ impl App {
             self.selected_nested_item = item_idx;
             self.set_accordion_items_expanded(node_idx, column_idx, component_idx, true);
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn remove_selected_accordion_item(&mut self) {
@@ -14101,7 +14107,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -14142,13 +14148,13 @@ impl App {
             self.selected_nested_item = item_idx;
             self.set_accordion_items_expanded(node_idx, column_idx, component_idx, true);
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn add_selected_alternating_item(&mut self) {
         let rows = self.build_page_tree_rows();
         if rows.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
@@ -14163,7 +14169,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -14210,7 +14216,7 @@ impl App {
             self.selected_nested_item = item_idx;
             self.set_alternating_items_expanded(node_idx, column_idx, component_idx, true);
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn remove_selected_alternating_item(&mut self) {
@@ -14222,7 +14228,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -14266,13 +14272,13 @@ impl App {
             self.selected_nested_item = item_idx;
             self.set_alternating_items_expanded(node_idx, column_idx, component_idx, true);
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn add_selected_card_item(&mut self) {
         let rows = self.build_page_tree_rows();
         if rows.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
@@ -14287,7 +14293,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -14334,13 +14340,13 @@ impl App {
             self.set_card_items_expanded(ni, selected_column, selected_component, true);
             self.sync_tree_row_with_selection();
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn remove_selected_card_item(&mut self) {
         let rows = self.build_page_tree_rows();
         if rows.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
@@ -14356,7 +14362,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -14394,13 +14400,13 @@ impl App {
             self.set_card_items_expanded(ni, selected_column, selected_component, true);
             self.sync_tree_row_with_selection();
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn add_selected_filmstrip_item(&mut self) {
         let rows = self.build_page_tree_rows();
         if rows.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
@@ -14415,7 +14421,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -14458,13 +14464,13 @@ impl App {
             self.set_filmstrip_items_expanded(ni, selected_column, selected_component, true);
             self.sync_tree_row_with_selection();
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn remove_selected_filmstrip_item(&mut self) {
         let rows = self.build_page_tree_rows();
         if rows.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
@@ -14480,7 +14486,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -14523,13 +14529,13 @@ impl App {
             self.set_filmstrip_items_expanded(ni, selected_column, selected_component, true);
             self.sync_tree_row_with_selection();
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn add_selected_milestones_item(&mut self) {
         let rows = self.build_page_tree_rows();
         if rows.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
@@ -14544,7 +14550,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -14591,13 +14597,13 @@ impl App {
             self.set_milestones_items_expanded(ni, selected_column, selected_component, true);
             self.sync_tree_row_with_selection();
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn remove_selected_milestones_item(&mut self) {
         let rows = self.build_page_tree_rows();
         if rows.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
@@ -14613,7 +14619,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -14656,13 +14662,13 @@ impl App {
             self.set_milestones_items_expanded(ni, selected_column, selected_component, true);
             self.sync_tree_row_with_selection();
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn add_selected_slider_item(&mut self) {
         let rows = self.build_page_tree_rows();
         if rows.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
@@ -14677,7 +14683,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -14723,13 +14729,13 @@ impl App {
             self.set_slider_items_expanded(ni, selected_column, selected_component, true);
             self.sync_tree_row_with_selection();
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn remove_selected_slider_item(&mut self) {
         let rows = self.build_page_tree_rows();
         if rows.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let row = rows[self.selected_tree_row.min(rows.len() - 1)];
@@ -14745,7 +14751,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -14783,7 +14789,7 @@ impl App {
             self.set_slider_items_expanded(ni, selected_column, selected_component, true);
             self.sync_tree_row_with_selection();
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn mutate_selected_section<F>(&mut self, mutator: F, success_message: &str)
@@ -14797,7 +14803,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let idx = selected.min(page.nodes.len() - 1);
@@ -14815,7 +14821,7 @@ impl App {
         if let Some(next_selected_component) = result.0 {
             self.selected_component = next_selected_component;
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn add_column(&mut self) {
@@ -14848,7 +14854,7 @@ impl App {
 
     fn add_column_to_header_section(&mut self) {
         if self.site.header.sections.is_empty() {
-            self.status = "No header section available. Add a section first with '/'.".to_string();
+            self.push_toast(ToastLevel::Warning, "No header section available. Add a section first with '/'.");
             return;
         }
         let section_idx = self
@@ -14864,7 +14870,8 @@ impl App {
         });
         self.selected_header_column = section.columns.len() - 1;
         self.selected_header_component = 0;
-        self.status = format!("Added column to header section '{}'.", section.id);
+        let section_id = section.id.clone();
+        self.push_toast(ToastLevel::Info, format!("Added column to header section '{}'.", section_id));
     }
 
     fn remove_selected_column(&mut self) {
@@ -14880,7 +14887,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -14905,12 +14912,12 @@ impl App {
             self.selected_component = 0;
             self.selected_nested_item = 0;
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn remove_column_from_header_section(&mut self) {
         if self.site.header.sections.is_empty() {
-            self.status = "No header sections to modify.".to_string();
+            self.push_toast(ToastLevel::Warning, "No header sections to modify.");
             return;
         }
         let section_idx = self
@@ -14919,14 +14926,14 @@ impl App {
         let section = &mut self.site.header.sections[section_idx];
         normalize_section_columns(section);
         if section.columns.len() <= 1 {
-            self.status = "Header section must keep at least one column.".to_string();
+            self.push_toast(ToastLevel::Warning, "Header section must keep at least one column.");
             return;
         }
         let ci = self.selected_header_column.min(section.columns.len() - 1);
         section.columns.remove(ci);
         self.selected_header_column = ci.min(section.columns.len() - 1);
         self.selected_header_component = 0;
-        self.status = "Removed column from header section.".to_string();
+        self.push_toast(ToastLevel::Info, "Removed column from header section.");
     }
 
     fn select_prev_column(&mut self) {
@@ -14935,39 +14942,39 @@ impl App {
             let total = match self.selected_header_section_column_total() {
                 Some(v) => v,
                 None => {
-                    self.status = "No header section selected.".to_string();
+                    self.push_toast(ToastLevel::Warning, "No header section selected.");
                     return;
                 }
             };
             if total == 0 {
-                self.status = "Selected header section has no columns.".to_string();
+                self.push_toast(ToastLevel::Warning, "Selected header section has no columns.");
                 return;
             }
             self.selected_header_column = self.selected_header_column.saturating_sub(1);
             self.selected_header_component = 0;
-            self.status = format!(
+            self.push_toast(ToastLevel::Info, format!(
                 "Selected header column {} of {}.",
                 self.selected_header_column + 1,
                 total
-            );
+            ));
             return;
         }
 
         let total = match self.selected_section_column_total() {
             Some(v) => v,
             None => {
-                self.status = "Selected node is not a section.".to_string();
+                self.push_toast(ToastLevel::Warning, "Selected node is not a section.");
                 return;
             }
         };
         if total == 0 {
-            self.status = "Selected section has no columns.".to_string();
+            self.push_toast(ToastLevel::Warning, "Selected section has no columns.");
             return;
         }
         self.selected_column = self.selected_column.saturating_sub(1);
         self.selected_component = 0;
         self.selected_nested_item = 0;
-        self.status = format!("Selected column {} of {}.", self.selected_column + 1, total);
+        self.push_toast(ToastLevel::Info, format!("Selected column {} of {}.", self.selected_column + 1, total));
     }
 
     fn select_next_column(&mut self) {
@@ -14976,39 +14983,39 @@ impl App {
             let total = match self.selected_header_section_column_total() {
                 Some(v) => v,
                 None => {
-                    self.status = "No header section selected.".to_string();
+                    self.push_toast(ToastLevel::Warning, "No header section selected.");
                     return;
                 }
             };
             if total == 0 {
-                self.status = "Selected header section has no columns.".to_string();
+                self.push_toast(ToastLevel::Warning, "Selected header section has no columns.");
                 return;
             }
             self.selected_header_column = (self.selected_header_column + 1).min(total - 1);
             self.selected_header_component = 0;
-            self.status = format!(
+            self.push_toast(ToastLevel::Info, format!(
                 "Selected header column {} of {}.",
                 self.selected_header_column + 1,
                 total
-            );
+            ));
             return;
         }
 
         let total = match self.selected_section_column_total() {
             Some(v) => v,
             None => {
-                self.status = "Selected node is not a section.".to_string();
+                self.push_toast(ToastLevel::Warning, "Selected node is not a section.");
                 return;
             }
         };
         if total == 0 {
-            self.status = "Selected section has no columns.".to_string();
+            self.push_toast(ToastLevel::Warning, "Selected section has no columns.");
             return;
         }
         self.selected_column = (self.selected_column + 1).min(total - 1);
         self.selected_component = 0;
         self.selected_nested_item = 0;
-        self.status = format!("Selected column {} of {}.", self.selected_column + 1, total);
+        self.push_toast(ToastLevel::Info, format!("Selected column {} of {}.", self.selected_column + 1, total));
     }
 
     fn selected_header_section_column_total(&self) -> Option<usize> {
@@ -15025,7 +15032,7 @@ impl App {
         // Check if we're in Header mode
         if self.selected_region == SelectedRegion::Header {
             if self.site.header.sections.is_empty() {
-                self.status = "No header sections to modify.".to_string();
+                self.push_toast(ToastLevel::Warning, "No header sections to modify.");
                 return;
             }
             let section_idx = self
@@ -15034,18 +15041,18 @@ impl App {
             let section = &mut self.site.header.sections[section_idx];
             normalize_section_columns(section);
             if section.columns.len() < 2 {
-                self.status = "Need at least 2 columns.".to_string();
+                self.push_toast(ToastLevel::Warning, "Need at least 2 columns.");
                 return;
             }
             let ci = self.selected_header_column.min(section.columns.len() - 1);
             if ci == 0 {
-                self.status = "Column is already first.".to_string();
+                self.push_toast(ToastLevel::Info, "Column is already first.");
                 return;
             }
             section.columns.swap(ci, ci - 1);
             self.selected_header_column = ci - 1;
             self.snap_tree_row_to_header_column(section_idx, ci - 1);
-            self.status = "Moved header column up.".to_string();
+            self.push_toast(ToastLevel::Info, "Moved header column up.");
             return;
         }
 
@@ -15055,7 +15062,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -15082,14 +15089,14 @@ impl App {
             self.selected_nested_item = 0;
             self.snap_tree_row_to_column(ni, next_selected_column);
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     fn move_selected_column_down(&mut self) {
         // Check if we're in Header mode
         if self.selected_region == SelectedRegion::Header {
             if self.site.header.sections.is_empty() {
-                self.status = "No header sections to modify.".to_string();
+                self.push_toast(ToastLevel::Warning, "No header sections to modify.");
                 return;
             }
             let section_idx = self
@@ -15098,18 +15105,18 @@ impl App {
             let section = &mut self.site.header.sections[section_idx];
             normalize_section_columns(section);
             if section.columns.len() < 2 {
-                self.status = "Need at least 2 columns.".to_string();
+                self.push_toast(ToastLevel::Warning, "Need at least 2 columns.");
                 return;
             }
             let ci = self.selected_header_column.min(section.columns.len() - 1);
             if ci + 1 >= section.columns.len() {
-                self.status = "Column is already last.".to_string();
+                self.push_toast(ToastLevel::Info, "Column is already last.");
                 return;
             }
             section.columns.swap(ci, ci + 1);
             self.selected_header_column = ci + 1;
             self.snap_tree_row_to_header_column(section_idx, ci + 1);
-            self.status = "Moved header column down.".to_string();
+            self.push_toast(ToastLevel::Info, "Moved header column down.");
             return;
         }
 
@@ -15119,7 +15126,7 @@ impl App {
             return;
         };
         if page.nodes.is_empty() {
-            self.status = "No selected section.".to_string();
+            self.push_toast(ToastLevel::Warning, "No selected section.");
             return;
         }
         let ni = selected.min(page.nodes.len() - 1);
@@ -15146,7 +15153,7 @@ impl App {
             self.selected_nested_item = 0;
             self.snap_tree_row_to_column(ni, next_selected_column);
         }
-        self.status = result.1;
+        self.push_toast(ToastLevel::Info, result.1);
     }
 
     /// After a column swap, force `selected_tree_row` to the Column row for
@@ -15290,8 +15297,7 @@ impl App {
             scroll_offset: 0,
             visible_fields: 6,
         });
-        self.status = "Editing page head. Tab to navigate, Ctrl+S to save, Esc to cancel."
-            .to_string();
+        self.push_toast(ToastLevel::Info, "Editing page head. Tab to navigate, Ctrl+S to save, Esc to cancel.");
     }
 
     fn open_footer_edit_modal(&mut self) {
@@ -15321,7 +15327,7 @@ impl App {
             scroll_offset: 0,
             visible_fields: 4,
         });
-        self.status = "Editing footer. Tab to navigate, Ctrl+S to save, Esc to cancel.".to_string();
+        self.push_toast(ToastLevel::Info, "Editing footer. Tab to navigate, Ctrl+S to save, Esc to cancel.");
     }
 
     fn open_header_root_edit_modal(&mut self) {
@@ -15351,21 +15357,20 @@ impl App {
             scroll_offset: 0,
             visible_fields: 4,
         });
-        self.status = "Editing header root. Tab to navigate, Ctrl+S to save, Esc to cancel."
-            .to_string();
+        self.push_toast(ToastLevel::Info, "Editing header root. Tab to navigate, Ctrl+S to save, Esc to cancel.");
     }
 
     fn begin_edit_selected_component_primary(&mut self) {
         let page = self.current_page();
         if page.nodes.is_empty() {
-            self.status = "No nodes to edit.".to_string();
+            self.push_toast(ToastLevel::Warning, "No nodes to edit.");
             return;
         }
 
         let ni = self.selected_node.min(page.nodes.len() - 1);
         let component_to_edit = match &page.nodes[ni] {
             PageNode::Hero(_) => {
-                self.status = "Use Enter on hero node for multi-field editing.".to_string();
+                self.push_toast(ToastLevel::Info, "Use Enter on hero node for multi-field editing.");
                 return;
             }
             PageNode::Section(section) => {
@@ -15946,9 +15951,9 @@ impl App {
 
         if let Some(modal) = component_to_edit {
             self.edit_modal = Some(modal);
-            self.status = "Multi-field edit: Tab/Up/Down to navigate, type to edit, Ctrl+S to save, Esc to cancel.".to_string();
+            self.push_toast(ToastLevel::Info, "Multi-field edit: Tab/Up/Down to navigate, type to edit, Ctrl+S to save, Esc to cancel.");
         } else {
-            self.status = "No component selected.".to_string();
+            self.push_toast(ToastLevel::Warning, "No component selected.");
         }
     }
 
@@ -16013,13 +16018,13 @@ impl App {
         };
 
         let Some((mode, value)) = selected else {
-            self.status = "Component editing not available for this type.".to_string();
+            self.push_toast(ToastLevel::Warning, "Component editing not available for this type.");
             return;
         };
         self.input_mode = Some(mode);
         self.input_buffer = value;
         self.input_cursor = self.input_buffer.chars().count();
-        self.status = "Single-field edit: Enter to save, Esc to cancel.".to_string();
+        self.push_toast(ToastLevel::Info, "Single-field edit: Enter to save, Esc to cancel.");
     }
 
     fn selected_section_column_total(&mut self) -> Option<usize> {
@@ -18812,7 +18817,9 @@ mod tests {
 
         send_key(&mut app, KeyCode::Char('X'), KeyModifiers::SHIFT);
         assert_eq!(selected_card(&app).items.len(), 1);
-        assert!(app.status.contains("must keep at least one item"));
+        let last = app.toasts.last().expect("expected a warning toast for min guard");
+        assert!(last.message.contains("must keep at least one item"));
+        assert_eq!(last.level, ToastLevel::Warning);
     }
 
     #[test]
