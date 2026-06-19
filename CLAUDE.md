@@ -29,7 +29,7 @@ Guidance for Claude / agent sessions working on this repo.
 - Render functions are `&self`. State that the event loop needs from render (e.g. cached field rects, `help_scroll_max`) goes through `RefCell` or pre-publish-into-`&mut self` fields.
 
 ### Theme tokens
-Always source colors from `self.theme.*`. Standard mappings (per `THEME_STRUCTURE_STANDARD.md`):
+Always source colors from `self.theme.*`. Standard mappings (per `LDNDDEV_TUI_VISUAL_STANDARD.md`):
 - Labels: `text_labels` default → `text_active_focus` when the field is focused
 - Input borders: `input_border_default` / `input_border_focus`
 - Input text: `input_text_default` / `input_text_focus`
@@ -38,7 +38,7 @@ Always source colors from `self.theme.*`. Standard mappings (per `THEME_STRUCTUR
 
 ### User preferences captured during the v1.0 push
 - Toasts (success / info / warning) for non-blocking messages; modals for errors.
-- Status bar reserved for instructional/in-progress text ("Rename page. Edit and press Enter."), not transient confirmations.
+- Footer is now a strict 1-line adaptive key-hint bar (borderless, `app_shell` style per LDNDDEV_TUI_VISUAL_STANDARD.md; always starts with F1:Help; no long status text). Instructional/in-progress messages now use toasts.
 - All scrollable surfaces support mouse wheel + keyboard.
 - All multi-field modal inputs support click-to-focus.
 - Help modal text wraps + scrolls + has a scrollbar.
@@ -63,7 +63,7 @@ src/
 components/dd-*.md     component specs (humans + agents read these)
 docs/superpowers/      design specs + implementation plans
 Architecture.md        always start here for a high-level orientation
-THEME_STRUCTURE_STANDARD.md   token schema
+LDNDDEV_TUI_VISUAL_STANDARD.md   token schema + header/footer shell rules
 dd_siteforge_theme.yml       default theme values
 ```
 
