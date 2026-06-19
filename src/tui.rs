@@ -27,13 +27,7 @@ pub mod cursor;
 pub mod editform;
 
 pub fn run_tui(site: Site, path: Option<PathBuf>) -> anyhow::Result<()> {
-    let theme = match AppTheme::load() {
-        Ok(theme) => theme,
-        Err(err) => {
-            eprintln!("failed to load theme config, using defaults: {err}");
-            AppTheme::default()
-        }
-    };
+    let (theme, theme_source, load_warning) = AppTheme::load();
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -41,7 +35,10 @@ pub fn run_tui(site: Site, path: Option<PathBuf>) -> anyhow::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(site, path, theme);
+    let mut app = App::new(site, path, theme, theme_source);
+    if let Some(msg) = load_warning {
+        app.push_toast(ToastLevel::Warning, msg);
+    }
     let run_res = app.run(&mut terminal);
 
     disable_raw_mode()?;
@@ -18719,7 +18716,7 @@ mod tests {
     use crossterm::event::KeyEvent;
 
     fn app_with_card() -> App {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_page = 0;
         app.selected_node = 1;
         app.set_section_expanded(1, true);
@@ -18757,7 +18754,7 @@ mod tests {
     }
 
     fn app_with_cta() -> App {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_page = 0;
         app.selected_node = 1;
         app.set_section_expanded(1, true);
@@ -18887,7 +18884,7 @@ mod tests {
 
     #[test]
     fn dd_cta_edits_in_header_region() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_region = SelectedRegion::Header;
         app.header_column_expanded = true;
         app.set_header_section_expanded(0, true);
@@ -18937,7 +18934,7 @@ mod tests {
 
     #[test]
     fn dd_cta_edits_in_footer_region() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_region = SelectedRegion::Footer;
         app.site.footer.sections[0].columns[0]
             .components
@@ -18995,7 +18992,7 @@ mod tests {
     }
 
     fn app_with_component(kind: ComponentKind) -> App {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_page = 0;
         app.selected_node = 1;
         app.set_section_expanded(1, true);
@@ -19056,7 +19053,7 @@ mod tests {
     #[test]
     fn tier_a_header_search_form_edit_round_trip() {
         // HeaderSearch only valid in header region, so build a scenario there.
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_region = SelectedRegion::Header;
         app.header_column_expanded = true;
         app.set_header_section_expanded(0, true);
@@ -19255,7 +19252,7 @@ mod tests {
 
     #[test]
     fn tier_c_hero_form_edit_round_trip() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_page = 0;
         app.selected_node = 0;
         app.sync_tree_row_with_selection();
@@ -19287,7 +19284,7 @@ mod tests {
 
     #[test]
     fn tier_c_section_form_edit_preserves_components() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_page = 0;
         app.selected_node = 1;
         app.set_section_expanded(1, true);
@@ -19470,7 +19467,7 @@ mod tests {
 
     #[test]
     fn pages_panel_shift_a_opens_title_prompt_then_template_picker_then_inserts_blank_page() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
         let initial_len = app.site.pages.len();
 
@@ -19496,7 +19493,7 @@ mod tests {
 
     #[test]
     fn pages_panel_add_hero_only_template_inserts_single_hero() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
 
         send_key(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT);
@@ -19514,7 +19511,7 @@ mod tests {
 
     #[test]
     fn pages_panel_add_hero_plus_section_inserts_hero_then_section() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
 
         send_key(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT);
@@ -19534,7 +19531,7 @@ mod tests {
 
     #[test]
     fn pages_panel_add_duplicate_clones_current_and_appends_copy_suffix() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
         let orig_len = app.site.pages.len();
         let orig_node_count = app.site.pages[0].nodes.len();
@@ -19556,7 +19553,7 @@ mod tests {
 
     #[test]
     fn pages_panel_add_with_duplicate_title_dedupes_id_with_numeric_suffix() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
         // Starter page has id "page-home". Adding a page titled "Home" (Blank) would
         // generate the same id and should be deduped.
@@ -19576,7 +19573,7 @@ mod tests {
 
     #[test]
     fn pages_panel_shift_x_on_last_page_refuses_delete() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
         assert_eq!(app.site.pages.len(), 1);
 
@@ -19590,7 +19587,7 @@ mod tests {
 
     #[test]
     fn pages_panel_shift_x_prompts_then_y_deletes_and_pushes_trash() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
         app.site.pages.push(crate::model::Page::from_template(
             "Contact",
@@ -19610,7 +19607,7 @@ mod tests {
 
     #[test]
     fn pages_panel_shift_x_prompts_then_n_cancels() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
         app.site.pages.push(crate::model::Page::from_template(
             "Contact",
@@ -19627,7 +19624,7 @@ mod tests {
 
     #[test]
     fn pages_panel_u_restores_last_deleted_page_and_selects_it() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
         app.site.pages.push(crate::model::Page::from_template(
             "Contact",
@@ -19649,7 +19646,7 @@ mod tests {
 
     #[test]
     fn pages_panel_u_with_empty_trash_is_noop() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
         send_key(&mut app, KeyCode::Char('u'), KeyModifiers::NONE);
         assert_eq!(app.site.pages.len(), 1);
@@ -19663,7 +19660,7 @@ mod tests {
 
     #[test]
     fn pages_panel_shift_j_moves_current_page_down() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
         app.site.pages.push(crate::model::Page::from_template(
             "Contact",
@@ -19683,7 +19680,7 @@ mod tests {
 
     #[test]
     fn pages_panel_shift_k_moves_current_page_up() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
         app.site.pages.push(crate::model::Page::from_template(
             "Contact",
@@ -19699,7 +19696,7 @@ mod tests {
 
     #[test]
     fn pages_panel_shift_j_at_last_is_noop() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
         app.selected_page = 0;
         send_key(&mut app, KeyCode::Char('J'), KeyModifiers::SHIFT);
@@ -19709,7 +19706,7 @@ mod tests {
 
     #[test]
     fn pages_panel_r_renames_and_regenerates_slug_when_unlocked() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
         // starter page slug_locked defaults to false.
         assert!(!app.site.pages[0].slug_locked);
@@ -19733,7 +19730,7 @@ mod tests {
 
     #[test]
     fn pages_panel_r_with_locked_slug_renames_title_only() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.selected_sidebar_section = SidebarSection::Pages;
         app.site.pages[0].slug_locked = true;
         let orig_slug = app.site.pages[0].slug.clone();
@@ -19753,7 +19750,7 @@ mod tests {
 
     #[test]
     fn page_head_modal_always_shows_slug_field() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         // Unlocked starter still exposes the Slug field.
         assert!(!app.site.pages[0].slug_locked);
         app.open_page_head_edit_modal();
@@ -19771,7 +19768,7 @@ mod tests {
 
     #[test]
     fn page_head_modal_save_writes_slug_and_locks_when_edited() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         assert!(!app.site.pages[0].slug_locked);
         app.open_page_head_edit_modal();
         let modal = app.edit_modal.as_mut().unwrap();
@@ -19793,7 +19790,7 @@ mod tests {
 
     #[test]
     fn page_head_modal_save_leaves_slug_unchanged_when_user_did_not_edit_it() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         let orig_slug = app.site.pages[0].slug.clone();
         app.open_page_head_edit_modal();
         let fields = app.edit_modal.as_ref().unwrap().fields.clone();
@@ -19805,7 +19802,7 @@ mod tests {
 
     #[test]
     fn page_head_modal_default_og_title_is_page_title() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         assert!(app.site.pages[0].head.og_title.is_none());
         app.open_page_head_edit_modal();
         let og_field = app
@@ -19825,7 +19822,7 @@ mod tests {
 
     #[test]
     fn page_head_modal_default_canonical_is_slug_path() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         // Starter page has no canonical_url set.
         assert!(app.site.pages[0].head.canonical_url.is_none());
         app.open_page_head_edit_modal();
@@ -19847,7 +19844,7 @@ mod tests {
 
     #[test]
     fn page_head_title_rename_regens_slug_when_unlocked() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         assert!(!app.site.pages[0].slug_locked);
         app.open_page_head_edit_modal();
         let modal = app.edit_modal.as_mut().unwrap();
@@ -19869,7 +19866,7 @@ mod tests {
 
     #[test]
     fn open_validation_modal_on_clean_starter_pushes_success_toast_and_no_modal() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.open_validation_modal();
         assert!(
             app.modal.is_none(),
@@ -19886,7 +19883,7 @@ mod tests {
 
     #[test]
     fn open_validation_modal_with_errors_opens_modal_with_error_list() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         // Force an error: empty slug.
         app.site.pages[0].slug = "".to_string();
         app.open_validation_modal();
@@ -19909,7 +19906,7 @@ mod tests {
 
     #[test]
     fn f3_on_clean_starter_pushes_success_toast() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         send_key(&mut app, KeyCode::F(3), KeyModifiers::NONE);
         assert!(app.modal.is_none());
         let last = app.toasts.last().expect("expected a success toast");
@@ -19919,7 +19916,7 @@ mod tests {
 
     #[test]
     fn f3_with_validation_errors_opens_modal() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.site.pages[0].slug = "".to_string();
         send_key(&mut app, KeyCode::F(3), KeyModifiers::NONE);
         assert!(matches!(app.modal, Some(Modal::ValidationErrors { .. })));
@@ -19927,7 +19924,7 @@ mod tests {
 
     #[test]
     fn f3_then_enter_dismisses_modal() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.site.pages[0].slug = "".to_string();
         send_key(&mut app, KeyCode::F(3), KeyModifiers::NONE);
         send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
@@ -19936,7 +19933,7 @@ mod tests {
 
     #[test]
     fn f3_then_j_k_scrolls_error_list() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.site.pages.clear();
         send_key(&mut app, KeyCode::F(3), KeyModifiers::NONE);
         let initial_errors = match &app.modal {
@@ -19963,7 +19960,7 @@ mod tests {
 
     #[test]
     fn begin_export_flow_on_clean_starter_without_export_dir_opens_path_prompt() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         assert!(app.site.export_dir.is_none());
         app.begin_export_flow();
         match &app.modal {
@@ -19976,7 +19973,7 @@ mod tests {
 
     #[test]
     fn begin_export_flow_with_invalid_site_opens_validation_modal() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.site.pages[0].slug = "".to_string();
         app.begin_export_flow();
         assert!(matches!(app.modal, Some(Modal::ValidationErrors { .. })));
@@ -19995,7 +19992,7 @@ mod tests {
         std::fs::create_dir_all(&imgs).unwrap();
         std::fs::write(imgs.join("hero.jpg"), b"fake").unwrap();
         let json_path = tmp.join("site.json");
-        let mut app = App::new(Site::starter(), Some(json_path.clone()), AppTheme::default());
+        let mut app = App::new(Site::starter(), Some(json_path.clone()), AppTheme::default(), "default".to_string());
         app.site.export_dir = Some("web".to_string());
 
         app.begin_export_flow();
@@ -20011,7 +20008,7 @@ mod tests {
 
     #[test]
     fn e_key_with_validation_errors_opens_validation_modal() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.site.pages[0].slug = "".to_string();
         send_key(&mut app, KeyCode::Char('E'), KeyModifiers::SHIFT);
         assert!(matches!(app.modal, Some(Modal::ValidationErrors { .. })));
@@ -20019,21 +20016,21 @@ mod tests {
 
     #[test]
     fn e_key_with_clean_site_and_no_export_dir_opens_path_prompt() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         send_key(&mut app, KeyCode::Char('E'), KeyModifiers::SHIFT);
         assert!(matches!(app.modal, Some(Modal::ExportPathPrompt { .. })));
     }
 
     #[test]
     fn fresh_app_is_clean() {
-        let app = App::new(Site::starter(), None, AppTheme::default());
+        let app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         assert!(!app.dirty);
         assert!(app.dirty_since.is_none());
     }
 
     #[test]
     fn editing_a_page_title_marks_app_dirty() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.site.pages[0].head.title = "Mutated".to_string();
         app.mark_dirty_if_changed();
         assert!(app.dirty);
@@ -20042,7 +20039,7 @@ mod tests {
 
     #[test]
     fn unchanged_model_stays_clean() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.mark_dirty_if_changed();
         assert!(!app.dirty);
         assert!(app.dirty_since.is_none());
@@ -20050,7 +20047,7 @@ mod tests {
 
     #[test]
     fn dirty_since_does_not_reset_on_subsequent_mutations() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.site.pages[0].head.title = "First".to_string();
         app.mark_dirty_if_changed();
         let first = app.dirty_since.expect("dirty_since should be set");
@@ -20066,7 +20063,7 @@ mod tests {
 
     #[test]
     fn tick_autosave_does_nothing_when_clean() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         let now = std::time::Instant::now();
         app.tick_autosave(now);
         assert!(!app.dirty);
@@ -20074,7 +20071,7 @@ mod tests {
 
     #[test]
     fn tick_autosave_does_nothing_when_dirty_but_no_path() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.site.pages[0].head.title = "x".to_string();
         app.mark_dirty_if_changed();
         let later = app.dirty_since.unwrap()
@@ -20097,7 +20094,7 @@ mod tests {
         crate::storage::save_site(&json_path, &Site::starter()).unwrap();
 
         let mut app =
-            App::new(Site::starter(), Some(json_path.clone()), AppTheme::default());
+            App::new(Site::starter(), Some(json_path.clone()), AppTheme::default(), "default".to_string());
         app.site.pages[0].head.title = "After mutation".to_string();
         app.mark_dirty_if_changed();
         assert!(app.dirty);
@@ -20114,7 +20111,7 @@ mod tests {
 
     #[test]
     fn tick_autosave_holds_off_within_debounce_window() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.site.pages[0].head.title = "x".to_string();
         app.mark_dirty_if_changed();
         let still_in_window = app.dirty_since.unwrap()
@@ -20137,7 +20134,7 @@ mod tests {
         let backup_path = tmp.join("site.json.backup");
 
         let mut app =
-            App::new(Site::starter(), Some(json_path.clone()), AppTheme::default());
+            App::new(Site::starter(), Some(json_path.clone()), AppTheme::default(), "default".to_string());
         app.site.pages[0].head.title = "Pre-save".to_string();
 
         app.commit_save_with_backup(&json_path)
@@ -20214,7 +20211,7 @@ mod tests {
 
     #[test]
     fn begin_preview_flow_with_invalid_site_opens_validation_modal() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.site.pages[0].slug = "".to_string();
         app.begin_preview_flow();
         assert!(matches!(app.modal, Some(Modal::ValidationErrors { .. })));
@@ -20222,7 +20219,7 @@ mod tests {
 
     #[test]
     fn begin_preview_flow_without_export_dir_opens_path_prompt() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.begin_preview_flow();
         match &app.modal {
             Some(Modal::PreviewPathPrompt { path }) => assert_eq!(path, "./web/"),
@@ -20232,7 +20229,7 @@ mod tests {
 
     #[test]
     fn current_page_slug_for_preview_returns_selected_page_slug() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.site.pages.push(crate::model::Page::from_template(
             "Contact",
             crate::model::PageTemplate::Blank,
@@ -20243,7 +20240,7 @@ mod tests {
 
     #[test]
     fn p_key_with_validation_errors_opens_validation_modal() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.site.pages[0].slug = "".to_string();
         send_key(&mut app, KeyCode::Char('p'), KeyModifiers::NONE);
         assert!(matches!(app.modal, Some(Modal::ValidationErrors { .. })));
@@ -20251,7 +20248,7 @@ mod tests {
 
     #[test]
     fn p_key_with_clean_site_and_no_export_dir_opens_preview_path_prompt() {
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         send_key(&mut app, KeyCode::Char('p'), KeyModifiers::NONE);
         assert!(matches!(app.modal, Some(Modal::PreviewPathPrompt { .. })));
     }
@@ -20266,7 +20263,7 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&tmp).unwrap();
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         app.modal = Some(Modal::ImagePicker {
             state: ImagePickerState {
                 root: tmp.clone(),
@@ -20296,7 +20293,7 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&tmp).unwrap();
-        let mut app = App::new(Site::starter(), None, AppTheme::default());
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         let dummy_form_state = editform::EditFormState::new(&editform::CTA_FORM);
         let paused = Modal::FormEdit {
             state: dummy_form_state,
