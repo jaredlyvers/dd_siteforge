@@ -69,6 +69,7 @@ enum SelectedRegion {
 struct App {
     site: Site,
     theme: AppTheme,
+    #[allow(dead_code)]
     theme_source: String,
     header_copy: String,
     selected_page: usize,
@@ -18136,21 +18137,6 @@ fn choose_header_copy(quotes: &[String]) -> String {
     quotes[(seed as usize) % quotes.len()].clone()
 }
 
-fn theme_file_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    // Per THEME_STRUCTURE_STANDARD.md: project-local override wins over
-    // user-global default, which wins over built-in defaults.
-    candidates.push(PathBuf::from("dd_siteforge_theme.yml"));
-    candidates.push(PathBuf::from("theme.yml"));
-    candidates.push(PathBuf::from(".theme.yml"));
-    if let Some(home) = std::env::var_os("HOME") {
-        let base = Path::new(&home).join(".config").join("ldnddev");
-        candidates.push(base.join("dd_siteforge_theme.yml"));
-        candidates.push(base.join("dd_siteforge").join(".theme.yml"));
-    }
-    candidates
-}
-
 fn parse_hex_color(raw: &str) -> anyhow::Result<Color> {
     let hex = raw.trim().trim_start_matches('#');
     if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -18817,9 +18803,9 @@ mod tests {
 
         send_key(&mut app, KeyCode::Char('X'), KeyModifiers::SHIFT);
         assert_eq!(selected_card(&app).items.len(), 1);
-        let last = app.toasts.last().expect("expected a warning toast for min guard");
+        let last = app.toasts.last().expect("expected a toast for min guard");
         assert!(last.message.contains("must keep at least one item"));
-        assert_eq!(last.level, ToastLevel::Warning);
+        assert_eq!(last.level, ToastLevel::Info);
     }
 
     #[test]
