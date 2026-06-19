@@ -66,7 +66,7 @@ Each component spec lives in `components/dd-*.md` (single source of truth for fi
 ```
 loop:
   tick_autosave(now)              # write site.json if dirty + 2s elapsed
-  terminal.draw(|f| self.draw(f)) # paints chrome + active modal + toasts
+  terminal.draw(|f| self.draw(f)) # paints fixed 3-line header (dd_siteforge + random tagline) + panels + 1-line adaptive footer keys + modals + toasts (per LDNDDEV standard)
   if event::poll(100ms):
     handle_event(evt)             # routes to modal handler or main key dispatch
     mark_dirty_if_changed()       # JSON snapshot diff vs last_saved_json
@@ -102,11 +102,22 @@ loop:
 
 `↑/↓` move · `←` parent dir (image only) · `→`/`Enter` descend or pick · type to filter · `Esc` cancel.
 
-## Theme
+## Theme + Visual Shell
 
-Tokens load from (in order): `./dd_siteforge_theme.yml`, `./theme.yml`, `./.theme.yml`, `~/.config/ldnddev/dd_siteforge_theme.yml`, `~/.config/ldnddev/dd_siteforge/.theme.yml`. Fall through to built-in defaults.
+Theme load is strict (LDNDDEV_TUI_VISUAL_STANDARD.md):
+1. `./dd_siteforge_theme.yml` (local)
+2. `~/.config/ldnddev/dd_siteforge_theme.yml` (global)
+3. Built-in defaults
 
-Schema follows `THEME_STRUCTURE_STANDARD.md`. Tokens used: `base_background`, `body_background`, `popup_background` (modal), `text_primary`, `text_secondary`/`muted`, `text_labels`, `text_active_focus`, `modal_labels`, `modal_text`, `selected_*`, `border_default`/`border_active`, `input_border_*`, `input_text_*`, `cursor`, `scrollbar`/`scrollbar_hover`, `success`/`info`/`warning`/`error`, `folders`/`files`/`links`.
+Every theme file must contain `version: 1` at the top level (validated on load; bad/missing version falls back with a Warning toast).
+
+`header_quotes` (optional top-level list) overrides the 5 built-in rotating header taglines (chosen once at App::new using time ^ pid).
+
+The TUI now exposes `theme.app_shell` and `theme.active_border` (Style) for the standard header/footer.
+
+See `src/tui.rs` (draw, AppTheme::load, choose_header_copy, default_header_quotes) for the concrete implementation.
+The Details panel title now includes current page context ("Details — 03: Home").
+Former persistent status messages are delivered as toasts.
 
 ## Storage + Autosave
 
