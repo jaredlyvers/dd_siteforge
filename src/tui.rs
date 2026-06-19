@@ -72,6 +72,8 @@ enum SelectedRegion {
 struct App {
     site: Site,
     theme: AppTheme,
+    theme_source: String,
+    header_copy: String,
     selected_page: usize,
     selected_node: usize,
     selected_tree_row: usize,
@@ -107,7 +109,6 @@ struct App {
     list_area: Rect,
     details_area: Rect,
     details_scroll_row: usize,
-    status: String,
     path: Option<PathBuf>,
     should_quit: bool,
     save_prompt_open: bool,
@@ -4285,14 +4286,19 @@ impl App {
 // ============================================================================
 
 impl App {
-    fn new(mut site: Site, path: Option<PathBuf>, theme: AppTheme) -> Self {
+    fn new(mut site: Site, path: Option<PathBuf>, theme: AppTheme, theme_source: String) -> Self {
         for page in &mut site.pages {
             ensure_page_section_ids(page);
         }
         let last_saved_json = serde_json::to_string(&site).unwrap_or_default();
+
+        let header_copy = choose_header_copy(&theme.header_quotes);
+
         let mut app = Self {
             site,
             theme,
+            theme_source,
+            header_copy,
             selected_page: 0,
             selected_node: 0,
             selected_tree_row: 0,
@@ -4311,7 +4317,6 @@ impl App {
             list_area: Rect::default(),
             details_area: Rect::default(),
             details_scroll_row: 0,
-            status: "Ready.".to_string(),
             path,
             should_quit: false,
             save_prompt_open: false,
@@ -18102,6 +18107,18 @@ fn default_header_quotes() -> Vec<String> {
         "Scheduled for later — future you can deal with the typos.".to_string(),
         "Deleted. We won't talk about it again. (We both saw it.)".to_string(),
     ]
+}
+
+fn choose_header_copy(quotes: &[String]) -> String {
+    if quotes.is_empty() {
+        return "Drafts are just commits that lost their nerve.".to_string();
+    }
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+        ^ (std::process::id() as u64);
+    quotes[(seed as usize) % quotes.len()].clone()
 }
 
 fn theme_file_candidates() -> Vec<PathBuf> {
