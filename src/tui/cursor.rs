@@ -207,6 +207,39 @@ pub fn apply_edit_form_to_component(
     cursor: &Cursor,
     state: &EditFormState,
 ) -> Result<()> {
+    // Special roots/heads have dedicated cursors and may involve page-level fields like slug.
+    match cursor {
+        Cursor::PageHead { page } => {
+            let p = site.pages.get_mut(*page).context("page index out of bounds")?;
+            let orig_title = p.head.title.clone();
+            let orig_slug = p.slug.clone();
+            apply_head_values(&mut p.head, state)?;
+            let slug_val = state.get("slug").trim().to_string();
+            if !slug_val.is_empty() && slug_val != p.slug {
+                p.slug = slug_val;
+                p.slug_locked = true;
+            }
+            let title_changed = p.head.title != orig_title;
+            let slug_user_edited = p.slug != orig_slug;
+            if title_changed && !slug_user_edited && !p.slug_locked {
+                let derived = crate::model::slug_from_title(&p.head.title);
+                if !derived.is_empty() {
+                    p.slug = derived;
+                }
+            }
+            return Ok(());
+        }
+        Cursor::HeaderRoot => {
+            apply_header_root_values(&mut site.header, state)?;
+            return Ok(());
+        }
+        Cursor::FooterRoot => {
+            apply_footer_values(&mut site.footer, state)?;
+            return Ok(());
+        }
+        _ => {}
+    }
+
     let target = resolve_mut(site, cursor)?;
     match target {
         CursorRef::Component(component) => match component {
@@ -229,21 +262,9 @@ pub fn apply_edit_form_to_component(
         },
         CursorRef::Hero(hero) => apply_hero_values(hero, state),
         CursorRef::Section(section) => apply_section_values(section, state),
-        other => Err(anyhow!(
-            "apply_edit_form_to_component: unsupported cursor target (kind index={})",
-            cursor_ref_kind(&other)
-        )),
-    }
-}
-
-fn cursor_ref_kind(r: &CursorRef) -> u8 {
-    match r {
-        CursorRef::Hero(_) => 0,
-        CursorRef::Section(_) => 1,
-        CursorRef::Component(_) => 2,
-        CursorRef::Head(_) => 3,
-        CursorRef::HeaderRoot(_) => 4,
-        CursorRef::FooterRoot(_) => 5,
+        CursorRef::Head(head) => apply_head_values(head, state),
+        CursorRef::HeaderRoot(h) => apply_header_root_values(h, state),
+        CursorRef::FooterRoot(f) => apply_footer_values(f, state),
     }
 }
 
@@ -963,6 +984,103 @@ fn apply_section_values(section: &mut DdSection, state: &EditFormState) -> Resul
     }
     section.columns = new_columns;
     Ok(())
+}
+
+fn apply_head_values(head: &mut crate::model::DdHead, state: &EditFormState) -> Result<()> {
+    head.title = state.get("title").to_string();
+    let meta = state.get("meta_description").trim().to_string();
+    head.meta_description = if meta.is_empty() { None } else { Some(meta) };
+    let canon = state.get("canonical_url").trim().to_string();
+    head.canonical_url = if canon.is_empty() { None } else { Some(canon) };
+    let robots_str = state.get("robots").to_string();
+    head.robots = match robots_str.trim() {
+        "index, follow" | "index,follow" => crate::model::RobotsDirective::IndexFollow,
+        "noindex, follow" | "noindex,follow" => crate::model::RobotsDirective::NoindexFollow,
+        "index, nofollow" | "index,nofollow" => crate::model::RobotsDirective::IndexNofollow,
+        "noindex, nofollow" | "noindex,nofollow" => crate::model::RobotsDirective::NoindexNofollow,
+        _ => crate::model::RobotsDirective::IndexFollow,
+    };
+    let schema_str = state.get("schema_type").to_string();
+    head.schema_type = match schema_str.trim() {
+        "WebPage" => crate::model::SchemaType::WebPage,
+        "Article" => crate::model::SchemaType::Article,
+        "AboutPage" => crate::model::SchemaType::AboutPage,
+        "ContactPage" => crate::model::SchemaType::ContactPage,
+        "CollectionPage" => crate::model::SchemaType::CollectionPage,
+        "Organization" => crate::model::SchemaType::Organization,
+        "LocalBusiness" => crate::model::SchemaType::LocalBusiness,
+        "Product" => crate::model::SchemaType::Product,
+        "Service" => crate::model::SchemaType::Service,
+        _ => crate::model::SchemaType::WebPage,
+    };
+    let og_t = state.get("og_title").trim().to_string();
+    head.og_title = if og_t.is_empty() { None } else { Some(og_t) };
+    let og_d = state.get("og_description").trim().to_string();
+    head.og_description = if og_d.is_empty() { None } else { Some(og_d) };
+    let og_i = state.get("og_image").trim().to_string();
+    head.og_image = if og_i.is_empty() { None } else { Some(og_i) };
+    Ok(())
+}
+
+fn apply_header_root_values(header: &mut crate::model::DdHeader, state: &EditFormState) -> Result<()> {
+    header.id = state.get("id").to_string();
+    let css = state.get("custom_css").trim().to_string();
+    header.custom_css = if css.is_empty() { None } else { Some(css) };
+    Ok(())
+}
+
+fn apply_footer_values(footer: &mut crate::model::DdFooter, state: &EditFormState) -> Result<()> {
+    footer.id = state.get("id").to_string();
+    let css = state.get("custom_css").trim().to_string();
+    footer.custom_css = if css.is_empty() { None } else { Some(css) };
+    Ok(())
+}
+
+pub fn page_head_to_form_state(page: &crate::model::Page) -> EditFormState {
+    let mut s = EditFormState::new(&editform::PAGE_HEAD_FORM);
+    let head = &page.head;
+    s.set("title", head.title.clone());
+    s.set("slug", page.slug.clone());
+    s.set("meta_description", head.meta_description.clone().unwrap_or_default());
+    let canon = head.canonical_url.clone().unwrap_or_else(|| format!("/{}", page.slug));
+    s.set("canonical_url", canon);
+    let robots = match head.robots {
+        crate::model::RobotsDirective::IndexFollow => "index, follow",
+        crate::model::RobotsDirective::NoindexFollow => "noindex, follow",
+        crate::model::RobotsDirective::IndexNofollow => "index, nofollow",
+        crate::model::RobotsDirective::NoindexNofollow => "noindex, nofollow",
+    };
+    s.set("robots", robots.to_string());
+    let schema = match head.schema_type {
+        crate::model::SchemaType::WebPage => "WebPage",
+        crate::model::SchemaType::Article => "Article",
+        crate::model::SchemaType::AboutPage => "AboutPage",
+        crate::model::SchemaType::ContactPage => "ContactPage",
+        crate::model::SchemaType::CollectionPage => "CollectionPage",
+        crate::model::SchemaType::Organization => "Organization",
+        crate::model::SchemaType::LocalBusiness => "LocalBusiness",
+        crate::model::SchemaType::Product => "Product",
+        crate::model::SchemaType::Service => "Service",
+    };
+    s.set("schema_type", schema.to_string());
+    s.set("og_title", head.og_title.clone().unwrap_or_else(|| head.title.clone()));
+    s.set("og_description", head.og_description.clone().unwrap_or_default());
+    s.set("og_image", head.og_image.clone().unwrap_or_default());
+    s
+}
+
+pub fn header_root_to_form_state(header: &crate::model::DdHeader) -> EditFormState {
+    let mut s = EditFormState::new(&editform::HEADER_ROOT_FORM);
+    s.set("id", header.id.clone());
+    s.set("custom_css", header.custom_css.clone().unwrap_or_default());
+    s
+}
+
+pub fn footer_to_form_state(footer: &crate::model::DdFooter) -> EditFormState {
+    let mut s = EditFormState::new(&editform::FOOTER_FORM);
+    s.set("id", footer.id.clone());
+    s.set("custom_css", footer.custom_css.clone().unwrap_or_default());
+    s
 }
 
 // ==================== Tier D: dd-navigation (recursive) ====================

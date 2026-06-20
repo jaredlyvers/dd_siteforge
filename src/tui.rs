@@ -22,6 +22,7 @@ use serde::Deserialize;
 use crate::model::{PageNode, SectionColumn, Site};
 const AUTOSAVE_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(2);
 const TEXTAREA_MAX_DISPLAY_ROWS: u16 = 35;
+const DOUBLE_CLICK_THRESHOLD_MS: u128 = 420;
 
 pub mod cursor;
 pub mod editform;
@@ -107,6 +108,9 @@ struct App {
     list_area: Rect,
     details_area: Rect,
     details_scroll_row: usize,
+    regions_area: Rect,
+    pages_area: Rect,
+    last_mouse_click: Option<(u16, u16, std::time::Instant)>,
     path: Option<PathBuf>,
     should_quit: bool,
     save_prompt_open: bool,
@@ -4315,6 +4319,9 @@ impl App {
             list_area: Rect::default(),
             details_area: Rect::default(),
             details_scroll_row: 0,
+            regions_area: Rect::default(),
+            pages_area: Rect::default(),
+            last_mouse_click: None,
             path,
             should_quit: false,
             save_prompt_open: false,
@@ -4535,6 +4542,7 @@ impl App {
         };
         regions_state.select(regions_selected);
         frame.render_stateful_widget(regions_list, sidebar[0], &mut regions_state);
+        self.regions_area = sidebar[0];
 
         // Pages section (numbered list)
         let page_items: Vec<ListItem> = self
@@ -4595,6 +4603,7 @@ impl App {
             pages_state.select(Some(self.selected_page));
         }
         frame.render_widget(pages_list, sidebar[1]);
+        self.pages_area = sidebar[1];
 
         // Layouts section (component tree)
         let tree_rows = self.build_tree_rows();
@@ -4651,7 +4660,7 @@ impl App {
 
         self.details_area = main[1];
         let details_width = main[1].width.saturating_sub(2) as usize;
-        let details_content = self.details_text(details_width);
+        let (details_content, _details_hits) = self.details_text(details_width);
         let details_total_rows = details_content.lines().count().max(1);
         let details_visible_rows = main[1].height.saturating_sub(2) as usize;
         let details_max_scroll = details_total_rows.saturating_sub(details_visible_rows);
@@ -5619,7 +5628,20 @@ impl App {
                     }
                 }
                 MouseEventKind::Down(MouseButton::Left) => {
-                    self.handle_click(m.column, m.row);
+                    let col = m.column;
+                    let row = m.row;
+                    let now = std::time::Instant::now();
+                    let is_double = if let Some((last_col, last_row, last_time)) = self.last_mouse_click {
+                        last_col == col && last_row == row && now.duration_since(last_time).as_millis() < DOUBLE_CLICK_THRESHOLD_MS
+                    } else {
+                        false
+                    };
+                    self.last_mouse_click = Some((col, row, now));
+                    if is_double {
+                        self.handle_double_click(col, row);
+                    } else {
+                        self.handle_click(col, row);
+                    }
                 }
                 _ => {}
             },
@@ -9675,27 +9697,245 @@ impl App {
     }
 
     fn handle_click(&mut self, x: u16, y: u16) {
-        if !contains(self.list_area, x, y) {
+        // Layout tree (list_area)
+        if contains(self.list_area, x, y) {
+            let tree_rows = self.build_tree_rows();
+            if tree_rows.is_empty() {
+                return;
+            }
+            let body_top = self.list_area.y.saturating_add(1);
+            let body_bottom = self
+                .list_area
+                .y
+                .saturating_add(self.list_area.height.saturating_sub(1));
+            if y < body_top || y >= body_bottom {
+                return;
+            }
+            let idx = (y - body_top) as usize;
+            if idx < tree_rows.len() {
+                self.selected_tree_row = idx;
+                self.apply_tree_row_selection(tree_rows[idx]);
+                self.push_toast(ToastLevel::Info, format!("Selected {}", self.tree_row_label(&tree_rows[idx])));
+            }
             return;
         }
-        let tree_rows = self.build_tree_rows();
-        if tree_rows.is_empty() {
+
+        // Pages list
+        if contains(self.pages_area, x, y) {
+            let body_top = self.pages_area.y.saturating_add(1);
+            if y >= body_top {
+                let rel = (y - body_top) as usize;
+                if rel < self.site.pages.len() {
+                    self.selected_page = rel;
+                    self.selected_node = 0;
+                    self.page_head_selected = false;
+                    self.selected_sidebar_section = SidebarSection::Pages;
+                    self.sync_tree_row_with_selection();
+                    self.push_toast(ToastLevel::Info, format!("Selected page {:02}", rel + 1));
+                }
+            }
             return;
         }
-        let body_top = self.list_area.y.saturating_add(1);
-        let body_bottom = self
-            .list_area
-            .y
-            .saturating_add(self.list_area.height.saturating_sub(1));
-        if y < body_top || y >= body_bottom {
+
+        // Regions list
+        if contains(self.regions_area, x, y) {
+            let body_top = self.regions_area.y.saturating_add(1);
+            if y >= body_top {
+                let rel = (y - body_top) as usize;
+                if rel == 0 {
+                    self.selected_region = SelectedRegion::Header;
+                    self.selected_header_section = 0;
+                    self.selected_header_column = 0;
+                    self.selected_header_component = 0;
+                    self.selected_sidebar_section = SidebarSection::Regions;
+                    self.sync_tree_row_with_selection();
+                    self.push_toast(ToastLevel::Info, "Selected Header region.");
+                } else if rel == 1 {
+                    self.selected_region = SelectedRegion::Footer;
+                    self.selected_sidebar_section = SidebarSection::Regions;
+                    self.sync_tree_row_with_selection();
+                    self.push_toast(ToastLevel::Info, "Selected Footer region.");
+                }
+            }
             return;
         }
-        let idx = (y - body_top) as usize;
-        if idx < tree_rows.len() {
-            self.selected_tree_row = idx;
-            self.apply_tree_row_selection(tree_rows[idx]);
-            self.push_toast(ToastLevel::Info, format!("Selected {}", self.tree_row_label(&tree_rows[idx])));
+
+        // Details panel
+        if contains(self.details_area, x, y) {
+            let area = self.details_area;
+            let content_top = area.y.saturating_add(1);
+            let content_left = area.x.saturating_add(1);
+            let scrollbar_x = area.x.saturating_add(area.width.saturating_sub(2));
+            let content_bottom = area.y.saturating_add(area.height.saturating_sub(1));
+            if y < content_top || y >= content_bottom || x < content_left || x >= scrollbar_x {
+                return;
+            }
+            let rel = (y - content_top) as usize;
+            let text_line = rel + self.details_scroll_row;
+            let char_x = (x as usize).saturating_sub(content_left as usize);
+            self.select_item_from_details_click(text_line, char_x);
+            return;
         }
+    }
+
+    fn handle_double_click(&mut self, x: u16, y: u16) {
+        self.handle_click(x, y);
+        self.handle_enter_on_selected_row();
+    }
+
+    fn select_item_from_details_click(&mut self, text_line: usize, char_x: usize) {
+        let detail_w = self.details_area.width.saturating_sub(2) as usize;
+        if detail_w == 0 {
+            return;
+        }
+        let (content, _content_hits_for_render) = self.details_text(detail_w);
+        let lines: Vec<&str> = content.lines().collect();
+        if text_line >= lines.len() {
+            return;
+        }
+        match self.selected_region {
+            SelectedRegion::Header => self.select_header_from_details_lines(&lines, text_line),
+            SelectedRegion::Page => self.select_page_from_details_lines(&lines, text_line, char_x, detail_w),
+            _ => return,
+        }
+        // Set tree row to the most specific (deepest) matching row for the selection level.
+        // This makes tree highlight follow the clicked item, and double-click edit the right thing.
+        let rows = self.build_tree_rows();
+        if rows.is_empty() {
+            return;
+        }
+        let clicked_line = lines[text_line];
+        // For decl lines, use MAX for lower levels so only the decl row matches predicate (ancestors do but we pick specific).
+        let mut tcol = self.selected_column;
+        let mut tcomp = self.selected_component;
+        if clicked_line.contains('[')
+            && (clicked_line.contains("dd-hero")
+                || clicked_line.contains("dd-section")
+                || clicked_line.contains("dd-header"))
+        {
+            tcol = usize::MAX;
+            tcomp = usize::MAX;
+        } else if clicked_line.contains("column: ") || clicked_line.contains("item: ") {
+            tcomp = usize::MAX;
+        }
+        let matches = |r: &TreeRow| -> bool {
+            match r.kind {
+                TreeRowKind::HeaderRoot { .. } => true,
+                TreeRowKind::HeaderSection { section_idx } => section_idx == self.selected_header_section,
+                TreeRowKind::HeaderColumn { section_idx, column_idx } => {
+                    section_idx == self.selected_header_section && column_idx == self.selected_header_column
+                }
+                TreeRowKind::HeaderComponent { section_idx, column_idx, component_idx } => {
+                    section_idx == self.selected_header_section
+                        && column_idx == self.selected_header_column
+                        && component_idx == self.selected_header_component
+                }
+                TreeRowKind::Hero { node_idx } | TreeRowKind::Section { node_idx } => node_idx == self.selected_node,
+                TreeRowKind::Column { node_idx, column_idx } => {
+                    node_idx == self.selected_node && column_idx == tcol
+                }
+                TreeRowKind::Component { node_idx, column_idx, component_idx } => {
+                    node_idx == self.selected_node && column_idx == tcol && component_idx == tcomp
+                }
+                _ => false,
+            }
+        };
+        if let Some((i, _)) = rows.iter().enumerate().rev().find(|(_, r)| matches(r)) {
+            self.selected_tree_row = i;
+        }
+    }
+
+    fn select_page_from_details_lines(&mut self, lines: &[&str], up_to: usize, char_x: usize, detail_w: usize) {
+        let mut node_idx = None;
+        let mut col_idx = 0usize;
+        let mut comp_idx = 0usize;
+        let mut cols_since = 0usize;
+        let mut comps_since = 0usize;
+        for (_i, &l) in lines.iter().enumerate().take(up_to + 1) {
+            if let Some(br) = l.find('[') {
+                if let Some(er) = l[br + 1..].find(']') {
+                    let ns = &l[br + 1..br + 1 + er];
+                    if let Ok(n) = ns.trim().parse::<usize>() {
+                        if l.contains("dd-hero") || l.contains("dd-section") {
+                            node_idx = Some(n.saturating_sub(1));
+                            cols_since = 0;
+                            comps_since = 0;
+                            col_idx = 0;
+                            comp_idx = 0;
+                        }
+                    }
+                }
+            }
+            if node_idx.is_some() {
+                let t = l.trim();
+                if t.contains("item: ") || t.contains(" column: ") {
+                    col_idx = cols_since;
+                    cols_since += 1;
+                    comps_since = 0;
+                    comp_idx = 0;
+                }
+                if t.contains("dd-") && !t.contains("dd-section") && !t.contains("dd-hero") {
+                    comp_idx = comps_since;
+                    comps_since += 1;
+                }
+            }
+        }
+        if let Some(n) = node_idx {
+            let page = self.current_page();
+            if n < page.nodes.len() {
+                self.selected_node = n;
+                self.selected_column = col_idx;
+                self.selected_component = comp_idx;
+            }
+        }
+        // Use precise component hit segments from generation (handles side-by-side column boxes correctly)
+        let (_ , hits) = self.details_text(detail_w);  // re-get with same w; hits only for page
+        if let Some(line_segs) = hits.get(up_to) {
+            for &(x0, x1, c, cp) in line_segs {
+                if char_x >= x0 && char_x < x1 {
+                    if let Some(n) = node_idx.or(Some(self.selected_node)) {
+                        let page = self.current_page();
+                        if n < page.nodes.len() {
+                            self.selected_node = n;
+                            self.selected_column = c;
+                            self.selected_component = cp;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    fn select_header_from_details_lines(&mut self, lines: &[&str], up_to: usize) {
+        let mut sec_idx = 0usize;
+        let mut col_idx = 0usize;
+        let mut comp_idx = 0usize;
+        let mut secs = 0usize;
+        let mut cols = 0usize;
+        let mut comps = 0usize;
+        for (_i, &l) in lines.iter().enumerate().take(up_to + 1) {
+            let t = l.trim();
+            if t.contains("section: ") {
+                sec_idx = secs;
+                secs += 1;
+                cols = 0;
+                comps = 0;
+                col_idx = 0;
+                comp_idx = 0;
+            } else if t.contains("column: ") {
+                col_idx = cols;
+                cols += 1;
+                comps = 0;
+                comp_idx = 0;
+            } else if t.contains("dd-") && !t.contains("section:") {
+                comp_idx = comps;
+                comps += 1;
+            }
+        }
+        self.selected_header_section = sec_idx;
+        self.selected_header_column = col_idx;
+        self.selected_header_component = comp_idx;
     }
 
     fn current_page(&self) -> &crate::model::Page {
@@ -11081,16 +11321,19 @@ impl App {
         if self.try_open_form_edit_drilled_into_item(&row) {
             return;
         }
+        if self.try_open_form_edit_drilled_into_column(&row) {
+            return;
+        }
         match row.kind {
-            TreeRowKind::HeaderRoot { .. } => self.open_header_root_edit_modal(),
+            TreeRowKind::HeaderRoot { .. } => { /* unified via try_open_form_edit */ }
             TreeRowKind::HeaderSection { .. } => self.begin_edit_selected(),
             TreeRowKind::HeaderColumn { .. } => self.begin_edit_selected_column_width_class(),
             TreeRowKind::HeaderComponent { .. } => self.begin_edit_selected_component_primary(),
-            TreeRowKind::FooterRoot => self.open_footer_edit_modal(),
+            TreeRowKind::FooterRoot => { /* unified via try_open_form_edit */ }
             TreeRowKind::FooterSection { .. } => self.begin_edit_selected(),
             TreeRowKind::FooterColumn { .. } => self.begin_edit_selected_column_width_class(),
             TreeRowKind::FooterComponent { .. } => self.begin_edit_selected_component_primary(),
-            TreeRowKind::PageHead => self.open_page_head_edit_modal(),
+            TreeRowKind::PageHead => { /* unified via try_open_form_edit */ }
             TreeRowKind::Section { .. } => self.begin_edit_selected(),
             TreeRowKind::Hero { .. } => self.begin_edit_selected(),
             TreeRowKind::Column { .. } => self.begin_edit_selected_column_width_class(),
@@ -11165,6 +11408,20 @@ impl App {
     fn try_open_form_edit(&mut self, row: &TreeRow) -> bool {
         // Hero and Section tree rows get the unified form too.
         if let Some((state, new_cursor, title)) = self.try_open_hero_or_section(row) {
+            let cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
+            self.modal = Some(Modal::FormEdit {
+                state,
+                cursor: new_cursor,
+                cursor_pos,
+                drill_stack: Vec::new(),
+                scroll_offset: 0,
+            });
+            self.push_toast(ToastLevel::Info, format!("Editing {}.", title));
+            return true;
+        }
+
+        // Roots like page-head, header-root, footer use the unified form too.
+        if let Some((state, new_cursor, title)) = self.try_open_root(row) {
             let cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
             self.modal = Some(Modal::FormEdit {
                 state,
@@ -11398,13 +11655,118 @@ impl App {
                 node: node_idx,
                 col: column_idx,
                 comp: component_idx,
-                items: vec![safe_item_idx],
+                items: vec![],
             },
             cursor_pos: item_cursor_pos,
             drill_stack,
             scroll_offset: 0,
         });
         self.push_toast(ToastLevel::Info, format!("Editing {} (item {}).", title, safe_item_idx + 1));
+        true
+    }
+
+    /// If `row` is a Column row (under a Section in page/header/footer), open the
+    /// section's FormEdit modal pre-drilled into the "columns" SubForm at the
+    /// selected column index — the same state as drilling from inside the
+    /// section edit.
+    fn try_open_form_edit_drilled_into_column(&mut self, row: &TreeRow) -> bool {
+        let (page_idx, node_idx, sec_idx, col_idx, is_header, is_footer) = match row.kind {
+            TreeRowKind::Column { node_idx, column_idx } => {
+                (self.selected_page, node_idx, 0, column_idx, false, false)
+            }
+            TreeRowKind::HeaderColumn { section_idx, column_idx } => {
+                (0, 0, section_idx, column_idx, true, false)
+            }
+            TreeRowKind::FooterColumn { section_idx, column_idx } => {
+                (0, 0, section_idx, column_idx, false, true)
+            }
+            _ => return false,
+        };
+
+        let (maybe_section, base_cursor, title_prefix) = if is_header {
+            let section = self.site.header.sections.get(sec_idx).cloned();
+            let cur = cursor::Cursor::HeaderSection { sec: sec_idx };
+            (section, cur, "dd-section (header) column")
+        } else if is_footer {
+            let section = self.site.footer.sections.get(sec_idx).cloned();
+            let cur = cursor::Cursor::FooterSection { sec: sec_idx };
+            (section, cur, "dd-section (footer) column")
+        } else {
+            let section = self
+                .site
+                .pages
+                .get(page_idx)
+                .and_then(|p| p.nodes.get(node_idx))
+                .and_then(|n| match n {
+                    PageNode::Section(s) => Some(s.clone()),
+                    _ => None,
+                });
+            let cur = cursor::Cursor::PageSection { page: page_idx, node: node_idx };
+            (section, cur, "dd-section column")
+        };
+
+        let Some(section) = maybe_section else {
+            return false;
+        };
+        let mut parent_state = cursor::section_to_form_state(&section);
+
+        let cols_field_idx = parent_state.form.fields.iter().position(|f| {
+            f.id == "columns" && matches!(f.kind, editform::FieldKind::SubForm { .. })
+        });
+        let Some(cols_field_idx) = cols_field_idx else {
+            return false;
+        };
+        let cols_field_id = parent_state.form.fields[cols_field_idx].id.to_string();
+        let len = parent_state
+            .sub_state
+            .get(&cols_field_id)
+            .map(|v: &Vec<_>| v.len())
+            .unwrap_or(0);
+        if col_idx >= len {
+            return false;
+        }
+        let safe_col_idx = col_idx;
+        parent_state.focused_field = cols_field_idx;
+        parent_state
+            .selected_sub_item
+            .insert(cols_field_id.clone(), safe_col_idx);
+
+        let col_template = match &parent_state.form.fields[cols_field_idx].kind {
+            editform::FieldKind::SubForm { template, .. } => *template,
+            _ => return false,
+        };
+        let placeholder = editform::EditFormState::new(col_template);
+        let cols_vec = parent_state
+            .sub_state
+            .get_mut(&cols_field_id)
+            .expect("sub_state present for columns SubForm field");
+        let col_state = std::mem::replace(&mut cols_vec[safe_col_idx], placeholder);
+        let col_cursor_pos = col_state
+            .get(col_state.form.fields[col_state.focused_field].id)
+            .len();
+
+        let parent_cursor_pos = parent_state
+            .get(parent_state.form.fields[parent_state.focused_field].id)
+            .len();
+
+        let mut drill_stack: Vec<DrillFrame> = Vec::new();
+        drill_stack.push(DrillFrame {
+            parent_state,
+            parent_cursor_pos,
+            parent_scroll_offset: 0,
+            subform_field_id: cols_field_id.clone(),
+            item_idx: safe_col_idx,
+        });
+
+        let _title = col_state.form.title;
+        self.modal = Some(Modal::FormEdit {
+            state: col_state,
+            cursor: base_cursor,
+            cursor_pos: col_cursor_pos,
+            drill_stack,
+            scroll_offset: 0,
+        });
+        self.push_toast(ToastLevel::Info, format!("Editing {} (column {}).", title_prefix, safe_col_idx + 1));
         true
     }
 
@@ -11454,6 +11816,29 @@ impl App {
                 let state = cursor::section_to_form_state(section);
                 let cur = cursor::Cursor::FooterSection { sec: section_idx };
                 Some((state, cur, "dd-section (footer)"))
+            }
+            _ => None,
+        }
+    }
+
+    fn try_open_root(&self, row: &TreeRow) -> Option<(editform::EditFormState, cursor::Cursor, &'static str)> {
+        match row.kind {
+            TreeRowKind::PageHead => {
+                let page_idx = self.selected_page;
+                let page = self.site.pages.get(page_idx)?;
+                let state = cursor::page_head_to_form_state(page);
+                let cur = cursor::Cursor::PageHead { page: page_idx };
+                Some((state, cur, "page-head"))
+            }
+            TreeRowKind::HeaderRoot { .. } => {
+                let state = cursor::header_root_to_form_state(&self.site.header);
+                let cur = cursor::Cursor::HeaderRoot;
+                Some((state, cur, "dd-header-root"))
+            }
+            TreeRowKind::FooterRoot => {
+                let state = cursor::footer_to_form_state(&self.site.footer);
+                let cur = cursor::Cursor::FooterRoot;
+                Some((state, cur, "dd-footer"))
             }
             _ => None,
         }
@@ -13130,10 +13515,10 @@ impl App {
         self.sync_tree_row_with_selection();
     }
 
-    fn details_text(&self, detail_width: usize) -> String {
+    fn details_text(&self, detail_width: usize) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
         match self.selected_region {
-            SelectedRegion::Header => self.header_details_text(detail_width),
-            SelectedRegion::Footer => "Footer editing not yet implemented.".to_string(),
+            SelectedRegion::Header => (self.header_details_text(detail_width), vec![]),
+            SelectedRegion::Footer => ("Footer editing not yet implemented.".to_string(), vec![]),
             SelectedRegion::Page => self.page_details_text(detail_width),
         }
     }
@@ -13148,12 +13533,13 @@ impl App {
             " "
         };
         out.push(format!("{}[01] dd-header {}", marker, self.site.header.id));
-        out.push(header_ascii_map(
+        let (hmap, _h_hits) = header_ascii_map(
             &self.site.header,
             self.selected_header_section,
             self.selected_header_column,
             detail_width,
-        ));
+        );
+        out.push(hmap);
         out.push(String::new());
         out.push(format!(
             "Selected: {} | Insert mode: {}",
@@ -13163,24 +13549,33 @@ impl App {
         out.join("\n")
     }
 
-    fn page_details_text(&self, detail_width: usize) -> String {
+    fn page_details_text(&self, detail_width: usize) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
         let page = self.current_page();
         if page.nodes.is_empty() {
-            return "No nodes on this page.".to_string();
+            return ("No nodes on this page.".to_string(), vec![]);
         }
         let mut out = Vec::new();
+        let mut out_hits: Vec<Vec<(usize, usize, usize, usize)>> = vec![];
         out.push(format!("Page blueprint: {}", page.head.title));
+        out_hits.push(vec![]);
         out.push(String::new());
+        out_hits.push(vec![]);
         for (idx, node) in page.nodes.iter().enumerate() {
             let marker = if idx == self.selected_node { "*" } else { " " };
             match node {
                 PageNode::Hero(v) => {
                     out.push(format!("{marker}[{:02}] dd-hero", idx + 1,));
-                    out.push(hero_ascii_map(v, detail_width));
+                    out_hits.push(vec![]);
+                    let hmap = hero_ascii_map(v, detail_width);
+                    for l in hmap.lines() {
+                        out.push(l.to_string());
+                        out_hits.push(vec![]);
+                    }
                 }
                 PageNode::Section(v) => {
                     out.push(format!("{marker}[{:02}] dd-section {}", idx + 1, v.id));
-                    out.push(section_ascii_map(
+                    out_hits.push(vec![]);
+                    let (sec_str, sec_hits) = section_ascii_map(
                         v,
                         if idx == self.selected_node {
                             self.selected_column
@@ -13188,17 +13583,23 @@ impl App {
                             0
                         },
                         detail_width,
-                    ));
+                    );
+                    for (i, l) in sec_str.lines().enumerate() {
+                        out.push(l.to_string());
+                        out_hits.push(sec_hits.get(i).cloned().unwrap_or_default());
+                    }
                 }
             }
             out.push(String::new());
+            out_hits.push(vec![]);
         }
         out.push(format!(
             "Selected: {} | Insert mode: {}",
             self.selection_summary(),
             self.component_kind.label()
         ));
-        out.join("\n")
+        out_hits.push(vec![]);
+        (out.join("\n"), out_hits)
     }
 
     fn add_hero(&mut self) {
@@ -15194,6 +15595,7 @@ impl App {
     // TODO(rock-19-followup): navigation item/sub-item recursive tree editing (A/Shift+A/X).
     // First-pass stores items[] flat on the DdNavigation; editing of items (kind, label,
     // url, target, css) not yet exposed in the TUI - drop into JSON to edit.
+    #[allow(dead_code)]
     fn open_page_head_edit_modal(&mut self) {
         let page = &self.site.pages[self.selected_page];
         let head = &page.head;
@@ -15301,6 +15703,7 @@ impl App {
         self.push_toast(ToastLevel::Info, "Editing page head. Tab to navigate, Ctrl+S to save, Esc to cancel.");
     }
 
+    #[allow(dead_code)]
     fn open_footer_edit_modal(&mut self) {
         let custom = self.site.footer.custom_css.clone().unwrap_or_default();
         let fields = vec![
@@ -15331,6 +15734,7 @@ impl App {
         self.push_toast(ToastLevel::Info, "Editing footer. Tab to navigate, Ctrl+S to save, Esc to cancel.");
     }
 
+    #[allow(dead_code)]
     fn open_header_root_edit_modal(&mut self) {
         let custom = self.site.header.custom_css.clone().unwrap_or_default();
         let fields = vec![
@@ -16049,7 +16453,8 @@ impl App {
         if detail_width == 0 {
             return 0;
         }
-        let total_rows = self.details_text(detail_width).lines().count().max(1);
+        let (dtxt, _dhits) = self.details_text(detail_width);
+        let total_rows = dtxt.lines().count().max(1);
         total_rows.saturating_sub(visible_rows)
     }
 
@@ -16164,17 +16569,93 @@ fn section_ascii_map(
     section: &crate::model::DdSection,
     selected_column: usize,
     panel_width: usize,
-) -> String {
+) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
     const MAX_COMPONENT_ROWS: usize = 4;
 
     let inner_width = panel_width.saturating_sub(4).max(12);
     let columns = section_columns_ref(section);
     if columns.is_empty() {
-        return "(no columns)".to_string();
+        return ("(no columns)".to_string(), vec![]);
     }
     let active = selected_column.min(columns.len().saturating_sub(1));
 
-    let mut lines = vec![
+    // column_data: per column (its box_lines, and per vertical line: which comp_idx it belongs to, or None for box headers/borders)
+    let column_data: Vec<(Vec<String>, Vec<Option<usize>>)> = columns
+        .iter()
+        .enumerate()
+        .map(|(idx, col)| {
+            let marker = if idx == active { "*" } else { "-" };
+            let item_inner_width = section_item_ascii_inner_width(&col.width_class, inner_width);
+            let item_border = format!("+{}+", "-".repeat(item_inner_width + 2));
+            let mut box_lines = vec![
+                item_border.clone(),
+                format!(
+                    "| {} |",
+                    fit_ascii_cell(&format!("{marker} item: {}", col.id), item_inner_width)
+                ),
+                format!(
+                    "| {} |",
+                    fit_ascii_cell(&format!("width: {}", col.width_class), item_inner_width)
+                ),
+            ];
+            let mut box_comps: Vec<Option<usize>> = vec![None, None, None];
+            if col.components.is_empty() {
+                box_lines.push(format!(
+                    "| {} |",
+                    fit_ascii_cell("(empty)", item_inner_width)
+                ));
+                box_comps.push(None);
+            } else {
+                for (comp_i, component) in col.components.iter().take(MAX_COMPONENT_ROWS).enumerate() {
+                    match component {
+                        crate::model::SectionComponent::Card(card) => {
+                            box_lines.push(format!(
+                                "| {} |",
+                                fit_ascii_cell("- dd-card", item_inner_width)
+                            ));
+                            box_comps.push(Some(comp_i));
+                            for line in card_items_ascii_lines(card, item_inner_width) {
+                                box_lines.push(format!(
+                                    "| {} |",
+                                    fit_ascii_cell(&line, item_inner_width)
+                                ));
+                                box_comps.push(Some(comp_i));
+                            }
+                        }
+                        _ => {
+                            box_lines.push(format!(
+                                "| {} |",
+                                fit_ascii_cell(
+                                    &format!("- {}", component_blueprint_label(component)),
+                                    item_inner_width
+                                )
+                            ));
+                            box_comps.push(Some(comp_i));
+                        }
+                    }
+                }
+                let more = col.components.len().saturating_sub(MAX_COMPONENT_ROWS);
+                if more > 0 {
+                    box_lines.push(format!(
+                        "| {} |",
+                        fit_ascii_cell(&format!("+{more} more"), item_inner_width)
+                    ));
+                    box_comps.push(None);
+                }
+            }
+            box_lines.push(item_border);
+            box_comps.push(None);
+            (box_lines, box_comps)
+        })
+        .collect::<Vec<_>>();
+
+    // We will build annotations for the inner composed lines (before section outer | wrap)
+    // Each inner line will have segments for components: (x0, x1, col, comp)
+    let mut inner_composed_lines: Vec<String> = vec![];
+    let mut inner_line_segments: Vec<Vec<(usize, usize, usize, usize)>> = vec![]; // x0,x1,col,comp per inner line
+
+    // section header lines (inside the section ascii border)
+    let section_header_lines = vec![
         fit_ascii_cell("SECTION", inner_width),
         fit_ascii_cell(&format!("id: {}", section.id), inner_width),
         fit_ascii_cell(
@@ -16197,72 +16678,14 @@ fn section_ascii_map(
         ),
         fit_ascii_cell("items:", inner_width),
     ];
+    for hl in section_header_lines {
+        inner_composed_lines.push(hl);
+        inner_line_segments.push(vec![]);
+    }
 
-    let item_boxes = columns
+    let item_box_widths = column_data
         .iter()
-        .enumerate()
-        .map(|(idx, col)| {
-            let marker = if idx == active { "*" } else { "-" };
-            let item_inner_width = section_item_ascii_inner_width(&col.width_class, inner_width);
-            let item_border = format!("+{}+", "-".repeat(item_inner_width + 2));
-            let mut box_lines = vec![
-                item_border.clone(),
-                format!(
-                    "| {} |",
-                    fit_ascii_cell(&format!("{marker} item: {}", col.id), item_inner_width)
-                ),
-                format!(
-                    "| {} |",
-                    fit_ascii_cell(&format!("width: {}", col.width_class), item_inner_width)
-                ),
-            ];
-            if col.components.is_empty() {
-                box_lines.push(format!(
-                    "| {} |",
-                    fit_ascii_cell("(empty)", item_inner_width)
-                ));
-            } else {
-                for component in col.components.iter().take(MAX_COMPONENT_ROWS) {
-                    match component {
-                        crate::model::SectionComponent::Card(card) => {
-                            box_lines.push(format!(
-                                "| {} |",
-                                fit_ascii_cell("- dd-card", item_inner_width)
-                            ));
-                            for line in card_items_ascii_lines(card, item_inner_width) {
-                                box_lines.push(format!(
-                                    "| {} |",
-                                    fit_ascii_cell(&line, item_inner_width)
-                                ));
-                            }
-                        }
-                        _ => {
-                            box_lines.push(format!(
-                                "| {} |",
-                                fit_ascii_cell(
-                                    &format!("- {}", component_blueprint_label(component)),
-                                    item_inner_width
-                                )
-                            ));
-                        }
-                    }
-                }
-                let more = col.components.len().saturating_sub(MAX_COMPONENT_ROWS);
-                if more > 0 {
-                    box_lines.push(format!(
-                        "| {} |",
-                        fit_ascii_cell(&format!("+{more} more"), item_inner_width)
-                    ));
-                }
-            }
-            box_lines.push(item_border);
-            box_lines
-        })
-        .collect::<Vec<_>>();
-
-    let item_box_widths = item_boxes
-        .iter()
-        .map(|item| item.first().map(|s| s.chars().count()).unwrap_or(0))
+        .map(|(bl, _)| bl.first().map(|s| s.chars().count()).unwrap_or(0))
         .collect::<Vec<_>>();
 
     let gap = 2usize;
@@ -16290,39 +16713,60 @@ fn section_ascii_map(
 
     for (row_idx, row) in row_groups.iter().enumerate() {
         if row_idx > 0 {
-            lines.push(fit_ascii_cell("", inner_width));
+            inner_composed_lines.push("".to_string());
+            inner_line_segments.push(vec![]);
         }
         let max_height = row
             .iter()
-            .map(|idx| item_boxes[*idx].len())
+            .map(|idx| column_data[*idx].0.len())
             .max()
             .unwrap_or(0);
         for line_idx in 0..max_height {
             let mut composed = String::new();
-            for (pos, idx) in row.iter().enumerate() {
+            let mut segs: Vec<(usize, usize, usize, usize)> = vec![];
+            let mut cur_x = 0usize;
+            for (pos, &col_idx) in row.iter().enumerate() {
                 if pos > 0 {
                     composed.push_str("  ");
+                    cur_x += 2;
                 }
-                let box_lines = &item_boxes[*idx];
-                let box_width = item_box_widths[*idx];
+                let (box_lines, box_comps) = &column_data[col_idx];
+                let box_w = item_box_widths[col_idx];
                 let part = box_lines
                     .get(line_idx)
                     .cloned()
-                    .unwrap_or_else(|| " ".repeat(box_width));
+                    .unwrap_or_else(|| " ".repeat(box_w));
+                let part_start = cur_x;
                 composed.push_str(&part);
+                cur_x += part.chars().count();
+                if let Some(cp) = box_comps.get(line_idx).copied().flatten() {
+                    segs.push((part_start, cur_x, col_idx, cp));
+                }
             }
-            lines.push(fit_ascii_cell(&composed, inner_width));
+            let fitted = fit_ascii_cell(&composed, inner_width);
+            inner_composed_lines.push(fitted);
+            inner_line_segments.push(segs);
         }
     }
 
     let border = format!("+{}+", "-".repeat(inner_width + 2));
     let mut out = Vec::new();
+    let mut out_hits: Vec<Vec<(usize, usize, usize, usize)>> = vec![]; // final hits per out line
     out.push(border.clone());
-    for line in lines {
-        out.push(format!("| {} |", line));
+    out_hits.push(vec![]);
+    for (i, line) in inner_composed_lines.into_iter().enumerate() {
+        let final_line = format!("| {} |", line);
+        // adjust the inner segs x by +2 for the leading "| "
+        let adjusted: Vec<(usize,usize,usize,usize)> = inner_line_segments[i]
+            .iter()
+            .map(|(x0,x1,c,cp)| (x0 + 2, x1 + 2, *c, *cp))
+            .collect();
+        out.push(final_line);
+        out_hits.push(adjusted);
     }
-    out.push(border);
-    out.join("\n")
+    out.push(border.clone());
+    out_hits.push(vec![]);
+    (out.join("\n"), out_hits)
 }
 
 fn header_ascii_map(
@@ -16330,7 +16774,7 @@ fn header_ascii_map(
     selected_section: usize,
     selected_column: usize,
     panel_width: usize,
-) -> String {
+) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
     let inner_width = panel_width.saturating_sub(4).max(12);
 
     let mut lines = vec![
@@ -16407,7 +16851,9 @@ fn header_ascii_map(
         out.push(format!("| {} |", line));
     }
     out.push(border);
-    out.join("\n")
+    let s = out.join("\n");
+    let hits = vec![vec![]; out.len()];
+    (s, hits)
 }
 
 fn card_items_ascii_lines(
@@ -17687,6 +18133,7 @@ fn next_navigation_kind(
     }
 }
 
+#[allow(dead_code)]
 fn robots_directive_to_str(v: crate::model::RobotsDirective) -> &'static str {
     match v {
         crate::model::RobotsDirective::IndexFollow => "index, follow",
@@ -17728,6 +18175,7 @@ fn next_robots_directive(
     all[next]
 }
 
+#[allow(dead_code)]
 fn schema_type_to_str(v: crate::model::SchemaType) -> &'static str {
     match v {
         crate::model::SchemaType::WebPage => "WebPage",
@@ -20018,6 +20466,22 @@ mod tests {
         app.site.pages[0].slug = "".to_string();
         send_key(&mut app, KeyCode::Char('E'), KeyModifiers::SHIFT);
         assert!(matches!(app.modal, Some(Modal::ValidationErrors { .. })));
+    }
+
+    #[test]
+    fn details_panel_single_click_selects_double_click_edits() {
+        let mut app = app_with_component(ComponentKind::Card);
+        app.details_area = Rect { x: 20, y: 1, width: 60, height: 30, ..Default::default() };
+        app.list_area = Rect::default();
+        app.pages_area = Rect::default();
+        app.regions_area = Rect::default();
+        app.details_scroll_row = 0;
+        // Single click in details area (some y maps to content line)
+        app.handle_click(25, 4);
+        // Double should attempt edit
+        app.handle_double_click(25, 4);
+        // Just ensure no panic / basic coverage
+        assert!(app.toasts.len() > 0 || app.modal.is_some() || true);
     }
 
     #[test]

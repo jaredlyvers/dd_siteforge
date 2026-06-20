@@ -263,6 +263,20 @@ const LINK_TARGET_OPTIONS: &[&str] = &["_self", "_blank"];
 
 const HERO_TARGET_OPTIONS: &[&str] = &["_self", "_blank", "_parent"];
 
+const ROBOTS_OPTIONS: &[&str] = &["index, follow", "noindex, follow", "index, nofollow", "noindex, nofollow"];
+
+const SCHEMA_OPTIONS: &[&str] = &[
+    "WebPage",
+    "Article",
+    "AboutPage",
+    "ContactPage",
+    "CollectionPage",
+    "Organization",
+    "LocalBusiness",
+    "Product",
+    "Service",
+];
+
 const HERO_CLASS_OPTIONS: &[&str] = &[
     "-contained",
     "-contained-md",
@@ -1311,6 +1325,121 @@ pub static SECTION_FORM: EditForm = EditForm {
                 summary_field_id: "id",
             },
             required: true,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static PAGE_HEAD_FORM: EditForm = EditForm {
+    title: "page-head",
+    fields: &[
+        FormField {
+            id: "title",
+            label: "Title",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "slug",
+            label: "Slug",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "meta_description",
+            label: "Meta Description",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "canonical_url",
+            label: "Canonical URL",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "robots",
+            label: "Robots",
+            kind: FieldKind::Enum {
+                options: ROBOTS_OPTIONS,
+                default: "index, follow",
+            },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "schema_type",
+            label: "Schema Type",
+            kind: FieldKind::Enum {
+                options: SCHEMA_OPTIONS,
+                default: "WebPage",
+            },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "og_title",
+            label: "OG Title",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "og_description",
+            label: "OG Description",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "og_image",
+            label: "OG Image",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static HEADER_ROOT_FORM: EditForm = EditForm {
+    title: "dd-header-root",
+    fields: &[
+        FormField {
+            id: "id",
+            label: "Header ID",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "custom_css",
+            label: "Custom CSS",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+    ],
+};
+
+pub static FOOTER_FORM: EditForm = EditForm {
+    title: "dd-footer",
+    fields: &[
+        FormField {
+            id: "id",
+            label: "Footer ID",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "custom_css",
+            label: "Custom CSS",
+            kind: FieldKind::Text { default: "" },
+            required: false,
             visible_when: None,
         },
     ],
