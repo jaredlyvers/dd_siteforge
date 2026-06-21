@@ -133,6 +133,14 @@ struct App {
     /// the current modal area + wrapped row count. Read by event handlers
     /// to clamp scroll keystrokes without needing the frame.
     help_scroll_max: u16,
+    show_theme: bool,
+    /// Vertical scroll offset (in rows) for the F2:Theme modal.
+    theme_scroll: u16,
+    /// Maximum legal `theme_scroll` value, recomputed every render based on
+    /// the current modal area + wrapped row count. Read by event handlers
+    /// to clamp scroll keystrokes without needing the frame.
+    theme_scroll_max: u16,
+    theme_status: Option<String>,
     /// Per-frame cache of (field_idx, input_area_rect) for whichever
     /// multi-field modal is currently rendered. Click-to-focus lookups
     /// search this cache; render writes it. Empty when no eligible modal
