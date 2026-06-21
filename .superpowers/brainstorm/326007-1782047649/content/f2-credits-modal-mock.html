@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>F2:Theme Modal — Visual (All sections approved — design complete)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Ubuntu+Mono:wght@400;700&display=swap');
+  body { margin:0; padding:20px; background:#111; color:#f5f6f7; font-family: "Ubuntu Mono", monospace; }
+  h1 { font-size:18px; margin:0 0 12px; color:#64b4f5; }
+  .note { color:#9ea3aa; font-size:12px; margin-bottom:16px; }
+  .stage { display:flex; gap:20px; flex-wrap:wrap; }
+  .terminal {
+    width: 640px;
+    background: #1C1E21;
+    border: 2px solid #64b4f5;
+    box-shadow: 0 0 0 1px #0F1114;
+    position: relative;
+    overflow: hidden;
+  }
+  .term-header {
+    background: #0F1114;
+    color: #64b4f5;
+    font-weight: bold;
+    padding: 2px 8px;
+    border-bottom: 1px solid #64b4f5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .term-body {
+    padding: 8px;
+    min-height: 320px;
+    font-size: 13px;
+    line-height: 1.25;
+    color: #f5f6f7;
+    white-space: pre;
+    overflow: auto;
+  }
+  .section-head { color:#64b4f5; font-weight:bold; }
+  .key { color:#64b4f5; }
+  .muted { color:#9ea3aa; }
+  .divider { color:#9ea3aa; }
+  .label { color:#ffaf46; }
+  .src { color:#82e0aa; }
+  .swatch {
+    display:inline-block; width:12px; height:12px; vertical-align:middle; border:1px solid #555; margin-right:4px;
+  }
+  .footer-bar {
+    background:#0F1114; color:#f5f6f7; padding:1px 8px; font-size:11px; border-top:1px solid #333;
+  }
+  .side-label { font-size:11px; color:#ffaf46; margin:4px 0 2px; }
+  .choice { background:#2A2D31; border:1px solid #64b4f5; color:#f5f6f7; padding:4px 10px; margin:4px 2px; cursor:pointer; font-family:inherit; font-size:12px; }
+  .choice:hover { background:#64b4f5; color:#0F1114; }
+  .comparison { margin-top:20px; padding:10px; background:#0F1114; border:1px dashed #555; }
+  .user-choice { background:#1e3a2f; color:#82e0aa; padding:2px 6px; border-radius:2px; }
+  .chosen { outline: 3px solid #82e0aa; }
+</style>
+</head>
+<body>
+<h1>dd_siteforge F1 vs F2:Theme — All sections approved (design complete)</h1>
+<p class="note">All choices + sections approved: <span class="user-choice">F2:Theme</span> label, <span class="user-choice">A: compact 16-token list</span>, <span class="user-choice">Approach 1 (mirror F1 exactly)</span>, Sections 1-3 approved. Ready for formal spec doc. Right panel = exact target the impl will ship.</p>
+
+<div class="stage">
+  <!-- F1 SIM -->
+  <div>
+    <div class="side-label">F1 Help (documents F2:Theme)</div>
+    <div class="terminal" style="height:340px;">
+      <div class="term-header">Key &amp; Mouse bindings (F1 / Esc to close, j/k or arrows to scroll)</div>
+      <div class="term-body" style="height:292px; overflow:auto;">
+<span class="section-head">Global</span>
+
+  • F1                  Open/close this help
+  • F2                  Open/close theme source + color details (F2:Theme)
+  • F3                  Validate site (shows errors in a modal)
+  • Shift+E             Export site to HTML (validates first; prompts for output dir on first use)
+  • p                   Preview current page in browser (validates + exports first)
+  • Ctrl+Q              Quit
+  • s                   Open save modal and enter file path (also writes a .backup checkpoint)
+  • Tab / Shift+Tab     Next/previous page
+
+<span class="divider">  ──────────────────────────────────────────────────</span>
+
+<span class="section-head">Autosave</span>
+
+  2s after a change, the active site JSON is rewritten. The .backup is only refreshed by manual `s` saves; on next load the TUI surfaces a toast when site.json and site.json.backup differ.
+
+<span class="divider">  ──────────────────────────────────────────────────</span>
+
+<span class="section-head">Node navigation and edits</span>
+
+  • Up/Down or wheel    Select row in Nodes tree
+  • PageUp/PageDown     Scroll Details blueprint panel
+  • Enter               Edit selected row
+  • Space               Expand/collapse selected section or accordion/alternating/card/filmstrip/milestones/slider items
+  • /                   Open insert fuzzy finder (hero/section/cta/.../slider)
+  ...
+      </div>
+      <div class="footer-bar">j/k, ↑/↓, PgUp/PgDn, Home/End, wheel: scroll  •  F1/Esc: close</div>
+    </div>
+  </div>
+
+  <!-- F2 SIM — CHOSEN -->
+  <div>
+    <div class="side-label chosen">F2:Theme — ALL APPROVED (ready for spec + impl)</div>
+    <div class="terminal" style="height:340px;">
+      <div class="term-header">Theme (F2 / Esc to close, j/k or arrows to scroll)</div>
+      <div class="term-body" style="height:292px; overflow:auto;">
+<span class="section-head">Theme</span>
+
+  Source: <span class="src">local</span>   (./dd_siteforge_theme.yml)
+  Status: <span class="src">OK</span> (loaded cleanly)
+
+<span class="divider">  ──────────────────────────────────────────────────</span>
+
+<span class="section-head">Loaded color tokens (sampled)</span>
+
+  background          <span class="swatch" style="background:#0F1114"></span>#0f1114   (app_shell base)
+  popup_background    <span class="swatch" style="background:#1C1E21"></span>#1c1e21   (modals &amp; popups)
+  foreground          <span class="swatch" style="background:#F5F6F7"></span>#f5f6f7   (primary text)
+  modal_header        <span class="swatch" style="background:#64B4F5"></span>#64b4f5   (section titles bold)
+  text_labels         <span class="swatch" style="background:#FFAF46"></span>#ffaf46   (labels default)
+  text_active_focus   <span class="swatch" style="background:#64B4F5"></span>#64b4f5   (focus + keys)
+  input_border_focus  <span class="swatch" style="background:#64B4F5"></span>#64b4f5
+  success             <span class="swatch" style="background:#82E0AA"></span>#82e0aa
+  warning             <span class="swatch" style="background:#F5C469"></span>#f5c469
+  error               <span class="swatch" style="background:#E57373"></span>#e57373
+  info                <span class="swatch" style="background:#5DADE2"></span>#5dade2
+  folders             <span class="swatch" style="background:#64B4F5"></span>#64b4f5   (image picker)
+  files               <span class="swatch" style="background:#FFAF46"></span>#ffaf46
+  links               <span class="swatch" style="background:#FFA087"></span>#ffa087
+  scrollbar           <span class="swatch" style="background:#FFA087"></span>#ffa087
+  scrollbar_hover     <span class="swatch" style="background:#64B4F5"></span>#64b4f5
+
+<span class="divider">  ──────────────────────────────────────────────────</span>
+
+  (All colors from self.theme.*. No hardcodes. Full source + status always shown.)
+
+      </div>
+      <div class="footer-bar">j/k, ↑/↓, PgUp/PgDn, wheel: scroll  •  F2/Esc: close</div>
+    </div>
+    <button class="choice" onclick="selectOption('all-approved')">All sections approved</button>
+  </div>
+</div>
+
+<div class="comparison">
+  <strong>Footer (using "F2:Theme" — adaptive, Approach 1 style):</strong><br>
+  &lt;75 cols: F1:Help  F2:Theme  q:Quit  s:Save  /:Insert  Enter:Edit  j/k:Nav  Spc:Toggle  1/2/3:Focus<br>
+  &lt;110: F1: Help   F2: Theme   s: Save   /: Insert   Enter: Edit   Tab: Switch page   Shift+E: Export   p: Preview   q: Quit<br>
+  wide: ... F2: Theme   F3: Validate ... (mouse...)<br>
+</div>
+
+<p class="note">Design + impl complete per brainstorming + TDD plan. Formal spec + plan written/committed earlier. All 10 tasks executed, verification clean. See design-approaches.html (updated) for execution history note. Matches approved sections + visual mocks exactly.</p>
+
+<script>
+  function selectOption(choice) {
+    console.log('VISUAL_CHOICE:', choice);
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;bottom:10px;right:10px;background:#64b4f5;color:#0F1114;padding:6px 12px;border-radius:3px;font-size:12px;z-index:9999';
+    el.textContent = 'Recorded: ' + choice;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1800);
+    try { window.parent && window.parent.postMessage({type:'superpowers-choice', value:choice}, '*'); } catch(e){}
+  }
+</script>
+</body>
+</html>
