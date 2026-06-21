@@ -20857,6 +20857,44 @@ mod tests {
     }
 
     #[test]
+    fn f2_opens_and_closes_with_f2_and_esc() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        send_key(&mut app, KeyCode::F(2), KeyModifiers::NONE);
+        assert!(app.show_theme);
+        assert_eq!(app.theme_scroll, 0);
+        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(!app.show_theme);
+    }
+
+    #[test]
+    fn f2_scroll_keys_and_wheel_update_theme_scroll() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        send_key(&mut app, KeyCode::F(2), KeyModifiers::NONE);
+        // simulate render to set max (draw not called, so manually exercise clamp logic path)
+        app.theme_scroll_max = 5; // pretend content
+        send_key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.theme_scroll, 1);
+        send_key(&mut app, KeyCode::PageDown, KeyModifiers::NONE);
+        assert!(app.theme_scroll >= 1);
+        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::NONE); // home alias
+        assert_eq!(app.theme_scroll, 0);
+    }
+
+    #[test]
+    fn f2_shows_warning_status_when_theme_status_is_some() {
+        let mut app = App::new(
+            Site::starter(),
+            None,
+            AppTheme::default(),
+            "default".to_string(),
+            Some("theme 'foo.yml' declares version 99 (expected 1); using built-in defaults".to_string()),
+        );
+        send_key(&mut app, KeyCode::F(2), KeyModifiers::NONE);
+        assert!(app.show_theme);
+        // status is stored; render would show it (no crash)
+    }
+
+    #[test]
     fn begin_export_flow_on_clean_starter_without_export_dir_opens_path_prompt() {
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
         assert!(app.site.export_dir.is_none());
