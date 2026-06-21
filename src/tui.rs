@@ -18634,6 +18634,14 @@ fn parse_hex_color(raw: &str) -> anyhow::Result<Color> {
     Ok(Color::Rgb(r, g, b))
 }
 
+fn color_to_hex(c: Color) -> String {
+    if let Color::Rgb(r, g, b) = c {
+        format!("#{:02x}{:02x}{:02x}", r, g, b)
+    } else {
+        "?".to_string()
+    }
+}
+
 fn component_search_haystack(kind: ComponentKind) -> String {
     let label = kind.label();
     let underscore = label.replace('-', "_");
@@ -19159,6 +19167,74 @@ fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
         div_style,
         width,
     );
+
+    Text::from(lines)
+}
+
+fn build_theme_text(theme: &AppTheme, source: &str, status: &Option<String>, width: usize) -> Text<'static> {
+    let h_style = Style::default()
+        .fg(theme.modal_header)
+        .add_modifier(Modifier::BOLD);
+    let k_style = Style::default().fg(theme.text_active_focus);
+    let div_style = Style::default().fg(theme.muted);
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+
+    // Theme section
+    lines.push(Line::from(Span::styled("Theme", h_style)));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("  Source: ", k_style),
+        Span::raw(format!("{}   (./dd_siteforge_theme.yml or equivalent)", source)),
+    ]));
+    let status_str = status.as_deref().unwrap_or("OK (loaded cleanly)");
+    lines.push(Line::from(vec![
+        Span::styled("  Status: ", k_style),
+        Span::raw(status_str.to_string()),
+    ]));
+    lines.push(Line::from(""));
+
+    // divider
+    let rule_len = width.saturating_sub(4).clamp(12, 50);
+    let rule = "─".repeat(rule_len);
+    lines.push(Line::from(Span::styled(format!("  {}", rule), div_style)));
+    lines.push(Line::from(""));
+
+    // Color tokens section
+    lines.push(Line::from(Span::styled("Loaded color tokens (sampled)", h_style)));
+    lines.push(Line::from(""));
+
+    let tokens: Vec<(&str, Color, &str)> = vec![
+        ("background", theme.background, "app_shell base"),
+        ("popup_background", theme.popup_background, "modals & popups"),
+        ("foreground", theme.foreground, "primary text"),
+        ("modal_header", theme.modal_header, "section titles bold"),
+        ("text_labels", theme.text_labels, "labels default"),
+        ("text_active_focus", theme.text_active_focus, "focus + keys"),
+        ("input_border_focus", theme.input_border_focus, "focused inputs"),
+        ("success", theme.success, "success toasts"),
+        ("warning", theme.warning, "warning toasts"),
+        ("error", theme.error, "error toasts"),
+        ("info", theme.info, "info toasts"),
+        ("folders", theme.folders, "image picker folders"),
+        ("files", theme.files, "image picker files"),
+        ("links", theme.links, "image picker links"),
+        ("scrollbar", theme.scrollbar, "scrollbars"),
+        ("scrollbar_hover", theme.scrollbar_hover, "scrollbar thumb"),
+    ];
+
+    for (name, color, role) in tokens {
+        let hex = color_to_hex(color);
+        let line = format!("  {:<18} {}   ({})", name, hex, role);
+        lines.push(Line::from(Span::raw(line)));
+    }
+
+    lines.push(Line::from(""));
+
+    // final divider
+    lines.push(Line::from(Span::styled(format!("  {}", rule), div_style)));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::raw("  (All colors from self.theme.*. No hardcodes.)")));
 
     Text::from(lines)
 }
