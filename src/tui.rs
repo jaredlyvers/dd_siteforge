@@ -71,7 +71,6 @@ enum SelectedRegion {
 struct App {
     site: Site,
     theme: AppTheme,
-    #[allow(dead_code)]
     theme_source: String,
     header_copy: String,
     selected_page: usize,
