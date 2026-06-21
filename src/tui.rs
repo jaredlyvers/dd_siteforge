@@ -4440,7 +4440,7 @@ impl App {
 
         // === NEW 3-line header (bordered, title=project, content=header_copy) ===
         let header_block = Block::default()
-            .title("dd_siteforge")
+            .title(format!("dd_siteforge v{}", env!("CARGO_PKG_VERSION")))
             .borders(Borders::ALL)
             .border_style(self.theme.active_border)
             .style(self.theme.app_shell)
@@ -19325,6 +19325,10 @@ fn build_theme_text(theme: &AppTheme, source: &str, status: &Option<String>, wid
     // Theme section
     lines.push(Line::from(Span::styled("Theme", h_style)));
     lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("  App: ", k_style),
+        Span::raw(format!("dd_siteforge v{}", env!("CARGO_PKG_VERSION"))),
+    ]));
     lines.push(Line::from(vec![
         Span::styled("  Source: ", k_style),
         Span::raw(format!("{}   (./dd_siteforge_theme.yml or equivalent)", source)),

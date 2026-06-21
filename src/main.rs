@@ -14,8 +14,7 @@ use tui::run_tui;
 use validate::validate_site;
 
 #[derive(Debug, Parser)]
-#[command(name = "dd_siteforge")]
-#[command(about = "Framework-native static page builder")]
+#[command(name = "dd_siteforge", version, about = "Framework-native static page builder")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
