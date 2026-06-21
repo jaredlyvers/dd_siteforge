@@ -35,6 +35,7 @@ Always source colors from `self.theme.*`. Standard mappings (per `LDNDDEV_TUI_VI
 - Input text: `input_text_default` / `input_text_focus`
 - Cursor: paint a 1-cell overlay with `bg(cursor)` on top of the placed terminal cursor
 - Folders / files / links: `folders` / `files` / `links` (used in the image picker)
+- Modal section headers (F1 help etc): `modal_header` (bold)
 
 ### User preferences captured during the v1.0 push
 - Toasts (success / info / warning) for non-blocking messages; modals for errors.
