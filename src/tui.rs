@@ -4761,11 +4761,11 @@ impl App {
 
         // === NEW 1-line adaptive footer (borderless, keys only, app_shell, always F1:Help first) ===
         let footer_text = if root[2].width < 75 {
-            "F1:Help  q:Quit  s:Save  /:Insert  Enter:Edit  j/k:Nav  Spc:Toggle  1/2/3:Focus"
+            "F1:Help  F2:Theme  q:Quit  s:Save  /:Insert  Enter:Edit  j/k:Nav  Spc:Toggle  1/2/3:Focus"
         } else if root[2].width < 110 {
-            "F1: Help   s: Save   /: Insert   Enter: Edit   Tab: Switch page   Shift+E: Export   p: Preview   q: Quit"
+            "F1: Help   F2: Theme   s: Save   /: Insert   Enter: Edit   Tab: Switch page   Shift+E: Export   p: Preview   q: Quit"
         } else {
-            "F1: Help   s: Save   /: Insert component   Enter: Edit   Tab/Shift+Tab: switch page   Shift+E: Export   p: Preview   F3: Validate   Ctrl+Q: Quit   (mouse: click/scroll/drag)"
+            "F1: Help   F2: Theme   s: Save   /: Insert component   Enter: Edit   Tab/Shift+Tab: switch page   Shift+E: Export   p: Preview   F3: Validate   Ctrl+Q: Quit   (mouse: click/scroll/drag)"
         };
         let footer = Paragraph::new(footer_text).style(self.theme.app_shell);
         frame.render_widget(footer, root[2]);
@@ -19187,6 +19187,7 @@ fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
         "Global",
         &[
             ("F1", "Open/close this help"),
+            ("F2", "Open/close theme source + color details (F2:Theme)"),
             ("F3", "Validate site (shows errors in a modal)"),
             ("Shift+E", "Export site to HTML (validates first; prompts for output dir on first use)"),
             ("p", "Preview current page in browser (validates + exports first)"),
