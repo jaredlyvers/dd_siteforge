@@ -30,6 +30,7 @@ colors:
   text_active_focus: "#64B4F5"                # Active state for labels
   modal_labels: "#64B4F5"           # Popup/modal Label text
   modal_text: "#F5F6F7"           # Popup/modal Primary text
+  modal_header: "#64B4F5"         # Section headers inside modals (e.g. F1 help cards)
 
   # Selection
   selected_background: "#0F1114"   # Selected row background

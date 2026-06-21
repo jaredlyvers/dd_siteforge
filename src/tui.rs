@@ -15,6 +15,7 @@ use crossterm::terminal::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Terminal;
 use serde::Deserialize;
@@ -53,7 +54,7 @@ pub fn run_tui(site: Site, path: Option<PathBuf>) -> anyhow::Result<()> {
     run_res
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum SidebarSection {
     Regions,
     Pages,
@@ -527,6 +528,7 @@ struct AppTheme {
     text_active_focus: Color,
     modal_labels: Color,
     modal_text: Color,
+    modal_header: Color,
     // Accent colors
     title: Color,
     active: Color,
@@ -590,6 +592,7 @@ struct PaletteFile {
     text_active_focus: Option<String>,
     modal_labels: Option<String>,
     modal_text: Option<String>,
+    modal_header: Option<String>,
     // Selection
     selected_background: String,
     // Borders
@@ -4759,7 +4762,7 @@ impl App {
             let area = centered_rect(80, 80, frame.area());
             frame.render_widget(Clear, area);
             let block = Block::default()
-                .title("Keybindings (F1 / Esc to close, j/k or arrows to scroll)")
+                .title("Key & Mouse bindings (F1 / Esc to close, j/k or arrows to scroll)")
                 .borders(Borders::ALL)
                 .style(
                     Style::default()
@@ -4769,7 +4772,7 @@ impl App {
                 .border_style(Style::default().fg(self.theme.border_active))
                 .title_style(
                     Style::default()
-                        .fg(self.theme.title)
+                        .fg(self.theme.modal_header)
                         .add_modifier(Modifier::BOLD),
                 );
             let inner = block.inner(area);
@@ -4786,10 +4789,10 @@ impl App {
                 height: inner.height,
             };
 
-            // Pre-wrap the help text against `body_w` so we know the total
-            // wrapped row count and can clamp + size the scrollbar thumb.
-            let raw = help_text();
-            let wrapped_total = wrap_help_lines(&raw, body_w as usize);
+            // Build rich help (section headers in modal_header, 2-col key/action with
+            // wrapping that preserves columns, icons, internal padding + dividers).
+            let help = build_help_text(&self.theme, body_w as usize);
+            let wrapped_total = count_wrapped_lines(&help, body_w as usize);
             let visible = inner.height as usize;
             let max_scroll = wrapped_total.saturating_sub(visible) as u16;
             // Publish the max so event handlers can clamp on key/wheel events.
@@ -4801,7 +4804,7 @@ impl App {
             }
             let scroll = self.help_scroll;
 
-            let body = Paragraph::new(raw)
+            let body = Paragraph::new(help)
                 .style(
                     Style::default()
                         .fg(self.theme.foreground)
@@ -9715,6 +9718,7 @@ impl App {
             if idx < tree_rows.len() {
                 self.selected_tree_row = idx;
                 self.apply_tree_row_selection(tree_rows[idx]);
+                self.selected_sidebar_section = SidebarSection::Layouts;
                 self.push_toast(ToastLevel::Info, format!("Selected {}", self.tree_row_label(&tree_rows[idx])));
             }
             return;
@@ -9728,8 +9732,14 @@ impl App {
                 if rel < self.site.pages.len() {
                     self.selected_page = rel;
                     self.selected_node = 0;
+                    self.selected_column = 0;
+                    self.selected_component = 0;
+                    self.selected_nested_item = 0;
+                    self.details_scroll_row = 0;
+                    self.selected_tree_row = 0;
                     self.page_head_selected = false;
-                    self.selected_sidebar_section = SidebarSection::Pages;
+                    self.selected_region = SelectedRegion::Page;
+                    self.selected_sidebar_section = SidebarSection::Layouts;
                     self.sync_tree_row_with_selection();
                     self.push_toast(ToastLevel::Info, format!("Selected page {:02}", rel + 1));
                 }
@@ -9780,6 +9790,16 @@ impl App {
 
     fn handle_double_click(&mut self, x: u16, y: u16) {
         self.handle_click(x, y);
+        // Special case for double-click on an item (not the title bar) in the Nodes / Pages list:
+        // Switch to that page (already done in handle_click), then pin the Layout tree selection
+        // to its [HEAD] row (by setting the flag + resync), and activate the Layouts sidebar section.
+        // The handle_enter below will then see a PageHead row and open the unified page-head editor.
+        let pages_body_top = self.pages_area.y.saturating_add(1);
+        if contains(self.pages_area, x, y) && y >= pages_body_top {
+            self.selected_sidebar_section = SidebarSection::Layouts;
+            self.page_head_selected = true;
+            self.sync_tree_row_with_selection();
+        }
         self.handle_enter_on_selected_row();
     }
 
@@ -10228,7 +10248,7 @@ impl App {
                     "[+]"
                 };
                 format!(
-                    "    {} {} dd-section ({})",
+                    "  {} {} dd-section ({})",
                     section_i + 1,
                     marker,
                     section.id
@@ -10244,7 +10264,7 @@ impl App {
                 let col_i = (*column_idx).min(section.columns.len().saturating_sub(1));
                 let col = &section.columns[col_i];
                 format!(
-                    "        |- column {} ({}) [{}]",
+                    "    |- column {} ({}) [{}]",
                     col_i + 1,
                     col.id,
                     col.width_class
@@ -10263,7 +10283,7 @@ impl App {
                     (*component_idx).min(section.columns[col_i].components.len().saturating_sub(1));
                 let component = &section.columns[col_i].components[comp_i];
                 let label = component_label(component);
-                format!("            - {} {}", comp_i + 1, label)
+                format!("      - {} {}", comp_i + 1, label)
             }
             TreeRowKind::FooterRoot => {
                 format!("1. [FOOTER] dd-footer ({})", self.site.footer.id)
@@ -10272,7 +10292,7 @@ impl App {
                 let section_i =
                     (*section_idx).min(self.site.footer.sections.len().saturating_sub(1));
                 let section = &self.site.footer.sections[section_i];
-                format!("    {} dd-section ({})", section_i + 1, section.id)
+                format!("  {} dd-section ({})", section_i + 1, section.id)
             }
             TreeRowKind::FooterColumn {
                 section_idx,
@@ -10284,7 +10304,7 @@ impl App {
                 let col_i = (*column_idx).min(section.columns.len().saturating_sub(1));
                 let col = &section.columns[col_i];
                 format!(
-                    "        |- column {} ({}) [{}]",
+                    "    |- column {} ({}) [{}]",
                     col_i + 1,
                     col.id,
                     col.width_class
@@ -10303,7 +10323,7 @@ impl App {
                     (*component_idx).min(section.columns[col_i].components.len().saturating_sub(1));
                 let component = &section.columns[col_i].components[comp_i];
                 let label = component_label(component);
-                format!("            - {} {}", comp_i + 1, label)
+                format!("      - {} {}", comp_i + 1, label)
             }
             TreeRowKind::PageHead => {
                 let page = self.current_page();
@@ -10328,13 +10348,13 @@ impl App {
             } => {
                 let page = self.current_page();
                 let PageNode::Section(section) = &page.nodes[*node_idx] else {
-                    return format!("    |- column {}", column_idx + 1);
+                    return format!("  |- column {}", column_idx + 1);
                 };
                 let columns = section_columns_ref(section);
                 let col_i = (*column_idx).min(columns.len().saturating_sub(1));
                 let col = &columns[col_i];
                 format!(
-                    "    |- column {} ({}) [{}]",
+                    "  |- column {} ({}) [{}]",
                     col_i + 1,
                     col.id,
                     col.width_class
@@ -10347,7 +10367,7 @@ impl App {
             } => {
                 let page = self.current_page();
                 let PageNode::Section(section) = &page.nodes[*node_idx] else {
-                    return format!("       - component {}", component_idx + 1);
+                    return format!("    - component {}", component_idx + 1);
                 };
                 let columns = section_columns_ref(section);
                 let col_i = (*column_idx).min(columns.len().saturating_sub(1));
@@ -10361,44 +10381,44 @@ impl App {
                     } else {
                         "[+]"
                     };
-                    format!("       - {} {} {}", comp_i + 1, marker, label)
+                    format!("    - {} {} {}", comp_i + 1, marker, label)
                 } else if matches!(component, crate::model::SectionComponent::Alternating(_)) {
                     let marker = if self.is_alternating_items_expanded(*node_idx, col_i, comp_i) {
                         "[-]"
                     } else {
                         "[+]"
                     };
-                    format!("       - {} {} {}", comp_i + 1, marker, label)
+                    format!("    - {} {} {}", comp_i + 1, marker, label)
                 } else if matches!(component, crate::model::SectionComponent::Card(_)) {
                     let marker = if self.is_card_items_expanded(*node_idx, col_i, comp_i) {
                         "[-]"
                     } else {
                         "[+]"
                     };
-                    format!("       - {} {} {}", comp_i + 1, marker, label)
+                    format!("    - {} {} {}", comp_i + 1, marker, label)
                 } else if matches!(component, crate::model::SectionComponent::Filmstrip(_)) {
                     let marker = if self.is_filmstrip_items_expanded(*node_idx, col_i, comp_i) {
                         "[-]"
                     } else {
                         "[+]"
                     };
-                    format!("       - {} {} {}", comp_i + 1, marker, label)
+                    format!("    - {} {} {}", comp_i + 1, marker, label)
                 } else if matches!(component, crate::model::SectionComponent::Milestones(_)) {
                     let marker = if self.is_milestones_items_expanded(*node_idx, col_i, comp_i) {
                         "[-]"
                     } else {
                         "[+]"
                     };
-                    format!("       - {} {} {}", comp_i + 1, marker, label)
+                    format!("    - {} {} {}", comp_i + 1, marker, label)
                 } else if matches!(component, crate::model::SectionComponent::Slider(_)) {
                     let marker = if self.is_slider_items_expanded(*node_idx, col_i, comp_i) {
                         "[-]"
                     } else {
                         "[+]"
                     };
-                    format!("       - {} {} {}", comp_i + 1, marker, label)
+                    format!("    - {} {} {}", comp_i + 1, marker, label)
                 } else {
-                    format!("       - {} {}", comp_i + 1, label)
+                    format!("    - {} {}", comp_i + 1, label)
                 }
             }
             TreeRowKind::AccordionItem {
@@ -10409,7 +10429,7 @@ impl App {
             } => {
                 let page = self.current_page();
                 let PageNode::Section(section) = &page.nodes[*node_idx] else {
-                    return format!("          - item {}", item_idx + 1);
+                    return format!("      - item {}", item_idx + 1);
                 };
                 let columns = section_columns_ref(section);
                 let col_i = (*column_idx).min(columns.len().saturating_sub(1));
@@ -10417,12 +10437,12 @@ impl App {
                     (*component_idx).min(columns[col_i].components.len().saturating_sub(1));
                 let acc = match &columns[col_i].components[comp_i] {
                     crate::model::SectionComponent::Accordion(a) => a,
-                    _ => return format!("          - item {}", item_idx + 1),
+                    _ => return format!("      - item {}", item_idx + 1),
                 };
                 let item_i = (*item_idx).min(acc.items.len().saturating_sub(1));
                 let item = &acc.items[item_i];
                 format!(
-                    "          - {}: {}",
+                    "      - {}: {}",
                     item_i + 1,
                     truncate_ascii(&item.child_title, 40)
                 )
@@ -10435,7 +10455,7 @@ impl App {
             } => {
                 let page = self.current_page();
                 let PageNode::Section(section) = &page.nodes[*node_idx] else {
-                    return format!("          - item {}", item_idx + 1);
+                    return format!("      - item {}", item_idx + 1);
                 };
                 let columns = section_columns_ref(section);
                 let col_i = (*column_idx).min(columns.len().saturating_sub(1));
@@ -10443,12 +10463,12 @@ impl App {
                     (*component_idx).min(columns[col_i].components.len().saturating_sub(1));
                 let alt = match &columns[col_i].components[comp_i] {
                     crate::model::SectionComponent::Alternating(a) => a,
-                    _ => return format!("          - item {}", item_idx + 1),
+                    _ => return format!("      - item {}", item_idx + 1),
                 };
                 let item_i = (*item_idx).min(alt.items.len().saturating_sub(1));
                 let item = &alt.items[item_i];
                 format!(
-                    "          - {}: {}",
+                    "      - {}: {}",
                     item_i + 1,
                     truncate_ascii(&item.child_title, 40)
                 )
@@ -10461,7 +10481,7 @@ impl App {
             } => {
                 let page = self.current_page();
                 let PageNode::Section(section) = &page.nodes[*node_idx] else {
-                    return format!("          - item {}", item_idx + 1);
+                    return format!("      - item {}", item_idx + 1);
                 };
                 let columns = section_columns_ref(section);
                 let col_i = (*column_idx).min(columns.len().saturating_sub(1));
@@ -10469,12 +10489,12 @@ impl App {
                     (*component_idx).min(columns[col_i].components.len().saturating_sub(1));
                 let card = match &columns[col_i].components[comp_i] {
                     crate::model::SectionComponent::Card(c) => c,
-                    _ => return format!("          - item {}", item_idx + 1),
+                    _ => return format!("      - item {}", item_idx + 1),
                 };
                 let item_i = (*item_idx).min(card.items.len().saturating_sub(1));
                 let item = &card.items[item_i];
                 format!(
-                    "          - {}: {}",
+                    "      - {}: {}",
                     item_i + 1,
                     truncate_ascii(&item.child_title, 40)
                 )
@@ -10487,7 +10507,7 @@ impl App {
             } => {
                 let page = self.current_page();
                 let PageNode::Section(section) = &page.nodes[*node_idx] else {
-                    return format!("          - item {}", item_idx + 1);
+                    return format!("      - item {}", item_idx + 1);
                 };
                 let columns = section_columns_ref(section);
                 let col_i = (*column_idx).min(columns.len().saturating_sub(1));
@@ -10495,12 +10515,12 @@ impl App {
                     (*component_idx).min(columns[col_i].components.len().saturating_sub(1));
                 let filmstrip = match &columns[col_i].components[comp_i] {
                     crate::model::SectionComponent::Filmstrip(f) => f,
-                    _ => return format!("          - item {}", item_idx + 1),
+                    _ => return format!("      - item {}", item_idx + 1),
                 };
                 let item_i = (*item_idx).min(filmstrip.items.len().saturating_sub(1));
                 let item = &filmstrip.items[item_i];
                 format!(
-                    "          - {}: {}",
+                    "      - {}: {}",
                     item_i + 1,
                     truncate_ascii(&item.child_title, 40)
                 )
@@ -10513,7 +10533,7 @@ impl App {
             } => {
                 let page = self.current_page();
                 let PageNode::Section(section) = &page.nodes[*node_idx] else {
-                    return format!("          - item {}", item_idx + 1);
+                    return format!("      - item {}", item_idx + 1);
                 };
                 let columns = section_columns_ref(section);
                 let col_i = (*column_idx).min(columns.len().saturating_sub(1));
@@ -10521,12 +10541,12 @@ impl App {
                     (*component_idx).min(columns[col_i].components.len().saturating_sub(1));
                 let milestones = match &columns[col_i].components[comp_i] {
                     crate::model::SectionComponent::Milestones(m) => m,
-                    _ => return format!("          - item {}", item_idx + 1),
+                    _ => return format!("      - item {}", item_idx + 1),
                 };
                 let item_i = (*item_idx).min(milestones.items.len().saturating_sub(1));
                 let item = &milestones.items[item_i];
                 format!(
-                    "          - {}: {}",
+                    "      - {}: {}",
                     item_i + 1,
                     truncate_ascii(&item.child_title, 40)
                 )
@@ -10539,7 +10559,7 @@ impl App {
             } => {
                 let page = self.current_page();
                 let PageNode::Section(section) = &page.nodes[*node_idx] else {
-                    return format!("          - item {}", item_idx + 1);
+                    return format!("      - item {}", item_idx + 1);
                 };
                 let columns = section_columns_ref(section);
                 let col_i = (*column_idx).min(columns.len().saturating_sub(1));
@@ -10547,12 +10567,12 @@ impl App {
                     (*component_idx).min(columns[col_i].components.len().saturating_sub(1));
                 let slider = match &columns[col_i].components[comp_i] {
                     crate::model::SectionComponent::Slider(s) => s,
-                    _ => return format!("          - item {}", item_idx + 1),
+                    _ => return format!("      - item {}", item_idx + 1),
                 };
                 let item_i = (*item_idx).min(slider.items.len().saturating_sub(1));
                 let item = &slider.items[item_i];
                 format!(
-                    "          - {}: {}",
+                    "      - {}: {}",
                     item_i + 1,
                     truncate_ascii(&item.child_title, 40)
                 )
@@ -16688,7 +16708,7 @@ fn section_ascii_map(
         .map(|(bl, _)| bl.first().map(|s| s.chars().count()).unwrap_or(0))
         .collect::<Vec<_>>();
 
-    let gap = 2usize;
+    let gap = 1usize;
     let mut row_groups: Vec<Vec<usize>> = Vec::new();
     let mut current_row: Vec<usize> = Vec::new();
     let mut current_row_width = 0usize;
@@ -16727,8 +16747,8 @@ fn section_ascii_map(
             let mut cur_x = 0usize;
             for (pos, &col_idx) in row.iter().enumerate() {
                 if pos > 0 {
-                    composed.push_str("  ");
-                    cur_x += 2;
+                    composed.push_str(" ");
+                    cur_x += 1;
                 }
                 let (box_lines, box_comps) = &column_data[col_idx];
                 let box_w = item_box_widths[col_idx];
@@ -16812,7 +16832,7 @@ fn header_ascii_map(
             ));
 
             if section.columns.is_empty() {
-                lines.push(fit_ascii_cell("    (no columns)", inner_width));
+                lines.push(fit_ascii_cell("  (no columns)", inner_width));
             } else {
                 let active_col = if s_idx == active_section {
                     selected_column.min(section.columns.len().saturating_sub(1))
@@ -16826,15 +16846,15 @@ fn header_ascii_map(
                         "-"
                     };
                     lines.push(fit_ascii_cell(
-                        &format!("    {c_marker} column: {} [{}]", col.id, col.width_class),
+                        &format!("  {c_marker} column: {} [{}]", col.id, col.width_class),
                         inner_width,
                     ));
                     if col.components.is_empty() {
-                        lines.push(fit_ascii_cell("        (empty)", inner_width));
+                        lines.push(fit_ascii_cell("    (empty)", inner_width));
                     } else {
                         for comp in col.components.iter() {
                             lines.push(fit_ascii_cell(
-                                &format!("        - {}", component_label(comp)),
+                                &format!("    - {}", component_label(comp)),
                                 inner_width,
                             ));
                         }
@@ -16865,7 +16885,7 @@ fn card_items_ascii_lines(
     }
 
     let child_inner_width = section_item_ascii_inner_width(&card.parent_width, container_inner_width)
-        .min(container_inner_width.saturating_sub(6))
+        .min(container_inner_width.saturating_sub(4))
         .max(10);
     let child_border = format!("+{}+", "-".repeat(child_inner_width + 2));
 
@@ -16894,7 +16914,7 @@ fn card_items_ascii_lines(
         .map(|b| b.first().map(|s| s.chars().count()).unwrap_or(0))
         .collect::<Vec<_>>();
 
-    let gap = 2usize;
+    let gap = 1usize;
     let mut row_groups: Vec<Vec<usize>> = Vec::new();
     let mut current_row: Vec<usize> = Vec::new();
     let mut current_row_width = 0usize;
@@ -18404,6 +18424,7 @@ impl AppTheme {
             parse_hex_color(p.text_active_focus.as_deref().unwrap_or("#64b4f5"))?;
         let modal_labels = parse_hex_color(p.modal_labels.as_deref().unwrap_or("#64b4f5"))?;
         let modal_text = parse_hex_color(p.modal_text.as_deref().unwrap_or(p.text_primary.as_str()))?;
+        let modal_header = parse_hex_color(p.modal_header.as_deref().unwrap_or("#64b4f5"))?;
 
         // Selection
         let selected_background = parse_hex_color(p.selected_background.as_str())?;
@@ -18487,6 +18508,7 @@ impl AppTheme {
             text_active_focus,
             modal_labels,
             modal_text,
+            modal_header,
             title,
             active,
             border,
@@ -18532,6 +18554,7 @@ impl Default for AppTheme {
             text_active_focus: border_focus,
             modal_labels: border_focus,
             modal_text: Color::Rgb(245, 246, 247),
+            modal_header: border_focus,
             title: border_focus,
             active: Color::Rgb(110, 200, 255),
             border: border_def,
@@ -18892,54 +18915,244 @@ fn component_edit_group_for_mode(mode: InputMode) -> Option<&'static [InputMode]
     }
 }
 
-fn help_text() -> String {
-    [
-        "Global:",
-        "  F1: Open/close this help",
-        "  F3: Validate site (shows errors in a modal)",
-        "  Shift+E: Export site to HTML (validates first; prompts for output dir on first use)",
-        "  p: Preview current page in browser (validates + exports first)",
-        "  Ctrl+Q: Quit",
-        "  s: Open save modal and enter file path (also writes a .backup checkpoint)",
-        "  Tab / Shift+Tab: Next/previous page",
-        "",
-        "Autosave: 2s after a change, the active site JSON is rewritten. The .backup is only refreshed by manual `s` saves; on next load the TUI surfaces a toast when site.json and site.json.backup differ.",
-        "",
-        "Node navigation and edits:",
-        "  Up/Down or mouse wheel: Select row in Nodes tree",
-        "  PageUp/PageDown: Scroll Details blueprint panel",
-        "  Enter: Edit selected row",
-        "  Space: Expand/collapse selected section or accordion/alternating/card/filmstrip/milestones/slider items",
-        "  /: Open insert fuzzy finder (hero/section/cta/banner/blockquote/accordion/alternating/card/filmstrip/milestones/modal/slider)",
-        "  A / X: Add/remove dd-accordion, dd-alternating, dd-card, dd-filmstrip, dd-milestones, or dd-slider item",
-        "  d: Delete selected node",
-        "",
-        "Pages panel ([2] Nodes):",
-        "  Shift+A: Add page (title prompt → template picker: Blank / Hero only / Hero + Section / Duplicate)",
-        "  Shift+X: Delete current page (confirms; refuses if only 1 page)",
-        "  u: Undo last page deletion (session only)",
-        "  Shift+J / Shift+K: Move current page down / up (also = sitemap order)",
-        "  r: Rename page (auto-slug until first disk save; locked pages expose a Slug field in [HEAD])",
-        "",
-        "Section layout:",
-        "  C / V: Add/remove selected column",
-        "  c / v: Select previous/next column",
-        "  J / K: Move selected column down/up",
-        "  r / f: Edit selected column id / width class",
-        "  Details pane shows ASCII blueprint for all page items",
-        "",
-        "Edit modal:",
-        "  Any edit command opens a modal with editable fields",
-        "  Tab / Shift+Tab: Next/previous editable field for selected row",
-        "  Ctrl+P (in image URL field): Open image picker (./source/images/)",
-        "  Ctrl+P (in link URL field): Open page picker (lists site pages, writes /<slug>)",
-        "  hero.copy / alternating_copy / accordion_copy / parent_copy / child_copy / child_copy / parent_copy: Up/Down move line, wheel scroll, Enter newline, Ctrl+S save",
-        "  Left / Right: Cycle section/hero/cta/banner/accordion/alternating/blockquote/card/filmstrip/milestones/slider option fields when active",
-        "  Enter: Confirm edit",
-        "  Esc: Cancel edit",
-        "  Backspace: Delete character",
-    ]
-    .join("\n")
+fn wrap_to_lines(text: &str, width: usize) -> Vec<String> {
+    let w = width.max(1);
+    if text.is_empty() {
+        return vec![String::new()];
+    }
+    let mut out: Vec<String> = vec![];
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        if current.is_empty() {
+            current = word.to_string();
+            if current.chars().count() > w {
+                // hard-break very long token
+                let chars: Vec<char> = current.chars().collect();
+                let mut i = 0;
+                while i < chars.len() {
+                    let end = (i + w).min(chars.len());
+                    out.push(chars[i..end].iter().collect());
+                    i = end;
+                }
+                current.clear();
+            }
+            continue;
+        }
+        let with_space = format!("{} {}", current, word);
+        if with_space.chars().count() <= w {
+            current = with_space;
+        } else {
+            if !current.is_empty() {
+                out.push(current);
+            }
+            current = word.to_string();
+            if current.chars().count() > w {
+                let chars: Vec<char> = current.chars().collect();
+                let mut i = 0;
+                while i < chars.len() {
+                    let end = (i + w).min(chars.len());
+                    out.push(chars[i..end].iter().collect());
+                    i = end;
+                }
+                current.clear();
+            }
+        }
+    }
+    if !current.is_empty() {
+        out.push(current);
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
+}
+
+fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
+    let h_style = Style::default()
+        .fg(theme.modal_header)
+        .add_modifier(Modifier::BOLD);
+    let k_style = Style::default().fg(theme.text_active_focus);
+    let div_style = Style::default().fg(theme.muted);
+
+    const KEY_COL: usize = 22;
+
+    fn add_section(
+        lines: &mut Vec<Line<'static>>,
+        title: &'static str,
+        items: &[(&'static str, &'static str)],
+        icon: &str,
+        h_style: Style,
+        k_style: Style,
+        div_style: Style,
+        width: usize,
+    ) {
+        lines.push(Line::from(Span::styled(title.to_string(), h_style)));
+        lines.push(Line::from("")); // padding top inside section
+        for (k, a) in items {
+            let prefix = format!("  {} {:<18}", icon, k);
+            let avail = width.saturating_sub(KEY_COL);
+            let chunks = wrap_to_lines(a, avail);
+            if chunks.is_empty() || (chunks.len() == 1 && chunks[0].is_empty()) {
+                lines.push(Line::from(Span::styled(prefix, k_style)));
+            } else {
+                for (i, chunk) in chunks.iter().enumerate() {
+                    if i == 0 {
+                        lines.push(Line::from(vec![
+                            Span::styled(prefix.clone(), k_style),
+                            Span::raw(chunk.clone()),
+                        ]));
+                    } else {
+                        let cont = format!("{}{}", " ".repeat(KEY_COL), chunk);
+                        lines.push(Line::from(Span::raw(cont)));
+                    }
+                }
+            }
+        }
+        lines.push(Line::from("")); // padding bottom inside section
+
+        // visible divider between sections (in muted)
+        let rule_len = width.saturating_sub(4).clamp(12, 50);
+        let rule = "─".repeat(rule_len);
+        lines.push(Line::from(Span::styled(format!("  {}", rule), div_style)));
+        lines.push(Line::from("")); // breathing room after divider
+    }
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+
+    // Global
+    add_section(
+        &mut lines,
+        "Global",
+        &[
+            ("F1", "Open/close this help"),
+            ("F3", "Validate site (shows errors in a modal)"),
+            ("Shift+E", "Export site to HTML (validates first; prompts for output dir on first use)"),
+            ("p", "Preview current page in browser (validates + exports first)"),
+            ("Ctrl+Q", "Quit"),
+            ("s", "Open save modal and enter file path (also writes a .backup checkpoint)"),
+            ("Tab / Shift+Tab", "Next/previous page"),
+        ],
+        "•",
+        h_style,
+        k_style,
+        div_style,
+        width,
+    );
+
+    // Autosave (descriptive paragraph-style note under its header)
+    lines.push(Line::from(Span::styled("Autosave", h_style)));
+    lines.push(Line::from("")); // padding top inside section
+    let note = "2s after a change, the active site JSON is rewritten. The .backup is only refreshed by manual `s` saves; on next load the TUI surfaces a toast when site.json and site.json.backup differ.";
+    for chunk in wrap_to_lines(note, width.saturating_sub(2)) {
+        lines.push(Line::from(Span::raw(format!("  {}", chunk))));
+    }
+    lines.push(Line::from("")); // padding bottom inside section
+    // divider after autosave section
+    let rule_len = width.saturating_sub(4).clamp(12, 50);
+    let rule = "─".repeat(rule_len);
+    lines.push(Line::from(Span::styled(format!("  {}", rule), div_style)));
+    lines.push(Line::from(""));
+
+    // Node navigation and edits
+    add_section(
+        &mut lines,
+        "Node navigation and edits",
+        &[
+            ("Up/Down or wheel", "Select row in Nodes tree"),
+            ("PageUp/PageDown", "Scroll Details blueprint panel"),
+            ("Enter", "Edit selected row"),
+            ("Space", "Expand/collapse selected section or accordion/alternating/card/filmstrip/milestones/slider items"),
+            ("/", "Open insert fuzzy finder (hero/section/cta/.../slider)"),
+            ("A / X", "Add/remove dd-accordion, dd-alternating, dd-card, dd-filmstrip, dd-milestones, or dd-slider item"),
+            ("d", "Delete selected node"),
+        ],
+        "•",
+        h_style,
+        k_style,
+        div_style,
+        width,
+    );
+
+    // Pages panel
+    add_section(
+        &mut lines,
+        "Pages panel ([2] Nodes)",
+        &[
+            ("Shift+A", "Add page (title prompt → template picker: Blank / Hero only / Hero + Section / Duplicate)"),
+            ("Shift+X", "Delete current page (confirms; refuses if only 1 page)"),
+            ("u", "Undo last page deletion (session only)"),
+            ("Shift+J / Shift+K", "Move current page down / up (also = sitemap order)"),
+            ("r", "Rename page (auto-slug until first disk save; locked pages expose a Slug field in [HEAD])"),
+        ],
+        "•",
+        h_style,
+        k_style,
+        div_style,
+        width,
+    );
+
+    // Section layout
+    add_section(
+        &mut lines,
+        "Section layout",
+        &[
+            ("C / V", "Add/remove selected column"),
+            ("c / v", "Select previous/next column"),
+            ("J / K", "Move selected column down/up"),
+            ("r / f", "Edit selected column id / width class"),
+            ("Details pane", "Shows ASCII blueprint (click selects, double-click edits)"),
+        ],
+        "•",
+        h_style,
+        k_style,
+        div_style,
+        width,
+    );
+
+    // Edit modal
+    add_section(
+        &mut lines,
+        "Edit modal (unified FormEdit)",
+        &[
+            ("Tab / Shift+Tab", "Next/previous editable field"),
+            ("Ctrl+P (image)", "Open image picker (./source/images/)"),
+            ("Ctrl+P (link)", "Open page picker (lists site pages)"),
+            ("←/→ (options)", "Cycle choices for type/option fields"),
+            ("Enter", "Confirm edit / save"),
+            ("Esc", "Cancel edit"),
+            ("Backspace", "Delete character"),
+            ("multiline ↑/↓/Enter", "Move/copy lines; Enter newline; Ctrl+S saves"),
+        ],
+        "•",
+        h_style,
+        k_style,
+        div_style,
+        width,
+    );
+
+    // Mouse (using safe bullet icon)
+    add_section(
+        &mut lines,
+        "Mouse controls",
+        &[
+            ("Click panel/list", "Focus panel + select the row/item (Regions/Pages/Layout/Details)"),
+            ("Double-click item", "Edit (unified modal; works on page-head, header/footer roots, sections, columns, components)"),
+            ("Click modal field", "Focus that input (click-to-focus in all FormEdit + legacy)"),
+            ("Wheel / drag scroll", "Scroll lists, Details, help modal, long form content"),
+            ("Scrollbar track/thumb", "Jump/scroll via custom painted │/█ scrollbar"),
+        ],
+        "•",
+        h_style,
+        k_style,
+        div_style,
+        width,
+    );
+
+    Text::from(lines)
+}
+
+fn count_wrapped_lines(text: &Text, _width: usize) -> usize {
+    text.lines.len()
 }
 
 impl ComponentKind {
@@ -20485,6 +20698,37 @@ mod tests {
     }
 
     #[test]
+    fn double_click_page_in_nodes_panel_switches_to_page_and_opens_head_edit() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
+        // starter has 1 page; add a second so we can double-click the second item (index 1)
+        app.site.pages.push(crate::model::Page::from_template(
+            "About",
+            crate::model::PageTemplate::Blank,
+        ));
+        assert!(app.site.pages.len() >= 2);
+
+        // Make pages_area tall enough to contain the list items (body starts at y+1)
+        app.pages_area = Rect { x: 0, y: 1, width: 30, height: 10, ..Default::default() };
+        app.list_area = Rect::default();
+        app.regions_area = Rect::default();
+        app.details_area = Rect::default();
+
+        // pages list body_top = 2; rel=0 at y=2, rel=1 (second page) at y=3
+        app.handle_double_click(10, 3);
+
+        assert_eq!(app.selected_page, 1);
+        assert!(app.page_head_selected);
+        assert_eq!(app.selected_sidebar_section, SidebarSection::Layouts);
+        // Double-click should have opened the unified FormEdit for the page [HEAD]
+        assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+        if let Some(Modal::FormEdit { state, cursor, .. }) = &app.modal {
+            // sanity: it's the page-head form for the right page
+            assert!(state.form.fields.iter().any(|f| f.id == "title" || f.id == "slug"));
+            assert!(matches!(cursor, cursor::Cursor::PageHead { page: 1 }));
+        }
+    }
+
+    #[test]
     fn e_key_with_clean_site_and_no_export_dir_opens_path_prompt() {
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string());
         send_key(&mut app, KeyCode::Char('E'), KeyModifiers::SHIFT);
@@ -20868,20 +21112,7 @@ fn open_in_browser(path: &std::path::Path) -> std::io::Result<()> {
 /// Approximate ratatui Paragraph::wrap line splitting so the help modal can
 /// know its total wrapped row count up front (for scroll clamp + scrollbar
 /// thumb sizing). Splits on '\n' first, then breaks long lines into
-/// `width`-char chunks. Empty lines stay one row tall.
-fn wrap_help_lines(text: &str, width: usize) -> usize {
-    let w = width.max(1);
-    let mut total = 0usize;
-    for raw in text.split('\n') {
-        if raw.is_empty() {
-            total += 1;
-            continue;
-        }
-        let chars = raw.chars().count();
-        total += chars.div_ceil(w);
-    }
-    total
-}
+
 
 fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;

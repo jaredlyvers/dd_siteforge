@@ -39,6 +39,7 @@ colors:
   text_active_focus: "#64B4F5"
   modal_labels: "#64B4F5"
   modal_text: "#F5F6F7"
+  modal_header: "#64B4F5"  # headers for sections/cards inside modals (F1 help etc)
 
   selected_background: "#0F1114"
 
@@ -93,6 +94,8 @@ These mappings should stay consistent across all apps.
     - Popup/modal Label text
 - `modal_text`
     - Popup/modal Primary text
+- `modal_header`
+    - Section headers inside modals (e.g. F1 help cards/sections); uses modal_labels as fallback
 
 ### 3) Selections
 

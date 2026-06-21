@@ -114,6 +114,7 @@ Every theme file must contain `version: 1` at the top level (validated on load; 
 `header_quotes` (optional top-level list) overrides the 5 built-in rotating header taglines (chosen once at App::new using time ^ pid).
 
 The TUI now exposes `theme.app_shell` and `theme.active_border` (Style) for the standard header/footer.
+`theme.modal_header` colors inner section headers (e.g. cards in F1 help modal).
 
 See `src/tui.rs` (draw, AppTheme::load, choose_header_copy, default_header_quotes) for the concrete implementation.
 The Details panel title now includes current page context ("Details — 03: Home").
