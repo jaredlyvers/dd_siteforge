@@ -4870,6 +4870,97 @@ impl App {
             }
         }
 
+        if self.show_theme {
+            let area = centered_rect(80, 80, frame.area());
+            frame.render_widget(Clear, area);
+            let block = Block::default()
+                .title("Theme (F2 / Esc to close, j/k or arrows to scroll)")
+                .borders(Borders::ALL)
+                .style(
+                    Style::default()
+                        .fg(self.theme.foreground)
+                        .bg(self.theme.popup_background),
+                )
+                .border_style(Style::default().fg(self.theme.border_active))
+                .title_style(
+                    Style::default()
+                        .fg(self.theme.modal_header)
+                        .add_modifier(Modifier::BOLD),
+                );
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+
+            let scrollbar_width: u16 = 1;
+            let body_w = inner.width.saturating_sub(scrollbar_width + 1);
+            let body_area = Rect {
+                x: inner.x,
+                y: inner.y,
+                width: body_w,
+                height: inner.height,
+            };
+
+            let help = build_theme_text(&self.theme, &self.theme_source, &self.theme_status, body_w as usize);
+            let wrapped_total = count_wrapped_lines(&help, body_w as usize);
+            let visible = inner.height as usize;
+            let max_scroll = wrapped_total.saturating_sub(visible) as u16;
+            self.theme_scroll_max = max_scroll;
+            if self.theme_scroll > max_scroll {
+                self.theme_scroll = max_scroll;
+            }
+            let scroll = self.theme_scroll;
+
+            let body = Paragraph::new(help)
+                .style(
+                    Style::default()
+                        .fg(self.theme.foreground)
+                        .bg(self.theme.popup_background),
+                )
+                .wrap(Wrap { trim: false })
+                .scroll((scroll, 0));
+            frame.render_widget(body, body_area);
+
+            if (wrapped_total as u16) > inner.height {
+                let track_x = inner.x + inner.width.saturating_sub(1);
+                for row in 0..inner.height {
+                    let cell = Paragraph::new("│").style(
+                        Style::default()
+                            .fg(self.theme.scrollbar)
+                            .bg(self.theme.popup_background),
+                    );
+                    frame.render_widget(
+                        cell,
+                        Rect {
+                            x: track_x,
+                            y: inner.y + row,
+                            width: 1,
+                            height: 1,
+                        },
+                    );
+                }
+                let total_h = inner.height as usize;
+                let thumb_h = ((total_h * total_h) / wrapped_total.max(1)).max(1);
+                let scroll_range = wrapped_total.saturating_sub(total_h).max(1);
+                let thumb_top = ((scroll as usize) * total_h.saturating_sub(thumb_h))
+                    / scroll_range;
+                for i in 0..thumb_h {
+                    let cell = Paragraph::new("█").style(
+                        Style::default()
+                            .fg(self.theme.scrollbar_hover)
+                            .bg(self.theme.popup_background),
+                    );
+                    frame.render_widget(
+                        cell,
+                        Rect {
+                            x: track_x,
+                            y: inner.y + (thumb_top + i) as u16,
+                            width: 1,
+                            height: 1,
+                        },
+                    );
+                }
+            }
+        }
+
         // Render edit modal if open
         if let Some(modal) = &self.edit_modal {
             // Use most of the available space, with minimum dimensions
