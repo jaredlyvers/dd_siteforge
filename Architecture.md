@@ -77,6 +77,7 @@ loop:
 | Key | Action |
 |---|---|
 | `F1` | Help (scrollable) |
+| `F2` | Theme info modal (source + status + color details; same layout as F1) |
 | `F3` | Validate site → modal on errors, success toast otherwise |
 | `Shift+E` | Export site (validate gate → render → copy source/images/) |
 | `p` | Preview current page (validate → export → spawn browser) |
@@ -115,6 +116,7 @@ Every theme file must contain `version: 1` at the top level (validated on load; 
 
 The TUI now exposes `theme.app_shell` and `theme.active_border` (Style) for the standard header/footer.
 `theme.modal_header` colors inner section headers (e.g. cards in F1 help modal).
+F2 opens the Theme info modal (source, load status, sampled color tokens with hex) using identical chrome and scroll mechanics to the F1 help modal.
 
 See `src/tui.rs` (draw, AppTheme::load, choose_header_copy, default_header_quotes) for the concrete implementation.
 The Details panel title now includes current page context ("Details — 03: Home").

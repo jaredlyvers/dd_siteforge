@@ -40,6 +40,7 @@ Always source colors from `self.theme.*`. Standard mappings (per `LDNDDEV_TUI_VI
 ### User preferences captured during the v1.0 push
 - Toasts (success / info / warning) for non-blocking messages; modals for errors.
 - Footer is now a strict 1-line adaptive key-hint bar (borderless, `app_shell` style per LDNDDEV_TUI_VISUAL_STANDARD.md; always starts with F1:Help; no long status text). Instructional/in-progress messages now use toasts.
+- F2:Theme shows theme source + color details (matches F1 modal layout).
 - All scrollable surfaces support mouse wheel + keyboard.
 - All multi-field modal inputs support click-to-focus.
 - Help modal text wraps + scrolls + has a scrollbar.
