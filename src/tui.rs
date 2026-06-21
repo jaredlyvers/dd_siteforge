@@ -5635,6 +5635,56 @@ impl App {
             return Ok(());
         }
 
+        if self.show_theme {
+            match evt {
+                Event::Key(k) => match k.code {
+                    KeyCode::F(2) | KeyCode::Esc => {
+                        self.show_theme = false;
+                        self.theme_scroll = 0;
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        self.theme_scroll = self
+                            .theme_scroll
+                            .saturating_add(1)
+                            .min(self.theme_scroll_max);
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.theme_scroll = self.theme_scroll.saturating_sub(1);
+                    }
+                    KeyCode::PageDown => {
+                        self.theme_scroll = self
+                            .theme_scroll
+                            .saturating_add(10)
+                            .min(self.theme_scroll_max);
+                    }
+                    KeyCode::PageUp => {
+                        self.theme_scroll = self.theme_scroll.saturating_sub(10);
+                    }
+                    KeyCode::Home | KeyCode::Char('g') => {
+                        self.theme_scroll = 0;
+                    }
+                    KeyCode::End | KeyCode::Char('G') => {
+                        self.theme_scroll = self.theme_scroll_max;
+                    }
+                    _ => {}
+                },
+                Event::Mouse(m) => match m.kind {
+                    MouseEventKind::ScrollUp => {
+                        self.theme_scroll = self.theme_scroll.saturating_sub(3);
+                    }
+                    MouseEventKind::ScrollDown => {
+                        self.theme_scroll = self
+                            .theme_scroll
+                            .saturating_add(3)
+                            .min(self.theme_scroll_max);
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+            return Ok(());
+        }
+
         if self.save_prompt_open {
             return self.handle_save_prompt_event(evt);
         }
@@ -5660,6 +5710,7 @@ impl App {
                 }
                 match k.code {
                 KeyCode::F(1) => self.show_help = true,
+                KeyCode::F(2) => self.show_theme = true,
                 KeyCode::F(3) => self.open_validation_modal(),
                 KeyCode::Char('E') if k.modifiers.contains(KeyModifiers::SHIFT) => {
                     self.begin_export_flow();
