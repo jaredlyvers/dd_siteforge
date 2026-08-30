@@ -4,7 +4,7 @@ Guidance for Claude / agent sessions working on this repo.
 
 ## What this is
 
-`dd_siteforge` is a Rust terminal-UI CMS. Crate version is in `Cargo.toml` (`1.4.0`). Export writes HTML + sitemap/robots/404, copies Grunt `web/assets` (css/js/webfonts/favicon) when dest is not already `web/`, and copies `source/images/`. Architecture lives in `Architecture.md`; per-feature design + implementation history lives under `docs/superpowers/`.
+`dd_siteforge` is a Rust terminal-UI CMS. Crate version is in `Cargo.toml` (`1.5.0`). Export writes HTML + sitemap/robots/404, copies Grunt `web/assets` (css/js/webfonts/favicon) when dest is not already `web/`, and copies `source/images/`. Architecture lives in `Architecture.md`; per-feature design + implementation history lives under `docs/superpowers/`.
 
 ## Project conventions
 

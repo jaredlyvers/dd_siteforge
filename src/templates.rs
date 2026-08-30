@@ -88,6 +88,7 @@ impl Renderer {
         Ok(Self { hbs })
     }
 
+    #[cfg(test)]
     pub fn bundled_only() -> anyhow::Result<Self> {
         Self::load(None)
     }
