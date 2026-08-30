@@ -13,6 +13,17 @@ pub struct Site {
     /// `None` triggers a first-time prompt; user-confirmed value is written back.
     #[serde(default)]
     pub export_dir: Option<String>,
+    /// Origin used for canonical URLs, Open Graph, and sitemap `<loc>`.
+    /// Example: `https://example.com`. Empty/None skips absolute URL generation.
+    #[serde(default)]
+    pub base_url: Option<String>,
+    /// `<html lang>` value. Defaults to `en` for legacy JSON.
+    #[serde(default = "default_lang")]
+    pub lang: String,
+}
+
+fn default_lang() -> String {
+    "en".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -838,6 +849,8 @@ impl Site {
                 }],
             },
             export_dir: None,
+            base_url: None,
+            lang: default_lang(),
             pages: vec![Page {
                 id: "page-home".to_string(),
                 slug: "index".to_string(),
@@ -854,7 +867,7 @@ impl Site {
                 },
                 nodes: vec![
                     PageNode::Hero(DdHero {
-                        parent_image_url: "/assets/images/hero.jpg".to_string(),
+                        parent_image_url: "assets/images/hero.jpg".to_string(),
                         parent_image_alt: Some("Decorative hero".to_string()),
                         parent_class: Some(HeroImageClass::FullFull),
                         parent_data_aos: Some(HeroAos::FadeIn),
@@ -865,10 +878,10 @@ impl Site {
                             "Compose pages with typed component schemas.".to_string(),
                         ),
                         link_1_label: Some("Get Started".to_string()),
-                        link_1_url: Some("/start".to_string()),
+                        link_1_url: Some("#".to_string()),
                         link_1_target: Some(CtaTarget::SelfTarget),
                         link_2_label: Some("Learn More".to_string()),
-                        link_2_url: Some("/learn-more".to_string()),
+                        link_2_url: Some("#".to_string()),
                         link_2_target: Some(CtaTarget::SelfTarget),
                         parent_image_mobile: None,
                         parent_image_tablet: None,
@@ -1014,6 +1027,38 @@ pub fn slug_from_title(title: &str) -> String {
     }
 }
 
+/// HTML file name for a page slug. `index` → `index.html`.
+pub fn page_file_name(slug: &str) -> String {
+    if slug == "index" {
+        "index.html".to_string()
+    } else {
+        format!("{}.html", slug)
+    }
+}
+
+/// Same-directory href used in page picker output and in-page links.
+pub fn page_href(slug: &str) -> String {
+    page_file_name(slug)
+}
+
+/// True when `slug` is safe to join onto an export directory as `{slug}.html`.
+pub fn is_safe_slug(slug: &str) -> bool {
+    let s = slug.trim();
+    !s.is_empty()
+        && s != "."
+        && s != ".."
+        && !s.contains('/')
+        && !s.contains('\\')
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
+/// Join `base_url` (no trailing slash required) with a relative file path.
+pub fn absolute_url(base_url: Option<&str>, rel: &str) -> Option<String> {
+    let base = base_url.map(str::trim).filter(|s| !s.is_empty())?;
+    let rel = rel.trim().trim_start_matches('/');
+    Some(format!("{}/{}", base.trim_end_matches('/'), rel))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1078,7 +1123,35 @@ mod tests {
 
     #[test]
     fn slug_from_title_preserves_existing_hyphens_without_duplicating() {
-        assert_eq!(slug_from_title("about-us"), "about-us");
+        assert_eq!(slug_from_title("already-hyphenated"), "already-hyphenated");
         assert_eq!(slug_from_title("about  -  us"), "about-us");
+    }
+
+    #[test]
+    fn page_file_name_special_cases_index() {
+        assert_eq!(page_file_name("index"), "index.html");
+        assert_eq!(page_file_name("contact"), "contact.html");
+    }
+
+    #[test]
+    fn is_safe_slug_rejects_path_traversal_and_separators() {
+        assert!(is_safe_slug("index"));
+        assert!(is_safe_slug("about-us"));
+        assert!(!is_safe_slug(""));
+        assert!(!is_safe_slug(".."));
+        assert!(!is_safe_slug("../x"));
+        assert!(!is_safe_slug("a/b"));
+        assert!(!is_safe_slug("a\\b"));
+        assert!(!is_safe_slug("hello world"));
+    }
+
+    #[test]
+    fn absolute_url_joins_without_double_slash() {
+        assert_eq!(
+            absolute_url(Some("https://ex.com/"), "contact.html").as_deref(),
+            Some("https://ex.com/contact.html")
+        );
+        assert!(absolute_url(None, "index.html").is_none());
+        assert!(absolute_url(Some("  "), "index.html").is_none());
     }
 }

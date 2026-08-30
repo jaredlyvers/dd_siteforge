@@ -4,7 +4,7 @@ Guidance for Claude / agent sessions working on this repo.
 
 ## What this is
 
-`dd_siteforge` is a Rust terminal-UI CMS shipped at `v1.0.0`. The pre-1.0 punch list (page CRUD, validation modal, in-TUI export, autosave + backup, preview, image picker, theme schema) is complete. The code is on `master`, tagged `v1.0.0`. Architecture lives in `Architecture.md`; per-feature design + implementation history lives under `docs/superpowers/`.
+`dd_siteforge` is a Rust terminal-UI CMS. Crate version is in `Cargo.toml` (`1.3.0` as of the F2 theme modal). Export writes a self-contained static site (HTML + bundled framework assets + images + sitemap/robots/404). Architecture lives in `Architecture.md`; per-feature design + implementation history lives under `docs/superpowers/`.
 
 ## Project conventions
 
@@ -52,12 +52,14 @@ Always source colors from `self.theme.*`. Standard mappings (per `LDNDDEV_TUI_VI
 
 ```
 src/
-├── main.rs            CLI entry (init-site / show-site / validate-site / export-html / tui)
+├── main.rs            CLI entry (init-site / show-site / validate-site / export-html / serve / tui)
 ├── model.rs           Site → Page → Node typed tree + Page::from_template / duplicate_from
-├── storage.rs         JSON load/save round-trip + slug_locked / export_dir back-compat tests
+├── storage.rs         JSON load/save (atomic) + slug_locked / export_dir back-compat tests
 ├── validate.rs        validate_site + validate_site_with_root (missing-image)
 ├── renderer.rs        per-component render_* fns; handlebars templates inline
-├── tui.rs             ~19k lines — App, Modal enum (16 variants), draw + event loop
+├── export.rs          full site export (HTML + framework assets + images + sitemap/robots/404)
+├── serve.rs           tiny static HTTP server for preview / `serve`
+├── tui.rs             App, Modal enum, draw + event loop
 └── tui/
     ├── cursor.rs      component → form-state mapping; apply_edit_form_to_component
     └── editform.rs    declarative FormEdit values for every migrated component
@@ -73,7 +75,7 @@ dd_siteforge_theme.yml       default theme values
 
 ```bash
 cargo check     # typecheck only
-cargo test -q   # 96 tests, all should pass
+cargo test -q   # in-tree tests, all should pass
 cargo build --release
 cargo run -- tui /tmp/scratch.json   # interactive smoke
 ```

@@ -7,7 +7,26 @@ use crate::model::Site;
 
 pub fn save_site<P: AsRef<Path>>(path: P, site: &Site) -> anyhow::Result<()> {
     let json = serde_json::to_string_pretty(site).context("failed to serialize site to JSON")?;
-    fs::write(path, json).context("failed to write site JSON")?;
+    atomic_write(path.as_ref(), json.as_bytes()).context("failed to write site JSON")?;
+    Ok(())
+}
+
+fn atomic_write(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    let tmp = {
+        let mut name = path
+            .file_name()
+            .map(|n| n.to_os_string())
+            .unwrap_or_else(|| "site.json".into());
+        name.push(".tmp");
+        match path.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent.join(name),
+            _ => Path::new(".").join(name),
+        }
+    };
+    fs::write(&tmp, bytes)
+        .with_context(|| format!("failed to write temp file '{}'", tmp.display()))?;
+    fs::rename(&tmp, path)
+        .with_context(|| format!("failed to rename '{}' -> '{}'", tmp.display(), path.display()))?;
     Ok(())
 }
 
@@ -425,5 +444,52 @@ mod tests {
         let loaded = load_site(&tmp).expect("load ok");
         std::fs::remove_file(&tmp).ok();
         assert_eq!(loaded.export_dir.as_deref(), Some("./web/"));
+    }
+
+    #[test]
+    fn save_site_is_atomic_and_leaves_no_tmp() {
+        let tmp = unique_temp_path("dd_site_atomic");
+        let site = crate::model::Site::starter();
+        save_site(&tmp, &site).expect("save ok");
+        assert!(tmp.exists());
+        let sibling = {
+            let mut name = tmp.file_name().unwrap().to_os_string();
+            name.push(".tmp");
+            tmp.parent().unwrap().join(name)
+        };
+        assert!(!sibling.exists(), "temp file must be renamed away");
+        let loaded = load_site(&tmp).expect("load ok");
+        std::fs::remove_file(&tmp).ok();
+        assert_eq!(loaded.lang, "en");
+        assert!(loaded.base_url.is_none());
+    }
+
+    #[test]
+    fn base_url_and_lang_round_trip() {
+        let tmp = unique_temp_path("dd_site_base_url");
+        let mut site = crate::model::Site::starter();
+        site.base_url = Some("https://ex.com".to_string());
+        site.lang = "de".to_string();
+        save_site(&tmp, &site).expect("save ok");
+        let loaded = load_site(&tmp).expect("load ok");
+        std::fs::remove_file(&tmp).ok();
+        assert_eq!(loaded.base_url.as_deref(), Some("https://ex.com"));
+        assert_eq!(loaded.lang, "de");
+    }
+
+    #[test]
+    fn lang_defaults_to_en_on_legacy_json() {
+        let json = r##"{
+          "schema_version": 1,
+          "id": "s",
+          "name": "n",
+          "theme": {"primary_color":"#000","secondary_color":"#000","tertiary_color":"#000","support_color":"#000"},
+          "header": {"id":"h","custom_css":null,"alert":null,"sections":[]},
+          "footer": {"id":"f","custom_css":null,"sections":[]},
+          "pages": []
+        }"##;
+        let site: crate::model::Site = serde_json::from_str(json).expect("legacy JSON should load");
+        assert_eq!(site.lang, "en");
+        assert!(site.base_url.is_none());
     }
 }

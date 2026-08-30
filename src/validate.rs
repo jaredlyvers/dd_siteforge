@@ -17,6 +17,11 @@ pub fn validate_site(site: &Site) -> Vec<String> {
         }
         if page.slug.trim().is_empty() {
             errors.push(format!("Page '{}' has an empty slug.", page.id));
+        } else if !crate::model::is_safe_slug(&page.slug) {
+            errors.push(format!(
+                "Page '{}' has an unsafe slug '{}'. Use lowercase letters, numbers, and hyphens only.",
+                page.id, page.slug
+            ));
         }
         if !page.slug.trim().is_empty() && !slugs.insert(page.slug.clone()) {
             errors.push(format!("Duplicate page slug '{}'.", page.slug));
@@ -692,7 +697,11 @@ fn is_valid_url(url: &str) -> bool {
         && (v.starts_with('/')
             || v.starts_with('#')
             || v.starts_with("http://")
-            || v.starts_with("https://"))
+            || v.starts_with("https://")
+            || v.starts_with("mailto:")
+            || v.starts_with("tel:")
+            || v.starts_with("assets/")
+            || v.ends_with(".html"))
 }
 
 pub fn validate_site_with_root(
@@ -708,8 +717,53 @@ pub fn validate_site_with_root(
         for (label, value) in refs {
             check_local_image(root, &label, &value, &mut errors);
         }
+        if let Some(og) = page.head.og_image.as_deref() {
+            check_local_image(
+                root,
+                &format!("page '{}' og_image", page.id),
+                og,
+                &mut errors,
+            );
+        }
     }
+    collect_region_image_refs(&site.header.sections, "header", root, &mut errors);
+    collect_region_image_refs(&site.footer.sections, "footer", root, &mut errors);
     errors
+}
+
+fn collect_region_image_refs(
+    sections: &[DdSection],
+    region: &str,
+    root: &std::path::Path,
+    errors: &mut Vec<String>,
+) {
+    let dummy = crate::model::Page {
+        id: region.to_string(),
+        slug: region.to_string(),
+        slug_locked: true,
+        head: crate::model::DdHead {
+            title: region.to_string(),
+            meta_description: None,
+            canonical_url: None,
+            robots: crate::model::RobotsDirective::NoindexNofollow,
+            schema_type: crate::model::SchemaType::WebPage,
+            og_title: None,
+            og_description: None,
+            og_image: None,
+        },
+        nodes: Vec::new(),
+    };
+    let mut refs = Vec::new();
+    for section in sections {
+        for column in &section.columns {
+            for component in &column.components {
+                collect_component_image_refs(&dummy, component, &mut refs);
+            }
+        }
+    }
+    for (label, value) in refs {
+        check_local_image(root, &label, &value, errors);
+    }
 }
 
 fn check_local_image(
@@ -897,5 +951,16 @@ mod tests {
             errors
         );
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn rejects_unsafe_slug() {
+        let mut site = Site::starter();
+        site.pages[0].slug = "../etc".to_string();
+        let errors = validate_site(&site);
+        assert!(
+            errors.iter().any(|e| e.contains("unsafe slug")),
+            "expected unsafe slug error, got {errors:?}"
+        );
     }
 }

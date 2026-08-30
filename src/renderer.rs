@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use handlebars::Handlebars;
@@ -13,7 +12,7 @@ use crate::model::{
 };
 
 const PAGE_TEMPLATE: &str = r#"<!DOCTYPE html>
-<html lang="en">
+<html lang="{{lang}}">
 {{{head_html}}}
 <body class="dd-g">
 {{{header_html}}}
@@ -21,7 +20,7 @@ const PAGE_TEMPLATE: &str = r#"<!DOCTYPE html>
 {{{content}}}
 </main>
 {{{footer_html}}}
-<script src="/assets/js/main.min.js"></script>
+<script src="assets/js/main.min.js"></script>
 </body>
 </html>
 "#;
@@ -31,12 +30,8 @@ pub fn render_site_to_dir(site: &Site, output_dir: &Path) -> anyhow::Result<()> 
     let header_html = render_header(&site.header)?;
     let footer_html = render_footer(&site.footer)?;
     for page in &site.pages {
-        let html = render_page_html_with_chrome(page, &header_html, &footer_html)?;
-        let file_name = if page.slug == "index" {
-            "index.html".to_string()
-        } else {
-            format!("{}.html", page.slug)
-        };
+        let html = render_page_html_with_chrome(page, &header_html, &footer_html, site)?;
+        let file_name = crate::model::page_file_name(&page.slug);
         let out_path = output_dir.join(file_name);
         fs::write(&out_path, html)
             .with_context(|| format!("failed to write page output '{}'", out_path.display()))?;
@@ -46,15 +41,15 @@ pub fn render_site_to_dir(site: &Site, output_dir: &Path) -> anyhow::Result<()> 
 
 #[cfg(test)]
 fn render_page_html(page: &Page) -> anyhow::Result<String> {
-    // Render a single page without header/footer chrome — used by tests and callers
-    // that don't have access to the full site (e.g. previews).
-    render_page_html_with_chrome(page, "", "")
+    let site = Site::starter();
+    render_page_html_with_chrome(page, "", "", &site)
 }
 
 pub fn render_page_html_with_chrome(
     page: &Page,
     header_html: &str,
     footer_html: &str,
+    site: &Site,
 ) -> anyhow::Result<String> {
     let mut hbs = Handlebars::new();
     hbs.register_template_string("page", PAGE_TEMPLATE)
@@ -69,11 +64,17 @@ pub fn render_page_html_with_chrome(
         content.push('\n');
     }
 
-    let head_html = render_head(&page.head)?;
+    let head_html = render_head(&page.head, site, page)?;
+    let lang = if site.lang.trim().is_empty() {
+        "en"
+    } else {
+        site.lang.trim()
+    };
 
     hbs.render(
         "page",
         &json!({
+            "lang": lang,
             "head_html": head_html,
             "header_html": header_html,
             "footer_html": footer_html,
@@ -83,7 +84,7 @@ pub fn render_page_html_with_chrome(
     .context("failed to render page template")
 }
 
-fn render_head(head: &DdHead) -> anyhow::Result<String> {
+fn render_head(head: &DdHead, site: &Site, page: &Page) -> anyhow::Result<String> {
     let template = r##"<head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -94,16 +95,16 @@ fn render_head(head: &DdHead) -> anyhow::Result<String> {
   {{#if og_title}}<meta property="og:title" content="{{og_title}}">{{/if}}
   {{#if og_description}}<meta property="og:description" content="{{og_description}}">{{/if}}
   {{#if og_image}}<meta property="og:image" content="{{og_image}}">{{/if}}
-  <link rel="apple-touch-icon" sizes="180x180" href="/assets/favicon/apple-touch-icon.png" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon/favicon-32x32.png" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon/favicon-16x16.png" />
-  <link rel="manifest" href="/assets/favicon/site.webmanifest" />
-  <link rel="mask-icon" href="/assets/favicon/safari-pinned-tab.svg" color="#5bbad5" />
-  <link rel="shortcut icon" href="/assets/favicon/favicon.ico" />
-  <meta name="msapplication-TileColor" content="#ffffff" />
-  <meta name="msapplication-config" content="/assets/favicon/browserconfig.xml" />
-  <meta name="theme-color" content="#ffffff" />
-  <link rel="stylesheet" href="/assets/css/style.min.css">
+  {{#if og_url}}<meta property="og:url" content="{{og_url}}">{{/if}}
+  <meta property="og:type" content="website">
+  {{#if twitter_card}}<meta name="twitter:card" content="{{twitter_card}}">{{/if}}
+  <link rel="icon" type="image/png" href="assets/favicon/favicon-96x96.png" sizes="96x96">
+  <link rel="icon" type="image/svg+xml" href="assets/favicon/favicon.svg">
+  <link rel="shortcut icon" href="assets/favicon/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/favicon/apple-touch-icon.png">
+  <link rel="manifest" href="assets/favicon/site.webmanifest">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="stylesheet" href="assets/css/style.min.css">
   <script type="application/ld+json">{{{schema_json}}}</script>
 </head>"##;
 
@@ -124,12 +125,17 @@ fn render_head(head: &DdHead) -> anyhow::Result<String> {
     {
         schema.insert("description".to_string(), Value::String(d.to_string()));
     }
-    if let Some(u) = head
+    let file = crate::model::page_href(&page.slug);
+    let stored_canonical = head
         .canonical_url
         .as_deref()
         .map(str::trim)
         .filter(|v| !v.is_empty())
-    {
+        .map(str::to_string);
+    let canonical = stored_canonical
+        .clone()
+        .or_else(|| crate::model::absolute_url(site.base_url.as_deref(), &file));
+    if let Some(u) = canonical.as_deref() {
         schema.insert("url".to_string(), Value::String(u.to_string()));
     }
     if let Some(i) = head
@@ -143,20 +149,53 @@ fn render_head(head: &DdHead) -> anyhow::Result<String> {
     let schema_json = serde_json::to_string_pretty(&Value::Object(schema))
         .unwrap_or_else(|_| "{}".to_string());
 
+    let og_title = head
+        .og_title
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string)
+        .or_else(|| Some(head.title.clone()));
+    let og_description = head
+        .og_description
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            head.meta_description
+                .as_deref()
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(str::to_string)
+        });
+    let og_image = head
+        .og_image
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| public_url(v));
+    let og_url = canonical.clone();
+    let twitter_card = og_image
+        .as_ref()
+        .map(|_| "summary_large_image".to_string());
+
     let data = json!({
         "title": head.title,
         "meta_description": head.meta_description,
-        "canonical_url": head.canonical_url,
+        "canonical_url": canonical,
         "robots": robots,
-        "og_title": head.og_title,
-        "og_description": head.og_description,
-        "og_image": head.og_image,
+        "og_title": og_title,
+        "og_description": og_description,
+        "og_image": og_image,
+        "og_url": og_url,
+        "twitter_card": twitter_card,
         "schema_json": schema_json,
     });
     render_inline(template, data)
 }
 
-fn render_header(header: &DdHeader) -> anyhow::Result<String> {
+pub(crate) fn render_header(header: &DdHeader) -> anyhow::Result<String> {
     let custom = header
         .custom_css
         .as_deref()
@@ -195,7 +234,7 @@ fn render_header(header: &DdHeader) -> anyhow::Result<String> {
     ))
 }
 
-fn render_footer(footer: &DdFooter) -> anyhow::Result<String> {
+pub(crate) fn render_footer(footer: &DdFooter) -> anyhow::Result<String> {
     let custom = footer
         .custom_css
         .as_deref()
@@ -704,13 +743,13 @@ fn render_slider(slider: &DdSlider) -> anyhow::Result<String> {
     {{/each}}
   </ul>
   <div class="dd-slider__navigation">
-    <button id="dd-slider__previous"><span class="-scrn-reader-only">Previous slide</span> &lt; </button>
+    <button class="dd-slider__previous" id="dd-slider__previous"><span class="-scrn-reader-only">Previous slide</span> &lt; </button>
     <ul class="dd-slider__tabs -nostyle"></ul>
-    <button id="dd-slider__next"><span class="-scrn-reader-only">Next slide</span> &gt; </button>
+    <button class="dd-slider__next" id="dd-slider__next"><span class="-scrn-reader-only">Next slide</span> &gt; </button>
   </div>
 </div>"#;
 
-    let fallback_uid = random_uid_fallback();
+    let fallback_uid = stable_uid_from_title(&slider.parent_title);
     let parent_uid = html_id_safe_from_title(&slider.parent_title, &fallback_uid);
     let mut items = Vec::new();
     for item in &slider.items {
@@ -1164,7 +1203,7 @@ fn hero_to_json(hero: &DdHero) -> Value {
         || has_link_2;
 
     json!({
-        "parent_image_url": hero.parent_image_url,
+        "parent_image_url": public_url(&hero.parent_image_url),
         "parent_class": parent_class,
         "parent_data_aos": parent_data_aos,
         "parent_custom_css": parent_custom_css,
@@ -1172,24 +1211,38 @@ fn hero_to_json(hero: &DdHero) -> Value {
         "parent_subtitle": if subtitle.is_empty() { None } else { Some(hero.parent_subtitle.clone()) },
         "parent_copy_html": parent_copy_html,
         "link_1_label": hero.link_1_label,
-        "link_1_url": hero.link_1_url,
+        "link_1_url": hero.link_1_url.as_deref().map(public_url),
         "link_1_target": link_1_target,
         "link_2_label": hero.link_2_label,
-        "link_2_url": hero.link_2_url,
+        "link_2_url": hero.link_2_url.as_deref().map(public_url),
         "link_2_target": link_2_target,
         "parent_image_alt": hero.parent_image_alt.clone().unwrap_or_default(),
-        "parent_image_mobile": hero.parent_image_mobile,
-        "parent_image_tablet": hero.parent_image_tablet,
-        "parent_image_desktop": hero.parent_image_desktop,
+        "parent_image_mobile": hero.parent_image_mobile.as_deref().map(public_url),
+        "parent_image_tablet": hero.parent_image_tablet.as_deref().map(public_url),
+        "parent_image_desktop": hero.parent_image_desktop.as_deref().map(public_url),
         "parent_image_class": parent_image_class,
         "has_image": has_image,
         "has_body": has_body,
         "has_links": has_link_1 || has_link_2,
         "has_link_1": has_link_1,
         "has_link_2": has_link_2,
-        "bg_mobile": bg_mobile,
-        "bg_desktop": bg_desktop
+        "bg_mobile": public_url(bg_mobile),
+        "bg_desktop": public_url(bg_desktop)
     })
+}
+
+fn public_url(stored: &str) -> String {
+    let t = stored.trim();
+    if t.starts_with("http://")
+        || t.starts_with("https://")
+        || t.starts_with('#')
+        || t.starts_with("mailto:")
+        || t.starts_with("tel:")
+    {
+        t.to_string()
+    } else {
+        t.trim_start_matches('/').to_string()
+    }
 }
 
 fn markdown_to_html(input: &str) -> String {
@@ -1306,13 +1359,12 @@ fn html_id_safe_from_title(title: &str, fallback: &str) -> String {
     out
 }
 
-fn random_uid_fallback() -> String {
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0);
-    let n = seed % 1_000_000;
-    format!("uid-{n:06}")
+fn stable_uid_from_title(title: &str) -> String {
+    let mut hash: u64 = 5381;
+    for b in title.as_bytes() {
+        hash = hash.wrapping_mul(33).wrapping_add(*b as u64);
+    }
+    format!("uid-{:06}", hash % 1_000_000)
 }
 
 #[cfg(test)]
@@ -1328,5 +1380,23 @@ mod tests {
         assert!(html.contains("dd-hero"));
         assert!(html.contains("dd-section"));
         assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("assets/css/style.min.css"));
+        assert!(html.contains("lang=\"en\""));
+        assert!(!html.contains("/assets/css/style.min.css"));
+    }
+
+    #[test]
+    fn auto_canonical_and_og_url_from_base_url() {
+        let mut site = Site::starter();
+        site.base_url = Some("https://ex.com".to_string());
+        site.lang = "fr".to_string();
+        let header = super::render_header(&site.header).unwrap();
+        let footer = super::render_footer(&site.footer).unwrap();
+        let html =
+            super::render_page_html_with_chrome(&site.pages[0], &header, &footer, &site).unwrap();
+        assert!(html.contains("lang=\"fr\""));
+        assert!(html.contains("rel=\"canonical\" href=\"https://ex.com/index.html\""));
+        assert!(html.contains("property=\"og:url\" content=\"https://ex.com/index.html\""));
+        assert!(html.contains("property=\"og:title\" content=\"Home\""));
     }
 }

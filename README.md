@@ -42,11 +42,14 @@ dd_siteforge init-site site.json
 # Edit interactively
 dd_siteforge tui site.json
 
-# Validate (exits non-zero on errors)
+# Validate (exits non-zero on errors; checks local images next to the JSON)
 dd_siteforge validate-site site.json
 
-# Export to ./web/ (or whatever site.export_dir is set to)
+# Export a self-contained site (HTML + framework assets + images)
 dd_siteforge export-html site.json ./web/
+
+# Export then serve at http://127.0.0.1:8765/
+dd_siteforge serve site.json
 
 # Inspect serialized state
 dd_siteforge show-site site.json
@@ -70,11 +73,14 @@ dd_siteforge show-site site.json
 ├── src/
 │   ├── main.rs                    CLI entry
 │   ├── model.rs                   Site → Page → Node typed tree
-│   ├── storage.rs                 JSON load/save
+│   ├── storage.rs                 JSON load/save (atomic)
 │   ├── validate.rs                structural + missing-image checks
 │   ├── renderer.rs                handlebars-driven HTML export
+│   ├── export.rs                  full site export (assets + sitemap/robots/404)
+│   ├── serve.rs                   local HTTP preview server
 │   ├── tui.rs                     interactive editor (App + Modal)
 │   └── tui/{cursor,editform}.rs   form-state + declarative form definitions
+├── framework/                     bundled dd-framework css/js/favicon/webfonts
 ├── docs/superpowers/{specs,plans}/  design + implementation plan archive
 ├── Architecture.md                module map, render/validation rules, key bindings
 ├── THEME_STRUCTURE_STANDARD.md    theme token schema
@@ -87,8 +93,8 @@ dd_siteforge show-site site.json
 1. `init-site` → starter `site.json`.
 2. Drop image source files in `./source/images/` next to the JSON.
 3. `tui` → edit pages, components, head metadata. Autosave writes every 2s; manual `s` makes a checkpoint backup.
-4. `Shift+E` to export validates first, then renders to `./web/` (or your configured `export_dir`) and copies `source/images/` to `web/assets/images/`.
-5. `p` previews the current page in the system browser.
+4. `Shift+E` to export validates first, then writes HTML, bundled framework assets (`assets/css`, `assets/js`, favicons, webfonts), `sitemap.xml`, `robots.txt`, `404.html`, and copies `source/images/` to `web/assets/images/`.
+5. `p` exports, starts a local HTTP server, and opens the current page in the system browser. `dd_siteforge serve site.json` does the same from the CLI.
 
 ## Theme
 

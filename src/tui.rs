@@ -112,6 +112,7 @@ struct App {
     pages_area: Rect,
     last_mouse_click: Option<(u16, u16, std::time::Instant)>,
     path: Option<PathBuf>,
+    preview_server: Option<crate::serve::StaticServer>,
     should_quit: bool,
     save_prompt_open: bool,
     save_input: String,
@@ -2700,7 +2701,7 @@ impl App {
                     state, cursor_pos, ..
                 }) = self.modal.as_mut()
                 {
-                    let value = format!("/{}", slug);
+                    let value = crate::model::page_href(&slug);
                     state.set(&field_id, value.clone());
                     *cursor_pos = state.get(&field_id).len();
                     self.push_toast(
@@ -3872,36 +3873,53 @@ impl App {
             .unwrap_or_else(|| PathBuf::from("."));
         let out = base.join(Path::new(&normalized));
 
-        if let Err(e) = crate::renderer::render_site_to_dir(&self.site, &out) {
+        if let Err(e) = crate::export::export_site(&self.site, &out, Some(&base)) {
             let msg = format!("Preview failed: {}", e);
             self.push_toast(ToastLevel::Warning, msg);
             return;
         }
         self.site.export_dir = Some(normalized.clone());
-        self.copy_source_images_to(&base, &out);
 
-        let slug = self.current_page_slug_for_preview();
-        let target = out.join(format!("{}.html", slug));
         let display = display_relative_path(&base, &out, &normalized);
         let count = self.site.pages.len();
         self.push_toast(
             ToastLevel::Success,
             format!("Exported {} page(s) to {}", count, display),
         );
-        match open_in_browser(&target) {
-            Ok(()) => {
-                self.push_toast(
-                    ToastLevel::Info,
-                    format!("Opening {} in browser…", target.display()),
-                );
-            }
+        match self.ensure_preview_server(out.clone()) {
+            Ok(url) => match open_in_browser(&url) {
+                Ok(()) => {
+                    self.push_toast(
+                        ToastLevel::Info,
+                        format!("Opening {} in browser…", url),
+                    );
+                }
+                Err(e) => {
+                    self.push_toast(
+                        ToastLevel::Warning,
+                        format!("Browser open failed: {}", e),
+                    );
+                }
+            },
             Err(e) => {
                 self.push_toast(
                     ToastLevel::Warning,
-                    format!("Browser open failed: {}", e),
+                    format!("Preview server failed: {}", e),
                 );
             }
         }
+    }
+
+    fn ensure_preview_server(&mut self, out: PathBuf) -> anyhow::Result<String> {
+        let slug = self.current_page_slug_for_preview();
+        if let Some(server) = self.preview_server.as_ref() {
+            server.set_root(out);
+            return Ok(server.url_for(&slug));
+        }
+        let server = crate::serve::StaticServer::start(out)?;
+        let url = server.url_for(&slug);
+        self.preview_server = Some(server);
+        Ok(url)
     }
 
     /// Slug of the currently selected page, falling back to the first page
@@ -3991,36 +4009,17 @@ impl App {
             .unwrap_or_else(|| PathBuf::from("."));
         let out = base.join(Path::new(&normalized));
 
-        match crate::renderer::render_site_to_dir(&self.site, &out) {
-            Ok(()) => {
+        match crate::export::export_site(&self.site, &out, Some(&base)) {
+            Ok(report) => {
                 self.site.export_dir = Some(normalized.clone());
-                self.copy_source_images_to(&base, &out);
-                let page_count = self.site.pages.len();
                 let display = display_relative_path(&base, &out, &normalized);
-                let msg = format!("Exported {} page(s) to {}", page_count, display);
+                let msg = format!("Exported {} page(s) to {}", report.pages, display);
                 self.push_toast(ToastLevel::Success, msg);
             }
             Err(e) => {
                 let msg = format!("Export failed: {}", e);
                 self.push_toast(ToastLevel::Warning, msg);
             }
-        }
-    }
-
-    /// Recursively copy `base/source/images/` → `<out>/assets/images/` when
-    /// the source exists. Silently skips when absent. Copy errors surface
-    /// as a warning toast but don't fail the export. The folder name
-    /// matches the path convention used in `parent_image_url` defaults
-    /// (`/assets/images/...`).
-    fn copy_source_images_to(&mut self, base: &std::path::Path, out: &std::path::Path) {
-        let src = base.join("source").join("images");
-        if !src.exists() {
-            return;
-        }
-        let dst = out.join("assets").join("images");
-        if let Err(e) = copy_dir_recursive(&src, &dst) {
-            let msg = format!("Images copy skipped: {}", e);
-            self.push_toast(ToastLevel::Warning, msg);
         }
     }
 
@@ -4333,6 +4332,7 @@ impl App {
             pages_area: Rect::default(),
             last_mouse_click: None,
             path,
+            preview_server: None,
             should_quit: false,
             save_prompt_open: false,
             save_input: String::new(),
@@ -7678,7 +7678,7 @@ impl App {
                 "Slug" => {
                     let trimmed = field.value.trim();
                     if !trimmed.is_empty() && trimmed != page.slug {
-                        page.slug = trimmed.to_string();
+                        page.slug = crate::model::slug_from_title(trimmed);
                         // An explicit slug edit locks the slug so future
                         // title renames stop auto-regenerating it.
                         page.slug_locked = true;
@@ -15777,10 +15777,7 @@ impl App {
         let meta = head.meta_description.clone().unwrap_or_default();
         // Default canonical URL to `/<slug>` when unset so authors can see
         // and optionally override the computed canonical.
-        let canon = head
-            .canonical_url
-            .clone()
-            .unwrap_or_else(|| format!("/{}", page.slug));
+        let canon = head.canonical_url.clone().unwrap_or_default();
         let slug = page.slug.clone();
         // Default OG Title to the page title when unset so social cards
         // have sensible copy; author can override.
@@ -16658,10 +16655,9 @@ impl App {
     /// a single serialization so the two files are guaranteed byte-identical.
     /// Refreshes the saved snapshot and clears the dirty flag on success.
     fn commit_save_with_backup(&mut self, path: &std::path::Path) -> anyhow::Result<()> {
-        let json = serde_json::to_string_pretty(&self.site)?;
-        std::fs::write(path, &json)?;
+        crate::storage::save_site(path, &self.site)?;
         let backup = backup_path_for(path);
-        std::fs::write(&backup, &json)?;
+        std::fs::copy(path, &backup)?;
         self.last_saved_json = serde_json::to_string(&self.site).unwrap_or_default();
         self.dirty = false;
         self.dirty_since = None;
@@ -19189,7 +19185,7 @@ fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
             ("F2", "Open/close theme source + color details (F2:Theme)"),
             ("F3", "Validate site (shows errors in a modal)"),
             ("Shift+E", "Export site to HTML (validates first; prompts for output dir on first use)"),
-            ("p", "Preview current page in browser (validates + exports first)"),
+            ("p", "Preview current page: export, start local HTTP server, open browser"),
             ("Ctrl+Q", "Quit"),
             ("s", "Open save modal and enter file path (also writes a .backup checkpoint)"),
             ("Tab / Shift+Tab", "Next/previous page"),
@@ -20738,8 +20734,8 @@ mod tests {
             .expect("Canonical URL field should exist");
         assert_eq!(
             canon_field.value,
-            format!("/{}", app.site.pages[0].slug),
-            "canonical should default to /<slug> when unset"
+            "",
+            "canonical stays empty when unset; export fills it from base_url"
         );
     }
 
@@ -20941,6 +20937,10 @@ mod tests {
         assert_eq!(last.level, ToastLevel::Success);
         assert!(last.message.to_lowercase().contains("exported"));
         assert!(tmp.join("web").exists(), "export directory should have been created");
+        assert!(
+            tmp.join("web").join("assets").join("css").join("style.min.css").exists(),
+            "export must include framework CSS"
+        );
 
         std::fs::remove_dir_all(&tmp).ok();
     }
@@ -21351,27 +21351,27 @@ fn chrono_like_format(t: std::time::SystemTime) -> Option<String> {
 /// output the opener (or its forked browser) writes to stdout/stderr lands
 /// on the same TTY as the TUI in raw mode and scrambles the screen layout.
 #[allow(dead_code)]
-fn open_in_browser(path: &std::path::Path) -> std::io::Result<()> {
+fn open_in_browser(target: &str) -> std::io::Result<()> {
     use std::process::{Command, Stdio};
     let mut cmd: Command;
     #[cfg(target_os = "linux")]
     {
         cmd = Command::new("xdg-open");
-        cmd.arg(path);
+        cmd.arg(target);
     }
     #[cfg(target_os = "macos")]
     {
         cmd = Command::new("open");
-        cmd.arg(path);
+        cmd.arg(target);
     }
     #[cfg(target_os = "windows")]
     {
         cmd = Command::new("cmd");
-        cmd.args(["/C", "start", ""]).arg(path);
+        cmd.args(["/C", "start", ""]).arg(target);
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
-        let _ = path;
+        let _ = target;
         return Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "no known browser opener for this target",
@@ -21388,21 +21388,6 @@ fn open_in_browser(path: &std::path::Path) -> std::io::Result<()> {
 /// know its total wrapped row count up front (for scroll clamp + scrollbar
 /// thumb sizing). Splits on '\n' first, then breaks long lines into
 
-
-fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dst)?;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let path = entry.path();
-        let target = dst.join(entry.file_name());
-        if path.is_dir() {
-            copy_dir_recursive(&path, &target)?;
-        } else {
-            std::fs::copy(&path, &target)?;
-        }
-    }
-    Ok(())
-}
 
 #[derive(Debug, Clone)]
 struct DirEntryRow {

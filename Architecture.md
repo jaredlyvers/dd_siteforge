@@ -28,7 +28,9 @@ Site
 │       ├── Hero(DdHero)      standalone, no wrapper
 │       └── Section(DdSection)
 │           └── columns → components
-└── export_dir: Option<String>
+├── export_dir: Option<String>
+├── base_url: Option<String>  origin for canonical / OG / sitemap
+└── lang: String              <html lang>, default "en"
 ```
 
 ## Components
@@ -51,13 +53,14 @@ Each component spec lives in `components/dd-*.md` (single source of truth for fi
   - `dd-modal` derives `parent_modal_id` from `parent_title` (HTML-id-safe).
   - `dd-slider` derives `parent_uid` from `parent_title`; `uid-<random6>` fallback.
   - `dd-hero.copy` accepts Markdown or HTML, converted at export.
-- Static export: `crate::renderer::render_site_to_dir(&site, &out)`. The TUI also copies `<site_dir>/source/images/` → `<out>/assets/images/` after rendering.
+- Static export: `crate::export::export_site(&site, &out, site_root)`. Writes `{slug}.html`, bundled `assets/` (css/js/favicon/webfonts), copies `<site_dir>/source/images/` → `<out>/assets/images/`, plus `sitemap.xml`, `robots.txt`, and `404.html` when no author 404 page exists.
+- Asset and page hrefs are same-directory relative (`assets/css/style.min.css`, `contact.html`). `p` / `serve` start a local HTTP server so those paths resolve.
 
 ## Validation
 
-`validate_site(&Site) → Vec<String>`: structural checks (unique slugs, paired link fields, required fields per component, etc.). The CLI `validate-site` subcommand uses this.
+`validate_site(&Site) → Vec<String>`: structural checks (unique slugs, paired link fields, required fields per component, etc.).
 
-`validate_site_with_root(&Site, Option<&Path>)`: superset that also resolves every `assets/images/*` URL against `<root>/source/images/` and reports missing files as `Missing local image: …`. The TUI calls this from the F3 modal, the export gate, and the preview gate; the CLI does not (no path context).
+`validate_site_with_root(&Site, Option<&Path>)`: superset that also resolves every `assets/images/*` URL against `<root>/source/images/` (pages, header, footer, `og_image`) and reports missing files as `Missing local image: …`. CLI `validate-site` / `export-html` / `serve` and the TUI F3/export/preview gates all use this when a site path is known.
 
 ## TUI Loop
 
@@ -80,7 +83,7 @@ loop:
 | `F2` | Theme info modal (source + status + color details; same layout as F1) |
 | `F3` | Validate site → modal on errors, success toast otherwise |
 | `Shift+E` | Export site (validate gate → render → copy source/images/) |
-| `p` | Preview current page (validate → export → spawn browser) |
+| `p` | Preview current page (validate → export → local HTTP server → browser) |
 | `s` | Save (writes `<path>` + `<path>.backup`) |
 | `/` | Insert component fuzzy picker |
 | `Tab` / `Shift+Tab` | Next/prev page |

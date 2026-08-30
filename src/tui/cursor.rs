@@ -216,7 +216,7 @@ pub fn apply_edit_form_to_component(
             apply_head_values(&mut p.head, state)?;
             let slug_val = state.get("slug").trim().to_string();
             if !slug_val.is_empty() && slug_val != p.slug {
-                p.slug = slug_val;
+                p.slug = crate::model::slug_from_title(&slug_val);
                 p.slug_locked = true;
             }
             let title_changed = p.head.title != orig_title;
@@ -1042,7 +1042,7 @@ pub fn page_head_to_form_state(page: &crate::model::Page) -> EditFormState {
     s.set("title", head.title.clone());
     s.set("slug", page.slug.clone());
     s.set("meta_description", head.meta_description.clone().unwrap_or_default());
-    let canon = head.canonical_url.clone().unwrap_or_else(|| format!("/{}", page.slug));
+    let canon = head.canonical_url.clone().unwrap_or_default();
     s.set("canonical_url", canon);
     let robots = match head.robots {
         crate::model::RobotsDirective::IndexFollow => "index, follow",
