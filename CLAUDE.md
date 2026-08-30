@@ -25,6 +25,7 @@ Guidance for Claude / agent sessions working on this repo.
 - Tests live in `#[cfg(test)] mod tests` blocks at the bottom of each module. Drive TUI behavior via the in-tree `send_key` helper rather than directly poking state where possible.
 - New fields on `model::Site` / `model::Page` get `#[serde(default)]` so legacy JSON keeps loading.
 - New TUI modal variants follow the four-point plumbing: enum variant + render dispatch + event dispatch + `Modal::variant_name` arm.
+- Nested `tui/tree/` and `tui/modals/` children use `pub(in crate::tui)` so the rest of the TUI can call those `impl App` methods.
 - Multi-field modal fields render through `render_edit_modal_unified` (Modal::Edit) or `render_form_edit_modal` (Modal::FormEdit). Single-input prompts share `render_single_input_modal`.
 - Render functions are `&self`. State that the event loop needs from render (e.g. cached field rects, `help_scroll_max`) goes through `RefCell` or pre-publish-into-`&mut self` fields.
 
@@ -62,8 +63,8 @@ src/
 ├── tui/mod.rs            App shell (struct, run loop, save/autosave)
 ├── tui/draw.rs           header / sidebar / details / footer frame
 ├── tui/events.rs         keyboard, mouse, Pages-panel dispatch
-├── tui/modals.rs         Modal enum + render/event handlers
-├── tui/tree.rs           layout tree rows + structural edits
+├── tui/modals/           Modal enum + render / form_edit / pickers / events / export
+├── tui/tree/             layout tree (build, nav, expand, open, edit, items, columns)
 ├── tui/details.rs        Details panel ASCII maps
 ├── tui/theme.rs          TUI theme load
 ├── tui/help.rs           F1/F2 modal text

@@ -14,8 +14,8 @@ src/
   tui/mod.rs            App shell (struct, run loop, save/autosave)
   tui/draw.rs           header / sidebar / details / footer frame
   tui/events.rs         keyboard, mouse, Pages-panel dispatch
-  tui/modals.rs         Modal enum + render/event handlers
-  tui/tree.rs           layout tree rows + structural edits
+  tui/modals/           Modal enum + render / form_edit / pickers / events / export
+  tui/tree/             layout tree (build, nav, expand, open, edit, items, columns)
   tui/details.rs        Details panel ASCII maps
   tui/theme.rs          TUI theme load
   tui/help.rs           F1/F2 modal text
