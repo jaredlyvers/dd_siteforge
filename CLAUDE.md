@@ -4,7 +4,7 @@ Guidance for Claude / agent sessions working on this repo.
 
 ## What this is
 
-`dd_siteforge` is a Rust terminal-UI CMS. Crate version is in `Cargo.toml` (`1.3.0` as of the F2 theme modal). Export writes a self-contained static site (HTML + bundled framework assets + images + sitemap/robots/404). Architecture lives in `Architecture.md`; per-feature design + implementation history lives under `docs/superpowers/`.
+`dd_siteforge` is a Rust terminal-UI CMS. Crate version is in `Cargo.toml` (`1.4.0`). Export writes a self-contained static site (HTML + bundled framework assets + images + sitemap/robots/404). Architecture lives in `Architecture.md`; per-feature design + implementation history lives under `docs/superpowers/`.
 
 ## Project conventions
 
