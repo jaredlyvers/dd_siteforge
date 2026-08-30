@@ -25,7 +25,7 @@ Guidance for Claude / agent sessions working on this repo.
 - Tests live in `#[cfg(test)] mod tests` blocks at the bottom of each module. Drive TUI behavior via the in-tree `send_key` helper rather than directly poking state where possible.
 - New fields on `model::Site` / `model::Page` get `#[serde(default)]` so legacy JSON keeps loading.
 - New TUI modal variants follow the four-point plumbing: enum variant + render dispatch + event dispatch + `Modal::variant_name` arm.
-- Nested `tui/tree/` and `tui/modals/` children use `pub(in crate::tui)` so the rest of the TUI can call those `impl App` methods.
+- Nested `tui/tree/`, `tui/modals/`, and `tui/details/` children use `pub(in crate::tui)` so the rest of the TUI can call those items.
 - Multi-field modal fields render through `render_edit_modal_unified` (Modal::Edit) or `render_form_edit_modal` (Modal::FormEdit). Single-input prompts share `render_single_input_modal`.
 - Render functions are `&self`. State that the event loop needs from render (e.g. cached field rects, `help_scroll_max`) goes through `RefCell` or pre-publish-into-`&mut self` fields.
 
@@ -63,13 +63,13 @@ src/
 ├── tui/mod.rs            App shell (struct, run loop, save/autosave)
 ├── tui/draw.rs           header / sidebar / details / footer frame
 ├── tui/events.rs         keyboard, mouse, Pages-panel dispatch
-├── tui/modals/           Modal enum + render / form_edit / pickers / events / export
+├── tui/modals/           Modal enum + paint / prompts / pickers / form_edit / events / export / toasts
 ├── tui/tree/             layout tree (build, nav, expand, open, edit, items, columns)
-├── tui/details.rs        Details panel ASCII maps
+├── tui/details/          Details panel (ascii maps, labels, click-to-select)
 ├── tui/theme.rs          TUI theme load
 ├── tui/help.rs           F1/F2 modal text
 ├── tui/cursor.rs         component → form-state mapping; apply_edit_form_to_component
-├── tui/editform.rs       declarative FormEdit values for every migrated component
+├── tui/editform/         FormEdit types + block / collection / layout form values
 ├── tui/component_kind.rs insert-picker kinds
 ├── tui/form_textarea.rs  FormEdit textarea layout
 └── tui/util.rs           small TUI helpers

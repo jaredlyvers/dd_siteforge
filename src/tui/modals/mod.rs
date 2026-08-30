@@ -1,7 +1,10 @@
 //! Modal types, rendering, and event handling.
 use super::*;
 
-mod render;
+mod paint;
+mod prompts;
+mod picker_paint;
+mod toasts;
 mod form_edit;
 mod pickers;
 mod events;

@@ -14,13 +14,13 @@ src/
   tui/mod.rs            App shell (struct, run loop, save/autosave)
   tui/draw.rs           header / sidebar / details / footer frame
   tui/events.rs         keyboard, mouse, Pages-panel dispatch
-  tui/modals/           Modal enum + render / form_edit / pickers / events / export
+  tui/modals/           Modal enum + paint / prompts / pickers / form_edit / events / export / toasts
   tui/tree/             layout tree (build, nav, expand, open, edit, items, columns)
-  tui/details.rs        Details panel ASCII maps
+  tui/details/          Details panel (ascii maps, labels, click-to-select)
   tui/theme.rs          TUI theme load
   tui/help.rs           F1/F2 modal text
   tui/cursor.rs         component → form-state mapping
-  tui/editform.rs       declarative form definitions (FormEdit values)
+  tui/editform/         FormEdit types + block / collection / layout form values
   tui/component_kind.rs insert-picker kinds
   tui/form_textarea.rs  FormEdit textarea layout
   tui/util.rs           small TUI helpers
