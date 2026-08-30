@@ -59,6 +59,8 @@ Thumbs.db
 /site.json.backup
 /web/
 /.kilo/
+/.superpowers/
+/graphify-out/
 
 # Author images only. Framework source (js/scss/favicon/vendors/webfonts/templates) is committed.
 /source/images/*

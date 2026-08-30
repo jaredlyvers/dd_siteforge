@@ -2,6 +2,8 @@
 
 Terminal-UI CMS for authoring framework-native static pages. Built in Rust on `ratatui` (rendering), `crossterm` (terminal events), `serde`/`serde_json` (state persistence), and `handlebars` (HTML export). Single-binary, no server, no database.
 
+Living product spec: `docs/SPEC.md`. Visual contract: `LDNDDEV_TUI_VISUAL_STANDARD.md`. Component fields: `components/dd-*.md`.
+
 ## Crate Layout
 
 ```

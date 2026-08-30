@@ -109,9 +109,9 @@ dd_siteforge show-site site.json
 ├── templates/                     bundled Handlebars (seeded to source/templates on init)
 ├── Gruntfile.js / package.json    CSS/JS build → web/assets
 ├── .lando.yml / .ddev/            optional local env (host npm is the contract)
-├── docs/superpowers/{specs,plans}/  design + implementation plan archive
+├── docs/SPEC.md                   living product spec
 ├── Architecture.md                module map, render/validation rules, key bindings
-├── THEME_STRUCTURE_STANDARD.md    theme token schema
+├── LDNDDEV_TUI_VISUAL_STANDARD.md portable TUI theme + shell contract
 ├── dd_siteforge_theme.yml         default theme
 └── Cargo.toml
 ```
@@ -132,7 +132,7 @@ Customize colors by writing one of these (first found wins):
 - `~/.config/ldnddev/dd_siteforge_theme.yml`
 - `~/.config/ldnddev/dd_siteforge/.theme.yml`
 
-Schema in `THEME_STRUCTURE_STANDARD.md`. Built-in default ships at `dd_siteforge_theme.yml`.
+Schema in `LDNDDEV_TUI_VISUAL_STANDARD.md`. Built-in default ships at `dd_siteforge_theme.yml`.
 
 ## Tests
 

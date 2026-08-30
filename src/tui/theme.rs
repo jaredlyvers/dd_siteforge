@@ -43,7 +43,7 @@ pub(crate) struct AppTheme {
     pub(crate) warning: Color,
     pub(crate) error: Color,
     pub(crate) info: Color,
-    // File-role colors (THEME_STRUCTURE_STANDARD.md section 8)
+    // File-role colors (LDNDDEV_TUI_VISUAL_STANDARD.md)
     pub(crate) folders: Color,
     pub(crate) files: Color,
     pub(crate) links: Color,
@@ -71,8 +71,8 @@ struct PaletteFile {
     base_background: String,
     body_background: Option<String>,
     modal_background: Option<String>,
-    // Text colors — new names match THEME_STRUCTURE_STANDARD.md, old names
-    // kept as aliases for in-tree theme files.
+    // Text colors — canonical names from LDNDDEV_TUI_VISUAL_STANDARD.md; old
+    // names kept as aliases for in-tree theme files.
     #[serde(alias = "text")]
     text_primary: String,
     #[serde(alias = "subtext0")]
@@ -283,7 +283,7 @@ impl AppTheme {
         let error = parse_hex_color(p.error.as_deref().unwrap_or("#a93226"))?;
         let info = parse_hex_color(p.info.as_deref().unwrap_or("#21618c"))?;
 
-        // File roles (THEME_STRUCTURE_STANDARD.md section 8)
+        // File roles (LDNDDEV_TUI_VISUAL_STANDARD.md)
         let folders = parse_hex_color(p.folders.as_deref().unwrap_or("#64b4f5"))?;
         let files = parse_hex_color(p.files.as_deref().unwrap_or("#ffaf46"))?;
         let links = parse_hex_color(p.links.as_deref().unwrap_or("#ffa087"))?;
