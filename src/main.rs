@@ -3,6 +3,7 @@ mod model;
 mod renderer;
 mod serve;
 mod storage;
+mod templates;
 mod tui;
 mod validate;
 
@@ -25,6 +26,17 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     InitSite { path: String },
+    /// Write default Handlebars templates into source/templates (skips files that already exist).
+    InitTemplates {
+        /// Site JSON path; templates go next to it in source/templates/.
+        path: String,
+        /// Overwrite existing template files.
+        #[arg(long)]
+        force: bool,
+        /// Seed only this template (e.g. dd-hero).
+        #[arg(long)]
+        name: Option<String>,
+    },
     ShowSite { path: String },
     ValidateSite { path: String },
     ExportHtml { input: String, output_dir: String },
@@ -47,7 +59,37 @@ fn main() -> anyhow::Result<()> {
             let site = Site::starter();
             save_site(&path, &site)
                 .with_context(|| format!("could not write starter site to '{}'", path))?;
+            let root = PathBuf::from(&path)
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("."));
+            let seeded = templates::seed_templates(&root, false, None)?;
             println!("Created starter site at {}", path);
+            if !seeded.written.is_empty() {
+                println!(
+                    "Wrote {} template(s) to {}/source/templates/",
+                    seeded.written.len(),
+                    root.display()
+                );
+            }
+        }
+        Command::InitTemplates { path, force, name } => {
+            let root = PathBuf::from(&path)
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("."));
+            let report = templates::seed_templates(&root, force, name.as_deref())?;
+            if !report.written.is_empty() {
+                println!("Wrote: {}", report.written.join(", "));
+            }
+            if !report.skipped.is_empty() {
+                println!(
+                    "Skipped existing (use --force to overwrite): {}",
+                    report.skipped.join(", ")
+                );
+            }
         }
         Command::ShowSite { path } => {
             let site =
@@ -98,9 +140,14 @@ fn main() -> anyhow::Result<()> {
                 )
             })?;
             println!(
-                "Exported {} page(s) to {}",
+                "Exported {} page(s) to {}{}",
                 report.pages,
-                out_path.display()
+                out_path.display(),
+                if report.wrote_404 {
+                    " (wrote 404.html)"
+                } else {
+                    ""
+                }
             );
         }
         Command::Serve {
@@ -129,10 +176,19 @@ fn main() -> anyhow::Result<()> {
                 .or_else(|| site.export_dir.clone())
                 .unwrap_or_else(|| "web".to_string());
             let out_path = root.join(&out);
-            export_site(&site, &out_path, Some(&root)).with_context(|| {
+            let report = export_site(&site, &out_path, Some(&root)).with_context(|| {
                 format!("could not export site '{}' to '{}'", path, out_path.display())
             })?;
-            println!("Exported {} to {}", site.pages.len(), out_path.display());
+            println!(
+                "Exported {} page(s) to {}{}",
+                report.pages,
+                out_path.display(),
+                if report.wrote_404 {
+                    " (wrote 404.html)"
+                } else {
+                    ""
+                }
+            );
             serve::serve_dir_blocking(out_path, port)?;
         }
         Command::Tui { path } => {

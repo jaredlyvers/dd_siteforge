@@ -1,0 +1,99 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-alternating {
+    @include mixins.position_relative();
+    & {
+        padding-bottom: 80px;
+    }
+    @include mixins.mq(lg) {
+        padding-bottom: 0px;
+    }
+    &__item {
+        &:nth-child(even) {
+            @include mixins.mq(lg) {
+                & .dd-alternating__image {
+                    order: 2;
+                }
+                & .dd-alternating__copy {
+                    order: 1;
+                }
+            }
+        }
+    }
+    &__content {
+        align-items: center;
+        margin: 0 auto;
+        width: 100%;
+        max-width: variables.$width-xl;
+    }
+    &__copy {
+        text-align: center;
+        @include mixins.mq(lg) {
+            text-align: left;
+        }
+    }
+    &__title {
+        //todo
+    }
+    &__image {
+        margin-bottom: 0px;
+        overflow: hidden;
+        text-align: center;
+        line-height: 0;
+        & img {
+            width: 100%;
+            height: auto;
+            object-fit: cover;
+            @include mixins.opacity(1);
+        }
+    }
+    &__links {
+        display: flex;
+        flex-direction: column;
+        @include mixins.mq(lg) {
+            flex-direction: row;
+            gap: 20px;
+        }
+    }
+    &__link {
+        // todo
+    }
+    &.-reverse {
+        & .dd-alternating__item {
+            &:nth-child(even) {
+                @include mixins.mq(lg) {
+                    & .dd-alternating__image {
+                        order: 1;
+                    }
+                    & .dd-alternating__copy {
+                        order: 2;
+                    }
+                }
+            }
+        }
+        &:nth-child(odd) {
+            @include mixins.mq(lg) {
+                & .dd-alternating__image {
+                    order: 2;
+                }
+                & .dd-alternating__copy {
+                    order: 1;
+                }
+            }
+        }
+    }
+    &.-no-alternate {
+        & .dd-alternating__item {
+            &:nth-child(even),
+            &:nth-child(odd) {
+                & .dd-alternating__image {
+                    order: 1;
+                }
+                & .dd-alternating__copy {
+                    order: 2;
+                }
+            }
+        }
+    }
+}

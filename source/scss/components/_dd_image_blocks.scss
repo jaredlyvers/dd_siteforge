@@ -1,0 +1,10 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-image-blocks {
+    @include mixins.position_relative();
+    background-position: center top;
+    background-repeat: no-repeat;
+    background-size: cover;
+    overflow: hidden;
+  }

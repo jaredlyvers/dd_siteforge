@@ -1,0 +1,35 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+/**
+ * nine scrolltop.
+ */
+ .dd-scrolltop {
+  position: fixed;
+  right: -100px;
+  bottom: 150px;
+  z-index: 1000;
+  @include mixins.all_transition();
+  &.-active {
+    right: 0px;
+  }
+  &__link {
+    border: solid 1px;
+    font-size: 25px;
+    border-right: none;
+    background-color: variables.$c_ui_neutral_100;
+    @include mixins.pref_dark {
+      background-color: variables.$c_ui_neutral_100--dark;
+    }
+    cursor: pointer;
+    @include mixins.border_radius(7px, 0px, 0px, 7px);
+    @include mixins.box_shadow();
+    & .fa {
+      padding: 10px 15px;
+    }
+    & a {
+      display: block;
+      padding: 12px;
+    }
+  }
+}

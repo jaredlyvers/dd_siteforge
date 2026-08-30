@@ -1,0 +1,22 @@
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{title}}</title>
+  {{#if meta_description}}<meta name="description" content="{{meta_description}}">{{/if}}
+  {{#if canonical_url}}<link rel="canonical" href="{{canonical_url}}">{{/if}}
+  <meta name="robots" content="{{robots}}">
+  {{#if og_title}}<meta property="og:title" content="{{og_title}}">{{/if}}
+  {{#if og_description}}<meta property="og:description" content="{{og_description}}">{{/if}}
+  {{#if og_image}}<meta property="og:image" content="{{og_image}}">{{/if}}
+  {{#if og_url}}<meta property="og:url" content="{{og_url}}">{{/if}}
+  <meta property="og:type" content="website">
+  {{#if twitter_card}}<meta name="twitter:card" content="{{twitter_card}}">{{/if}}
+  <link rel="icon" type="image/png" href="assets/favicon/favicon-96x96.png" sizes="96x96">
+  <link rel="icon" type="image/svg+xml" href="assets/favicon/favicon.svg">
+  <link rel="shortcut icon" href="assets/favicon/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/favicon/apple-touch-icon.png">
+  <link rel="manifest" href="assets/favicon/site.webmanifest">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="stylesheet" href="assets/css/style.min.css">
+  <script type="application/ld+json">{{{schema_json}}}</script>
+</head>

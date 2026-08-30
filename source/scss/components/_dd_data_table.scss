@@ -1,0 +1,134 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+// dd-data-table — accessible tabular data. Real <table>/<caption>/<th scope>.
+// Wide tables live in a keyboard-focusable scroll region (1.4.10 / 2.1.1) that
+// is only focusable when it actually overflows (toggled by JS). Sortable headers
+// are native <button>s with aria-sort on the owning <th>. Status cells embed
+// dd-badge. Focus rings use $c_text_primary so they clear 3:1 in both themes
+// (the brand $c_support_focus green fails 3:1 in light mode).
+.dd-data-table {
+  color: variables.$c_text_primary;
+  @include mixins.pref_dark {
+    color: variables.$c_text_primary--dark;
+  }
+
+  &__scroll {
+    overflow-x: auto;
+    // When JS adds tabindex="0" (table overflows), show a focus ring.
+    &:focus-visible {
+      outline: 2px solid variables.$c_text_primary;
+      outline-offset: 2px;
+      @include mixins.pref_dark {
+        outline-color: variables.$c_text_primary--dark;
+      }
+    }
+  }
+
+  &__table {
+    inline-size: 100%;
+    border-collapse: collapse;
+  }
+
+  &__caption {
+    text-align: start;
+    color: variables.$c_text_secondary;
+    @include mixins.font_size(15px);
+    margin-block-end: 10px;
+    @include mixins.pref_dark {
+      color: variables.$c_text_secondary--dark;
+    }
+  }
+
+  &__th,
+  &__td {
+    text-align: start;
+    padding: 12px 14px;
+    border-block-end: solid 1px variables.$c_support_border;
+    vertical-align: top;
+    @include mixins.pref_dark {
+      border-block-end-color: variables.$c_support_border--dark;
+    }
+    &[data-align="end"] {
+      text-align: end;
+    }
+    &[data-align="center"] {
+      text-align: center;
+    }
+  }
+
+  &__th {
+    @include mixins.font_headline(bold);
+    background-color: variables.$c_ui_neutral_200;
+    border-block-end-width: 2px;
+    @include mixins.pref_dark {
+      background-color: variables.$c_ui_neutral_200--dark;
+    }
+  }
+
+  // Row header cell (scope="row") reuses __td but stays bold.
+  tbody &__td[scope="row"],
+  tbody th.dd-data-table__td {
+    @include mixins.font_headline(bold);
+  }
+
+  &__sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-block-size: 24px; // 2.5.8 target size
+    padding: 2px 4px;
+    margin: -2px -4px;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    font-weight: bold;
+    &:focus-visible {
+      outline: 2px solid variables.$c_text_primary;
+      outline-offset: 2px;
+      border-radius: 3px;
+      @include mixins.pref_dark {
+        outline-color: variables.$c_text_primary--dark;
+      }
+    }
+  }
+
+  // Sort indicator (decorative; state lives in aria-sort on the <th>).
+  &__sort-ind::before {
+    content: "\2195"; // ↕ unsorted
+    opacity: 0.5;
+  }
+  [aria-sort="ascending"] &__sort-ind::before {
+    content: "\2191"; // ↑
+    opacity: 1;
+  }
+  [aria-sort="descending"] &__sort-ind::before {
+    content: "\2193"; // ↓
+    opacity: 1;
+  }
+
+  // Zebra striping for scan-ability.
+  tbody tr:nth-child(even) &__td {
+    background-color: variables.$c_ui_neutral_200;
+    @include mixins.pref_dark {
+      background-color: variables.$c_ui_neutral_200--dark;
+    }
+  }
+
+  &__row.-empty &__td {
+    text-align: center;
+    color: variables.$c_text_secondary;
+    @include mixins.pref_dark {
+      color: variables.$c_text_secondary--dark;
+    }
+  }
+
+  &.-dense {
+    .dd-data-table__th,
+    .dd-data-table__td {
+      padding: 6px 10px;
+    }
+  }
+}

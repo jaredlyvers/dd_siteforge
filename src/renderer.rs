@@ -2,35 +2,22 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::Context;
-use handlebars::Handlebars;
 use serde_json::{json, Value};
 
+use crate::templates::Renderer;
 use crate::model::{
     DdAccordion, DdAlert, DdAlternating, DdBanner, DdBlockquote, DdCard, DdCta, DdFilmstrip,
     DdFooter, DdHead, DdHeader, DdHero, DdMilestones, DdModal, DdSection, DdSlider, Page,
     PageNode, SectionComponent, Site,
 };
 
-const PAGE_TEMPLATE: &str = r#"<!DOCTYPE html>
-<html lang="{{lang}}">
-{{{head_html}}}
-<body class="dd-g">
-{{{header_html}}}
-<main>
-{{{content}}}
-</main>
-{{{footer_html}}}
-<script src="assets/js/main.min.js"></script>
-</body>
-</html>
-"#;
-
-pub fn render_site_to_dir(site: &Site, output_dir: &Path) -> anyhow::Result<()> {
+pub fn render_site_to_dir(site: &Site, output_dir: &Path, site_root: Option<&Path>) -> anyhow::Result<()> {
     fs::create_dir_all(output_dir).context("failed to create export directory")?;
-    let header_html = render_header(&site.header)?;
-    let footer_html = render_footer(&site.footer)?;
+    let r = Renderer::load(site_root)?;
+    let header_html = render_header(&r, &site.header)?;
+    let footer_html = render_footer(&r, &site.footer)?;
     for page in &site.pages {
-        let html = render_page_html_with_chrome(page, &header_html, &footer_html, site)?;
+        let html = render_page_html_with_chrome(&r, page, &header_html, &footer_html, site)?;
         let file_name = crate::model::page_file_name(&page.slug);
         let out_path = output_dir.join(file_name);
         fs::write(&out_path, html)
@@ -42,37 +29,36 @@ pub fn render_site_to_dir(site: &Site, output_dir: &Path) -> anyhow::Result<()> 
 #[cfg(test)]
 fn render_page_html(page: &Page) -> anyhow::Result<String> {
     let site = Site::starter();
-    render_page_html_with_chrome(page, "", "", &site)
+    let r = Renderer::bundled_only()?;
+    render_page_html_with_chrome(&r, page, "", "", &site)
 }
 
 pub fn render_page_html_with_chrome(
+    r: &Renderer,
     page: &Page,
     header_html: &str,
     footer_html: &str,
     site: &Site,
 ) -> anyhow::Result<String> {
-    let mut hbs = Handlebars::new();
-    hbs.register_template_string("page", PAGE_TEMPLATE)
-        .context("failed to register page template")?;
 
     let mut content = String::new();
     for node in &page.nodes {
         match node {
-            PageNode::Hero(hero) => content.push_str(&render_hero(hero)?),
-            PageNode::Section(section) => content.push_str(&render_section(section)?),
+            PageNode::Hero(hero) => content.push_str(&render_hero(r, hero)?),
+            PageNode::Section(section) => content.push_str(&render_section(r, section)?),
         }
         content.push('\n');
     }
 
-    let head_html = render_head(&page.head, site, page)?;
+    let head_html = render_head(r, &page.head, site, page)?;
     let lang = if site.lang.trim().is_empty() {
         "en"
     } else {
         site.lang.trim()
     };
 
-    hbs.render(
-        "page",
+    r.render(
+        "_page",
         &json!({
             "lang": lang,
             "head_html": head_html,
@@ -81,33 +67,9 @@ pub fn render_page_html_with_chrome(
             "content": content
         }),
     )
-    .context("failed to render page template")
 }
 
-fn render_head(head: &DdHead, site: &Site, page: &Page) -> anyhow::Result<String> {
-    let template = r##"<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{title}}</title>
-  {{#if meta_description}}<meta name="description" content="{{meta_description}}">{{/if}}
-  {{#if canonical_url}}<link rel="canonical" href="{{canonical_url}}">{{/if}}
-  <meta name="robots" content="{{robots}}">
-  {{#if og_title}}<meta property="og:title" content="{{og_title}}">{{/if}}
-  {{#if og_description}}<meta property="og:description" content="{{og_description}}">{{/if}}
-  {{#if og_image}}<meta property="og:image" content="{{og_image}}">{{/if}}
-  {{#if og_url}}<meta property="og:url" content="{{og_url}}">{{/if}}
-  <meta property="og:type" content="website">
-  {{#if twitter_card}}<meta name="twitter:card" content="{{twitter_card}}">{{/if}}
-  <link rel="icon" type="image/png" href="assets/favicon/favicon-96x96.png" sizes="96x96">
-  <link rel="icon" type="image/svg+xml" href="assets/favicon/favicon.svg">
-  <link rel="shortcut icon" href="assets/favicon/favicon.ico">
-  <link rel="apple-touch-icon" sizes="180x180" href="assets/favicon/apple-touch-icon.png">
-  <link rel="manifest" href="assets/favicon/site.webmanifest">
-  <meta name="theme-color" content="#ffffff">
-  <link rel="stylesheet" href="assets/css/style.min.css">
-  <script type="application/ld+json">{{{schema_json}}}</script>
-</head>"##;
-
+fn render_head(r: &Renderer, head: &DdHead, site: &Site, page: &Page) -> anyhow::Result<String> {
     let robots = robots_token(head.robots);
     let schema_type = schema_type_token(head.schema_type);
     let mut schema = serde_json::Map::new();
@@ -192,10 +154,10 @@ fn render_head(head: &DdHead, site: &Site, page: &Page) -> anyhow::Result<String
         "twitter_card": twitter_card,
         "schema_json": schema_json,
     });
-    render_inline(template, data)
+    r.render("_head", &data)
 }
 
-pub(crate) fn render_header(header: &DdHeader) -> anyhow::Result<String> {
+pub(crate) fn render_header(r: &Renderer, header: &DdHeader) -> anyhow::Result<String> {
     let custom = header
         .custom_css
         .as_deref()
@@ -204,37 +166,26 @@ pub(crate) fn render_header(header: &DdHeader) -> anyhow::Result<String> {
         .map(|v| format!(" {}", v))
         .unwrap_or_default();
     let alert_html = if let Some(alert) = &header.alert {
-        render_alert(alert)?
+        render_alert(r, alert)?
     } else {
         String::new()
     };
     let mut sections_html = String::new();
     for section in &header.sections {
-        sections_html.push_str(&render_section(section)?);
+        sections_html.push_str(&render_section(r, section)?);
         sections_html.push('\n');
     }
-    Ok(format!(
-        r#"<header class="dd-header{custom}">
-{alert_html}
-  <div class="dd-header__top">
-{sections_html}
-  </div>
-  <div class="dd-search">
-    <button class="dd-search__close">- search</button>
-    <form action="">
-      <label for="name">Search<br />
-        <input type="text" id="name">
-      </label>
-    </form>
-  </div>
-</header>"#,
-        custom = custom,
-        alert_html = alert_html,
-        sections_html = sections_html,
-    ))
+    r.render(
+        "dd-header",
+        &json!({
+            "custom": custom,
+            "alert_html": alert_html,
+            "sections_html": sections_html,
+        }),
+    )
 }
 
-pub(crate) fn render_footer(footer: &DdFooter) -> anyhow::Result<String> {
+pub(crate) fn render_footer(r: &Renderer, footer: &DdFooter) -> anyhow::Result<String> {
     let custom = footer
         .custom_css
         .as_deref()
@@ -244,18 +195,16 @@ pub(crate) fn render_footer(footer: &DdFooter) -> anyhow::Result<String> {
         .unwrap_or_default();
     let mut sections_html = String::new();
     for section in &footer.sections {
-        sections_html.push_str(&render_section(section)?);
+        sections_html.push_str(&render_section(r, section)?);
         sections_html.push('\n');
     }
-    Ok(format!(
-        r#"<footer class="dd-footer{custom}">
-  <div class="dd-footer__content">
-{sections_html}
-  </div>
-</footer>"#,
-        custom = custom,
-        sections_html = sections_html,
-    ))
+    r.render(
+        "dd-footer",
+        &json!({
+            "custom": custom,
+            "sections_html": sections_html,
+        }),
+    )
 }
 
 fn robots_token(r: crate::model::RobotsDirective) -> &'static str {
@@ -281,48 +230,11 @@ fn schema_type_token(s: crate::model::SchemaType) -> &'static str {
     }
 }
 
-fn render_hero(hero: &DdHero) -> anyhow::Result<String> {
-    let template = r#"<section class="dd-hero{{#if parent_class}} {{parent_class}}{{/if}}{{#if parent_custom_css}} {{parent_custom_css}}{{/if}}" aria-label="Introduction">
-  {{#if has_image}}<div class="dd-hero__image {{parent_image_class}}">
-    <picture>
-      {{#if parent_image_mobile}}<source media="(max-width: 767px)" srcset="{{parent_image_mobile}}">{{/if}}
-      {{#if parent_image_tablet}}<source media="(max-width: 1199px)" srcset="{{parent_image_tablet}}">{{/if}}
-      {{#if parent_image_desktop}}<source media="(min-width: 1200px)" srcset="{{parent_image_desktop}}">{{/if}}
-      <img src="{{parent_image_url}}" alt="{{parent_image_alt}}" class="dd-img">
-    </picture>
-  </div>
-  <style>
-    .dd-hero__image {
-      background-image: url('{{bg_mobile}}');
-    }
-    @media only screen and (min-width: 64em) {
-      .dd-hero__image {
-        background-image: url('{{bg_desktop}}');
-      }
-    }
-  </style>{{/if}}
-  <div class="dd-hero__content dd-g" data-sal="{{sal}}">
-    <div class="dd-hero__copy dd-u-1-1 dd-u-lg-12-24">
-      <div class="dd-hero__title"><h1>{{parent_title}}</h1></div>
-      {{#if parent_subtitle}}<div class="dd-hero__subtitle"><strong>{{parent_subtitle}}</strong></div>{{/if}}
-      {{#if has_body}}<div class="dd-hero__body">
-        {{#if parent_copy_html}}{{{parent_copy_html}}}{{/if}}
-        {{#if has_links}}<div class="dd-hero__links dd-g">
-          {{#if has_link_1}}<div class="dd-hero__link">
-            <a href="{{link_1_url}}" target="{{link_1_target}}" class="dd-button -primary">{{link_1_label}}</a>
-          </div>{{/if}}
-          {{#if has_link_2}}<div class="dd-hero__link">
-            <a href="{{link_2_url}}" target="{{link_2_target}}" class="dd-button -ghost">{{link_2_label}}</a>
-          </div>{{/if}}
-        </div>{{/if}}
-      </div>{{/if}}
-    </div>
-  </div>
-</section>"#;
-    render_inline(template, hero_to_json(hero))
+fn render_hero(r: &Renderer, hero: &DdHero) -> anyhow::Result<String> {
+    r.render("dd-hero", &hero_to_json(hero))
 }
 
-fn render_section(section: &DdSection) -> anyhow::Result<String> {
+fn render_section(r: &Renderer, section: &DdSection) -> anyhow::Result<String> {
     let mut columns_html = String::new();
     let item_box_class = section
         .item_box_class
@@ -334,45 +246,41 @@ fn render_section(section: &DdSection) -> anyhow::Result<String> {
         let mut inner = String::new();
         for component in &column.components {
             let html = match component {
-                SectionComponent::Alternating(v) => render_alternating(v)?,
-                SectionComponent::Card(v) => render_card(v)?,
-                SectionComponent::Cta(v) => render_cta(v)?,
-                SectionComponent::Filmstrip(v) => render_filmstrip(v)?,
-                SectionComponent::Milestones(v) => render_milestones(v)?,
-                SectionComponent::Slider(v) => render_slider(v)?,
-                SectionComponent::Modal(v) => render_modal(v)?,
-                SectionComponent::Banner(v) => render_banner(v)?,
-                SectionComponent::Accordion(v) => render_accordion(v)?,
-                SectionComponent::Blockquote(v) => render_blockquote(v)?,
-                SectionComponent::Alert(v) => render_alert(v)?,
-                SectionComponent::Image(v) => render_image(v)?,
-                SectionComponent::RichText(v) => render_rich_text(v)?,
-                SectionComponent::Navigation(v) => render_navigation(v)?,
-                SectionComponent::HeaderSearch(v) => render_header_search(v)?,
-                SectionComponent::HeaderMenu(v) => render_header_menu(v)?,
+                SectionComponent::Alternating(v) => render_alternating(r, v)?,
+                SectionComponent::Card(v) => render_card(r, v)?,
+                SectionComponent::Cta(v) => render_cta(r, v)?,
+                SectionComponent::Filmstrip(v) => render_filmstrip(r, v)?,
+                SectionComponent::Milestones(v) => render_milestones(r, v)?,
+                SectionComponent::Slider(v) => render_slider(r, v)?,
+                SectionComponent::Modal(v) => render_modal(r, v)?,
+                SectionComponent::Banner(v) => render_banner(r, v)?,
+                SectionComponent::Accordion(v) => render_accordion(r, v)?,
+                SectionComponent::Blockquote(v) => render_blockquote(r, v)?,
+                SectionComponent::Alert(v) => render_alert(r, v)?,
+                SectionComponent::Image(v) => render_image(r, v)?,
+                SectionComponent::RichText(v) => render_rich_text(r, v)?,
+                SectionComponent::Navigation(v) => render_navigation(r, v)?,
+                SectionComponent::HeaderSearch(v) => render_header_search(r, v)?,
+                SectionComponent::HeaderMenu(v) => render_header_menu(r, v)?,
             };
             inner.push_str(&html);
             inner.push('\n');
         }
-        columns_html.push_str(&format!(
-            r#"<div class="dd-section__item {} {}">{}</div>"#,
-            column.width_class, item_box_class, inner
-        ));
+        columns_html.push_str(&r.render(
+            "dd-section-column",
+            &json!({
+                "width_class": column.width_class,
+                "item_box_class": item_box_class,
+                "inner": inner,
+            }),
+        )?);
         columns_html.push('\n');
     }
 
-    let template = r#"<section class="dd-section {{section_class}}" aria-label="Content section">
-  <div class="dd-section__content">
-    {{#if section_title}}<div class="dd-section__title l-box">{{section_title}}</div>{{/if}}
-    <div class="dd-section__items dd-g">
-      {{{content}}}
-    </div>
-  </div>
-</section>"#;
 
-    render_inline(
-        template,
-        json!({
+    r.render(
+        "dd-section",
+        &json!({
             "section_class": section
                 .section_class
                 .as_ref()
@@ -385,30 +293,7 @@ fn render_section(section: &DdSection) -> anyhow::Result<String> {
     )
 }
 
-fn render_alternating(alternating: &DdAlternating) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-alternating {{parent_type}} {{parent_class}}" role="region">
-  <div class="dd-alternating__items dd-g">
-    {{#each items}}
-    <div class="dd-alternating__item dd-u-1-1">
-      <div class="dd-alternating__content dd-g">
-        <div class="dd-alternating__image dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-sal="{{../sal}}"{{#if sal_delay}} data-sal-delay="{{sal_delay}}"{{/if}}>
-          <picture>
-            <img src="{{child_image_url}}" class="dd-img" alt="{{child_image_alt}}" />
-          </picture>
-        </div>
-        <div class="dd-alternating__copy l-box dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-sal="{{../sal}}"{{#if sal_delay}} data-sal-delay="{{sal_delay}}"{{/if}}>
-          <div class="dd-alternating__title">
-            <h2>{{child_title}}</h2>
-          </div>
-          <div class="dd-alternating__body">
-            {{child_copy}}
-          </div>
-        </div>
-      </div>
-    </div>
-    {{/each}}
-  </div>
-</div>"#;
+fn render_alternating(r: &Renderer, alternating: &DdAlternating) -> anyhow::Result<String> {
     let mut v = serde_json::to_value(alternating)?;
     if let Some(obj) = v.as_object_mut() {
         obj.insert(
@@ -431,39 +316,10 @@ fn render_alternating(alternating: &DdAlternating) -> anyhow::Result<String> {
             attach_sal_stagger(items);
         }
     }
-    render_inline(template, v)
+    r.render("dd-alternating", &v)
 }
 
-fn render_card(card: &DdCard) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-card {{parent_type}}">
-  <div class="dd-card__items dd-g">
-    {{#each items}}
-    <div class="dd-card__item l-box {{../parent_width}}" data-sal="{{../sal}}"{{#if sal_delay}} data-sal-delay="{{sal_delay}}"{{/if}}>
-      <div class="dd-card__body dd-g">
-        <div class="dd-card__image">
-          <img src="{{child_image_url}}" alt="{{child_image_alt}}" class="dd-img" loading="lazy">
-        </div>
-        <div class="dd-card__copy l-box">
-          <div class="dd-card__title">
-            <h3>{{child_title}}</h3>
-          </div>
-          <div class="dd-card__subtitle">
-            <strong>{{child_subtitle}}</strong>
-          </div>
-          <p>{{child_copy}}</p>
-          {{#if has_link}}
-          <div class="dd-card__links dd-g">
-            <div class="dd-card__link">
-              <a href="{{child_link_url}}" target="{{child_link_target}}" class="dd-button -primary">{{child_link_label}}</a>
-            </div>
-          </div>
-          {{/if}}
-        </div>
-      </div>
-    </div>
-    {{/each}}
-  </div>
-</div>"#;
+fn render_card(r: &Renderer, card: &DdCard) -> anyhow::Result<String> {
     let mut items = Vec::new();
     for item in &card.items {
         let link_url = item
@@ -504,17 +360,10 @@ fn render_card(card: &DdCard) -> anyhow::Result<String> {
         "parent_width": card.parent_width,
         "items": items
     });
-    render_inline(template, data)
+    r.render("dd-card", &data)
 }
 
-fn render_banner(banner: &DdBanner) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-banner {{parent_class}}" data-sal="{{sal}}" style="background-image: url({{parent_image_url}});">
-  <div class="dd-banner__image">
-    <picture>
-      <img src="{{parent_image_url}}" class="dd-img" alt="{{parent_image_alt}}" />
-    </picture>
-  </div>
-</div>"#;
+fn render_banner(r: &Renderer, banner: &DdBanner) -> anyhow::Result<String> {
     let mut v = serde_json::to_value(banner)?;
     if let Some(obj) = v.as_object_mut() {
         obj.insert(
@@ -534,35 +383,10 @@ fn render_banner(banner: &DdBanner) -> anyhow::Result<String> {
             ),
         );
     }
-    render_inline(template, v)
+    r.render("dd-banner", &v)
 }
 
-fn render_cta(cta: &DdCta) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-cta {{parent_class}}">
-  <div class="dd-cta__image" style="background-image: url({{parent_image_url}});">
-    <picture>
-      <img src="{{parent_image_url}}" class="dd-img" alt="{{parent_image_alt}}" />
-    </picture>
-  </div>
-  <div class="dd-cta__content dd-g" data-sal="{{sal}}">
-    <div class="dd-cta__copy dd-u-1-1 dd-u-md-12-24">
-      <div class="dd-cta__title">
-        <h2>{{parent_title}}</h2>
-      </div>
-      <div class="dd-cta__subtitle">
-        <strong>{{parent_subtitle}}</strong>
-      </div>
-      <p>{{parent_copy}}</p>
-      {{#if has_link}}
-      <div class="dd-cta__links dd-g -x-center">
-        <div class="dd-cta__link">
-          <a href="{{parent_link_url}}" class="dd-button -primary" target="{{parent_link_target}}">{{parent_link_label}}</a>
-        </div>
-      </div>
-      {{/if}}
-    </div>
-  </div>
-</div>"#;
+fn render_cta(r: &Renderer, cta: &DdCta) -> anyhow::Result<String> {
 
     let link_url = cta
         .parent_link_url
@@ -597,64 +421,20 @@ fn render_cta(cta: &DdCta) -> anyhow::Result<String> {
         "parent_link_label": link_label.unwrap_or_default(),
         "has_link": has_link
     });
-    render_inline(template, data)
+    r.render("dd-cta", &data)
 }
 
-fn render_filmstrip(filmstrip: &DdFilmstrip) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-filmstrip {{parent_type}}" data-sal="{{sal}}">
-  <ul class="dd-filmstrip__content">
-    {{#each items}}
-    <li>
-      <img src="{{child_image_url}}" alt="{{child_image_alt}}" class="dd-img" loading="lazy">
-      <figure class="dd-filmstrip__title">{{child_title}}</figure>
-    </li>
-    {{/each}}
-  </ul>
-
-  <ul aria-hidden="true" class="dd-filmstrip__content">
-    {{#each items}}
-    <li role="presentation">
-      <img src="{{child_image_url}}" alt="{{child_image_alt}}" class="dd-img" loading="lazy">
-      <figure class="dd-filmstrip__title">{{child_title}}</figure>
-    </li>
-    {{/each}}
-  </ul>
-</div>"#;
+fn render_filmstrip(r: &Renderer, filmstrip: &DdFilmstrip) -> anyhow::Result<String> {
 
     let data = json!({
         "parent_type": serde_json::to_value(filmstrip.parent_type).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-default".to_string()),
         "sal": serde_json::to_value(filmstrip.sal).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade".to_string()),
         "items": filmstrip.items
     });
-    render_inline(template, data)
+    r.render("dd-filmstrip", &data)
 }
 
-fn render_milestones(milestones: &DdMilestones) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-milestones">
-  <div class="dd-milestones__content">
-    <div class="dd-milestones__items dd-g">
-      {{#each items}}
-      <div class="dd-milestones__item l-box {{../parent_width}}" data-sal="{{../sal}}"{{#if sal_delay}} data-sal-delay="{{sal_delay}}"{{/if}}>
-        <div class="dd-milestones__body l-box">
-          <div class="dd-milestones__percentage" data-number="{{child_percentage}}"><span class="number">{{child_percentage}}</span>%</div>
-          <div>
-            <div class="dd-milestones__title"><h2>{{child_title}}</h2></div>
-            <div class="dd-milestones__subtitle"><strong>{{child_subtitle}}</strong></div>
-            <div class="dd-milestones__copy">{{child_copy}}</div>
-            {{#if has_link}}
-            <div class="dd-milestones__links">
-              <div class="dd-milestones__link">
-                <a href="{{child_link_url}}" target="{{child_link_target}}" class="dd-button -primary">{{child_link_label}}</a>
-              </div>
-            </div>
-            {{/if}}
-          </div>
-        </div>
-      </div>
-      {{/each}}
-    </div>
-  </div>
-</div>"#;
+fn render_milestones(r: &Renderer, milestones: &DdMilestones) -> anyhow::Result<String> {
     let mut items = Vec::new();
     for item in &milestones.items {
         let link_url = item
@@ -693,66 +473,19 @@ fn render_milestones(milestones: &DdMilestones) -> anyhow::Result<String> {
         "parent_width": milestones.parent_width,
         "items": items
     });
-    render_inline(template, data)
+    r.render("dd-milestones", &data)
 }
 
-fn render_modal(modal: &DdModal) -> anyhow::Result<String> {
-    let template = r#"<button class="dd-modal__button-open" data-modal-open data-id="{{parent_modal_id}}">{{parent_title}}</button>
-<dialog data-modal id="{{parent_modal_id}}" class="dd-modal">
-  <button class="dd-modal__button-close" data-modal-close data-id="{{parent_modal_id}}" aria-label="close modal window">X</button>
-  <div class="dd-modal__copy">
-    <p>{{parent_copy}}</p>
-  </div>
-</dialog>"#;
+fn render_modal(r: &Renderer, modal: &DdModal) -> anyhow::Result<String> {
     let data = json!({
         "parent_title": modal.parent_title,
         "parent_copy": modal.parent_copy,
         "parent_modal_id": html_id_safe_from_title(&modal.parent_title, "modal")
     });
-    render_inline(template, data)
+    r.render("dd-modal", &data)
 }
 
-fn render_slider(slider: &DdSlider) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-slider">
-  {{#if has_parent_title}}
-  <div class="dd-slider__title">
-    <h2>{{parent_title}}</h2>
-  </div>
-  {{/if}}
-  <ul class="dd-slider__items -nostyle">
-    {{#each items}}
-    <li class="dd-slider__item" data-id="{{../parent_uid}}">
-      <div class="dd-slider__content">
-        <div class="dd-g">
-          <div class="dd-slider__body dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24 l-box">
-            <div class="dd-slider__title">
-              {{child_title}}
-            </div>
-            <div class="dd-slider__copy">
-              {{child_copy}}
-              {{#if has_link}}
-              <div class="dd-slider__links">
-                <div class="dd-slider__link">
-                  <a href="{{child_link_url}}" target="{{child_link_target}}" class="dd-button -primary">{{child_link_label}}</a>
-                </div>
-              </div>
-              {{/if}}
-            </div>
-          </div>
-          <div class="dd-slider__image dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24">
-            <img src="{{child_image_url}}" alt="{{child_image_alt}}" />
-          </div>
-        </div>
-      </div>
-    </li>
-    {{/each}}
-  </ul>
-  <div class="dd-slider__navigation">
-    <button class="dd-slider__previous" id="dd-slider__previous"><span class="-scrn-reader-only">Previous slide</span> &lt; </button>
-    <ul class="dd-slider__tabs -nostyle"></ul>
-    <button class="dd-slider__next" id="dd-slider__next"><span class="-scrn-reader-only">Next slide</span> &gt; </button>
-  </div>
-</div>"#;
+fn render_slider(r: &Renderer, slider: &DdSlider) -> anyhow::Result<String> {
 
     let fallback_uid = stable_uid_from_title(&slider.parent_title);
     let parent_uid = html_id_safe_from_title(&slider.parent_title, &fallback_uid);
@@ -794,22 +527,10 @@ fn render_slider(slider: &DdSlider) -> anyhow::Result<String> {
         "parent_uid": parent_uid,
         "items": items
     });
-    render_inline(template, data)
+    r.render("dd-slider", &data)
 }
 
-fn render_accordion(accordion: &DdAccordion) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-accordion {{parent_type}} {{parent_class}}" data-sal="{{sal}}">
-  <div class="dd-accordion__items">
-    {{#each items}}<details name="{{../parent_group_name}}" class="dd-accordion__item">
-      <summary class="dd-accordion__header dd-g -y-center">
-        <div class="dd-accordion__title dd-u-1-1">{{child_title}}</div>
-      </summary>
-      <div class="dd-accordion__copy"><p>{{child_copy}}</p></div>
-    </details>
-    {{/each}}
-  </div>
-</div>{{#if has_faq_schema}}
-<script type="application/ld+json">{{{faq_schema_json}}}</script>{{/if}}"#;
+fn render_accordion(r: &Renderer, accordion: &DdAccordion) -> anyhow::Result<String> {
     let mut v = serde_json::to_value(accordion)?;
     let faq_schema = serde_json::to_string(&json!({
         "@context": "https://schema.org",
@@ -859,30 +580,10 @@ fn render_accordion(accordion: &DdAccordion) -> anyhow::Result<String> {
         );
         obj.insert("faq_schema_json".to_string(), Value::String(faq_schema));
     }
-    render_inline(template, v)
+    r.render("dd-accordion", &v)
 }
 
-fn render_blockquote(blockquote: &DdBlockquote) -> anyhow::Result<String> {
-    let template = r#"<blockquote class="dd-blockquote">
-  <div class="dd-blockquote__content dd-g" data-sal="{{sal}}">
-    <div class="dd-blockquote__icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-quote-icon lucide-quote"><path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/></svg></div>
-    <div class="dd-blockquote__person dd-g l-box">
-      <div class="dd-blockquote__image">
-        <picture>
-          <img src="{{parent_image_url}}" class="dd-img" alt="{{parent_image_alt}}" />
-        </picture>
-      </div>
-      <div class="dd-blockquote__name-title">
-        <span class="dd-blockquote__name">{{parent_name}}</span>
-        <span class="dd-blockquote__title">, {{parent_role}}</span>
-      </div>
-      <div class="dd-blockquote__comment">
-        {{parent_copy}}
-      </div>
-    </div>
-  </div>
-</blockquote>
-<script type="application/ld+json">{{{blockquote_schema_json}}}</script>"#;
+fn render_blockquote(r: &Renderer, blockquote: &DdBlockquote) -> anyhow::Result<String> {
     let blockquote_schema_json = serde_json::to_string(&json!({
       "@context": "https://schema.org/",
       "@type": "Quotation",
@@ -910,22 +611,10 @@ fn render_blockquote(blockquote: &DdBlockquote) -> anyhow::Result<String> {
             Value::String(blockquote_schema_json),
         );
     }
-    render_inline(template, v)
+    r.render("dd-blockquote", &v)
 }
 
-fn render_alert(alert: &DdAlert) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-alert {{parent_type}} {{parent_class}}" role="alert" data-sal="{{sal}}">
-  <div class="dd-alert__content dd-g">
-    <div class="dd-u-1-1">
-      <div class="l-box">
-        {{#if has_title}}<div class="dd-alert__title">{{parent_title}}</div>{{/if}}
-        <div class="dd-alert__copy">
-          <p>{{parent_copy}}</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>"#;
+fn render_alert(r: &Renderer, alert: &DdAlert) -> anyhow::Result<String> {
     let data = json!({
         "parent_type": serde_json::to_value(alert.parent_type).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-default".to_string()),
         "parent_class": serde_json::to_value(alert.parent_class).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-default".to_string()),
@@ -934,27 +623,16 @@ fn render_alert(alert: &DdAlert) -> anyhow::Result<String> {
         "has_title": alert.parent_title.as_ref().map(|t| !t.trim().is_empty()).unwrap_or(false),
         "parent_copy": alert.parent_copy
     });
-    render_inline(template, data)
+    r.render("dd-alert", &data)
 }
 
-fn render_image(image: &crate::model::DdImage) -> anyhow::Result<String> {
+fn render_image(r: &Renderer, image: &crate::model::DdImage) -> anyhow::Result<String> {
     let data_aos = sal_token(image.sal);
     let has_link = image
         .parent_link_url
         .as_deref()
         .map(|v| !v.trim().is_empty())
         .unwrap_or(false);
-    let template = if has_link {
-        r#"<div class="dd-image" data-sal="{{sal}}">
-  <a href="{{parent_link_url}}" target="{{parent_link_target}}" title="{{parent_image_alt}}">
-    <img src="{{parent_image_url}}" alt="{{parent_image_alt}}" class="dd-img" loading="lazy" />
-  </a>
-</div>"#
-    } else {
-        r#"<div class="dd-image" data-sal="{{sal}}">
-  <img src="{{parent_image_url}}" alt="{{parent_image_alt}}" class="dd-img" loading="lazy" />
-</div>"#
-    };
     let link_target = image
         .parent_link_target
         .as_ref()
@@ -963,18 +641,16 @@ fn render_image(image: &crate::model::DdImage) -> anyhow::Result<String> {
         .unwrap_or_else(|| "_self".to_string());
     let data = json!({
         "sal": data_aos,
+        "has_link": has_link,
         "parent_image_url": image.parent_image_url,
         "parent_image_alt": image.parent_image_alt,
         "parent_link_url": image.parent_link_url.clone().unwrap_or_default(),
         "parent_link_target": link_target,
     });
-    render_inline(template, data)
+    r.render("dd-image", &data)
 }
 
-fn render_rich_text(rt: &crate::model::DdRichText) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-rich_text{{#if parent_class}} {{parent_class}}{{/if}}" data-sal="{{sal}}">
-  <div class="dd-rich_text__copy">{{{parent_copy_html}}}</div>
-</div>"#;
+fn render_rich_text(r: &Renderer, rt: &crate::model::DdRichText) -> anyhow::Result<String> {
     let parent_class = rt
         .parent_class
         .as_deref()
@@ -987,30 +663,25 @@ fn render_rich_text(rt: &crate::model::DdRichText) -> anyhow::Result<String> {
         "sal": sal_token(rt.sal),
         "parent_copy_html": parent_copy_html,
     });
-    render_inline(template, data)
+    r.render("dd-rich_text", &data)
 }
 
-fn render_navigation(nav: &crate::model::DdNavigation) -> anyhow::Result<String> {
+fn render_navigation(r: &Renderer, nav: &crate::model::DdNavigation) -> anyhow::Result<String> {
     let parent_class = navigation_class_token(nav.parent_class);
     let aria_label = match nav.parent_type {
         crate::model::NavigationType::HeaderNav => "header navigation",
         crate::model::NavigationType::FooterNav => "footer navigation",
     };
     let items_html = render_nav_items(&nav.items);
-    Ok(format!(
-        r#"<div class="dd-navigation {parent_class} -y-center" data-sal="{sal}">
-  <nav itemscope itemtype="https://schema.org/SiteNavigationElement" aria-label="{aria_label}">
-    <button class="dd-menu__close fa-regular fa-times" type="button"><span class="visually-hidden">Menu</span></button>
-    <ul class="menu">
-{items_html}
-    </ul>
-  </nav>
-</div>"#,
-        parent_class = parent_class,
-        sal = sal_token(nav.sal),
-        aria_label = aria_label,
-        items_html = items_html,
-    ))
+    r.render(
+        "dd-navigation",
+        &json!({
+            "parent_class": parent_class,
+            "sal": sal_token(nav.sal),
+            "aria_label": aria_label,
+            "items_html": items_html,
+        }),
+    )
 }
 
 fn render_nav_items(items: &[crate::model::NavigationItem]) -> String {
@@ -1071,30 +742,20 @@ fn render_nav_item(item: &crate::model::NavigationItem) -> String {
     )
 }
 
-fn render_header_search(search: &crate::model::DdHeaderSearch) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-header__search-icon {{parent_width}} -y-center -x-center" data-sal="{{sal}}">
-  <button class="dd-search__toggle fa-regular fa-magnifying-glass" type="button">
-    <span class="visually-hidden">Search</span>
-  </button>
-</div>"#;
+fn render_header_search(r: &Renderer, search: &crate::model::DdHeaderSearch) -> anyhow::Result<String> {
     let data = json!({
         "parent_width": search.parent_width,
         "sal": sal_token(search.sal),
     });
-    render_inline(template, data)
+    r.render("dd-header-search", &data)
 }
 
-fn render_header_menu(menu: &crate::model::DdHeaderMenu) -> anyhow::Result<String> {
-    let template = r#"<div class="dd-header__menu-icon {{parent_width}} -y-center -x-center" data-sal="{{sal}}">
-  <button class="dd-menu__toggle fa-regular fa-bars" type="button">
-    <span class="visually-hidden">Menu</span>
-  </button>
-</div>"#;
+fn render_header_menu(r: &Renderer, menu: &crate::model::DdHeaderMenu) -> anyhow::Result<String> {
     let data = json!({
         "parent_width": menu.parent_width,
         "sal": sal_token(menu.sal),
     });
-    render_inline(template, data)
+    r.render("dd-header-menu", &data)
 }
 
 fn sal_token(sal: crate::model::SalAnimation) -> String {
@@ -1134,13 +795,6 @@ fn navigation_class_token(class: crate::model::NavigationClass) -> &'static str 
     }
 }
 
-fn render_inline(template: &str, data: Value) -> anyhow::Result<String> {
-    let mut hbs = Handlebars::new();
-    hbs.register_template_string("inline", template)
-        .context("failed to register inline template")?;
-    hbs.render("inline", &data)
-        .context("failed to render inline template")
-}
 
 fn hero_to_json(hero: &DdHero) -> Value {
     let link_1_target = hero
@@ -1466,10 +1120,11 @@ mod tests {
         let mut site = Site::starter();
         site.base_url = Some("https://ex.com".to_string());
         site.lang = "fr".to_string();
-        let header = super::render_header(&site.header).unwrap();
-        let footer = super::render_footer(&site.footer).unwrap();
+        let r = crate::templates::Renderer::bundled_only().unwrap();
+        let header = super::render_header(&r, &site.header).unwrap();
+        let footer = super::render_footer(&r, &site.footer).unwrap();
         let html =
-            super::render_page_html_with_chrome(&site.pages[0], &header, &footer, &site).unwrap();
+            super::render_page_html_with_chrome(&r, &site.pages[0], &header, &footer, &site).unwrap();
         assert!(html.contains("lang=\"fr\""));
         assert!(html.contains("rel=\"canonical\" href=\"https://ex.com/index.html\""));
         assert!(html.contains("property=\"og:url\" content=\"https://ex.com/index.html\""));

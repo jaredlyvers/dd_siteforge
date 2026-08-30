@@ -1,0 +1,126 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+/**
+ * modifiers
+ */
+.-pull{
+  &-left {
+    float: left;
+  }
+  &-right{
+    float: right;
+  }
+}
+.-x-center {
+  justify-content: center;
+  text-align: center;
+}
+.-y-center {
+  align-items: center;
+  align-self: center;
+  align-content: center !important;
+}
+
+.-hidden,
+[hidden] {
+  display: none !important;
+}
+.visually-hidden:not(:focus):not(:active),
+.-scrn-reader-only:not(:focus):not(:active) {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+/**
+ * classes for easy use
+ */
+.-text {
+  &-primary {
+    color: variables.$c_text_primary;
+  }
+  &-secondary {
+    color: variables.$c_text_secondary;
+  }
+  &-disabled {
+    color: variables.$c_text_disabled;
+  }
+  &-inversed {
+    color: variables.$c_text_inverse;
+  }
+  &-left,
+  &-center,
+  &-right {
+    display: inline-block;
+  }
+  &-left {
+    text-align: left;
+  }
+  &-center {
+    text-align: center;
+  }
+  &-right {
+    text-align: right;
+  }
+  &-italic {
+    @include mixins.font_size(16px);
+    font-style: italic;
+    @include mixins.mq(lg) {
+      @include mixins.font_size(18px);
+    }
+  }
+  &-sm {
+    @include mixins.font_size(16px);
+    font-weight: 400;
+  }
+  &-sm-bold {
+    @include mixins.font_size(16px);
+    font-weight: 700;
+  }
+  &-sm-bold-italic {
+    @include mixins.font_size(16px);
+    font-weight: 700;
+    font-style: italic;
+  }
+  &-md {
+    font-weight: 400;
+  }
+  &-md-bold {
+    font-weight: 700;
+  }
+  &-md-bold-italic {
+    font-weight: 700;
+    font-style: italic;
+  }
+  &-disclaimer {
+    @include mixins.font_size(14px);
+    font-weight: 400;
+  }
+  &-disclaimer-bold {
+    @include mixins.font_size(14px);
+    font-weight: 700;
+  }
+}
+
+.-ui {
+  &-neutral-100 {
+    background-color: variables.$c_ui_neutral_100;
+  }
+  &-neutral-200 {
+    background-color: variables.$c_ui_neutral_200;
+  }
+  &-neutral-300 {
+    background-color: variables.$c_ui_neutral_300;
+  }
+  &-neutral-600 {
+    background-color: variables.$c_ui_neutral_600;
+  }
+  &-neutral-900 {
+    background-color: variables.$c_ui_neutral_900;
+  }
+}

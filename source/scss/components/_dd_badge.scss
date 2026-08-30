@@ -1,0 +1,75 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+// dd-badge — compact, non-interactive status/severity pill.
+// Severity maps to the repo's semantic tokens (matches dd-alert):
+// critical -> error, warning -> warning, info -> info, pass -> success.
+// Neutral (no modifier) uses the neutral UI surface.
+// a11y: meaning is carried by the __label text, never color alone (1.4.1).
+// Border is decorative (non-interactive, no state) so 1.4.11 does not apply.
+.dd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: solid 1px variables.$c_support_border;
+  border-radius: 999px;
+  background-color: variables.$c_ui_neutral_200;
+  color: variables.$c_text_primary;
+  @include mixins.font_size(14px);
+  line-height: 1.4;
+  white-space: nowrap;
+  vertical-align: baseline;
+  @include mixins.pref_dark {
+    border-color: variables.$c_support_border--dark;
+    background-color: variables.$c_ui_neutral_200--dark;
+    color: variables.$c_text_primary--dark;
+  }
+  &__icon {
+    display: inline-flex;
+    line-height: 1;
+  }
+  &__label {
+    font-weight: 600;
+  }
+  &.-info {
+    background-color: variables.$c_info_surface;
+    border-color: variables.$c_info_border;
+    color: variables.$c_info_text;
+    @include mixins.pref_dark {
+      background-color: variables.$c_info_surface--dark;
+      border-color: variables.$c_info_border--dark;
+      color: variables.$c_info_text--dark;
+    }
+  }
+  &.-warning {
+    background-color: variables.$c_warning_surface;
+    border-color: variables.$c_warning_border;
+    color: variables.$c_warning_text;
+    @include mixins.pref_dark {
+      background-color: variables.$c_warning_surface--dark;
+      border-color: variables.$c_warning_border--dark;
+      color: variables.$c_warning_text--dark;
+    }
+  }
+  &.-critical {
+    background-color: variables.$c_error_surface;
+    border-color: variables.$c_error_border;
+    color: variables.$c_error_text;
+    @include mixins.pref_dark {
+      background-color: variables.$c_error_surface--dark;
+      border-color: variables.$c_error_border--dark;
+      color: variables.$c_error_text--dark;
+    }
+  }
+  &.-pass {
+    background-color: variables.$c_success_surface;
+    border-color: variables.$c_success_border;
+    color: variables.$c_success_text;
+    @include mixins.pref_dark {
+      background-color: variables.$c_success_surface--dark;
+      border-color: variables.$c_success_border--dark;
+      color: variables.$c_success_text--dark;
+    }
+  }
+}

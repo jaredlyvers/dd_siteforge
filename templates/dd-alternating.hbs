@@ -1,0 +1,23 @@
+<div class="dd-alternating {{parent_type}} {{parent_class}}" role="region">
+  <div class="dd-alternating__items dd-g">
+    {{#each items}}
+    <div class="dd-alternating__item dd-u-1-1">
+      <div class="dd-alternating__content dd-g">
+        <div class="dd-alternating__image dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-sal="{{../sal}}"{{#if sal_delay}} data-sal-delay="{{sal_delay}}"{{/if}}>
+          <picture>
+            <img src="{{child_image_url}}" class="dd-img" alt="{{child_image_alt}}" />
+          </picture>
+        </div>
+        <div class="dd-alternating__copy l-box dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-sal="{{../sal}}"{{#if sal_delay}} data-sal-delay="{{sal_delay}}"{{/if}}>
+          <div class="dd-alternating__title">
+            <h2>{{child_title}}</h2>
+          </div>
+          <div class="dd-alternating__body">
+            {{child_copy}}
+          </div>
+        </div>
+      </div>
+    </div>
+    {{/each}}
+  </div>
+</div>

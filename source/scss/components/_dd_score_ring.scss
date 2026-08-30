@@ -1,0 +1,119 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+// dd-score-ring — radial SVG donut gauge. The numeric value + label are the
+// accessible truth (svg has role=img + aria-label, or the link owns the name);
+// tone colour is redundant reinforcement (1.4.1).
+// Arc tones use the semantic *_text tokens so the arc clears 3:1 vs the track
+// (1.4.11). Track ring is decorative. Grow-in motion is gated (2.3.3).
+.dd-score-ring {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  color: variables.$c_text_primary;
+  text-decoration: none;
+  @include mixins.pref_dark {
+    color: variables.$c_text_primary--dark;
+  }
+
+  &__svg {
+    inline-size: 120px;
+    block-size: 120px;
+  }
+
+  &.-sm &__svg {
+    inline-size: 72px;
+    block-size: 72px;
+  }
+  &.-lg &__svg {
+    inline-size: 160px;
+    block-size: 160px;
+  }
+
+  &__track {
+    stroke: variables.$c_support_border;
+    stroke-width: 8;
+    @include mixins.pref_dark {
+      stroke: variables.$c_support_border--dark;
+    }
+  }
+
+  &__value {
+    stroke: variables.$c_text_secondary; // overridden per tone below
+    stroke-width: 8;
+    stroke-linecap: round;
+    transition: none; // resting offset is the inline attr; animate only if allowed
+  }
+
+  &__num {
+    fill: variables.$c_text_primary;
+    @include mixins.font_headline(bold);
+    font-size: 30px;
+    @include mixins.pref_dark {
+      fill: variables.$c_text_primary--dark;
+    }
+  }
+
+  &__label {
+    @include mixins.font_headline(bold);
+    @include mixins.font_size(18px);
+  }
+
+  &__sub {
+    color: variables.$c_text_secondary;
+    @include mixins.font_size(14px);
+    @include mixins.pref_dark {
+      color: variables.$c_text_secondary--dark;
+    }
+  }
+
+  // Tones — arc colour only.
+  &.-good &__value {
+    stroke: variables.$c_success_text;
+    @include mixins.pref_dark {
+      stroke: variables.$c_success_text--dark;
+    }
+  }
+  &.-warn &__value {
+    stroke: variables.$c_warning_text;
+    @include mixins.pref_dark {
+      stroke: variables.$c_warning_text--dark;
+    }
+  }
+  &.-bad &__value {
+    stroke: variables.$c_error_text;
+    @include mixins.pref_dark {
+      stroke: variables.$c_error_text--dark;
+    }
+  }
+
+  // Link form — real <a>; ensure a 24x24 min target and a visible focus ring
+  // that clears 3:1 in both themes (support_focus green fails 3:1 in light).
+  &.-link {
+    min-inline-size: 24px;
+    min-block-size: 24px;
+    cursor: pointer;
+    &:hover .dd-score-ring__label {
+      text-decoration: underline;
+    }
+    &:focus-visible {
+      outline: 2px solid variables.$c_text_primary;
+      outline-offset: 3px;
+      border-radius: 4px;
+      @include mixins.pref_dark {
+        outline-color: variables.$c_text_primary--dark;
+      }
+    }
+  }
+}
+
+// Grow-in only when the user has not asked to reduce motion. The final
+// stroke-dashoffset is the inline attribute, so reduced motion renders the
+// correct arc with no animation.
+@media (prefers-reduced-motion: no-preference) {
+  .dd-score-ring__value {
+    transition: stroke-dashoffset 0.6s ease;
+  }
+}

@@ -1,0 +1,53 @@
+/**
+* login page
+*/
+.page{
+	&__user-login{
+		background-image: url(https://picsum.photos/1024/768/?blur);
+		background-position: top center;
+		background-repeat: no-repeat;
+		background-size: cover;
+		height: 100vh;
+        & .logo__image{
+            display: block;
+            max-width: 160px;
+            padding: 20px;
+            margin: 0 auto;
+        }
+		& .layout{
+			background-color: transparent;
+			&__content{
+				@include border_radius();
+				background-color: rgba($c_ui_neutral_100, .7);
+				padding: 20px;
+				margin: 0 auto;
+				text-align: center;
+				width: 100%;
+            }
+        }
+		& .page__title{
+			margin: 0;
+		}
+		& form{
+			& label{
+				display: table;
+				margin: 8px auto;
+			}
+			& input{
+				@border_radius(4px);
+				line-height: 32px;
+			}
+			& #edit-submit{
+				background-image: none;
+				background-color: $c_green;
+				line-height: 32px;
+				border-radius: 4px;
+				color: white;
+				display: table;
+				max-width: 573px;
+				margin: 0 auto;
+				width: 100%;
+			}
+		}
+	}
+}

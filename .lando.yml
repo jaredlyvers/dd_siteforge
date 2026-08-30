@@ -1,0 +1,37 @@
+# Optional. Host Node is the real build:
+#   npm install && npx grunt build
+#
+# Lando wraps the same commands and serves ./web.
+#   lando start
+#   lando npm install   # first time / after package.json change
+#   lando grunt build
+#   open https://dd-siteforge.lndo.site  (or http://localhost:8888)
+#
+name: dd-siteforge
+recipe: lamp
+
+proxy:
+  appserver:
+    - dd-siteforge.lndo.site
+
+config:
+  php: '8.2'
+  via: apache
+  webroot: web
+
+services:
+  appserver:
+    ports:
+      - '8888:80'
+  node:
+    type: 'node:20'
+    build:
+      - npm install
+
+tooling:
+  npm:
+    service: node
+  node:
+    service: node
+  grunt:
+    service: node

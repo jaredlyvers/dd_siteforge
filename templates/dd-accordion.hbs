@@ -1,0 +1,12 @@
+<div class="dd-accordion {{parent_type}} {{parent_class}}" data-sal="{{sal}}">
+  <div class="dd-accordion__items">
+    {{#each items}}<details name="{{../parent_group_name}}" class="dd-accordion__item">
+      <summary class="dd-accordion__header dd-g -y-center">
+        <div class="dd-accordion__title dd-u-1-1">{{child_title}}</div>
+      </summary>
+      <div class="dd-accordion__copy"><p>{{child_copy}}</p></div>
+    </details>
+    {{/each}}
+  </div>
+</div>{{#if has_faq_schema}}
+<script type="application/ld+json">{{{faq_schema_json}}}</script>{{/if}}

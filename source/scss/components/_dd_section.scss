@@ -1,0 +1,71 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-section {
+  $p: &;
+  top: 0px;
+  left: 0px;
+  margin: 0 auto;
+  padding: 40px 0;
+  max-width: variables.$width_xl;
+  &__content {
+    @include mixins.position_relative();
+    margin: 0 auto;
+    max-width: variables.$width_xl;
+  }
+  &__title {
+    @include mixins.font_headline(bold);
+    @include mixins.font_size(22px);
+  }
+  &.-no-padding {
+    padding: 0;
+  }
+  &.-full-full {
+    max-width: 100%;
+    & .dd-section__content {
+      max-width: 100%;
+    }
+  }
+  &.-full-contained {
+    max-width: 100%;
+    & .dd-section__content {
+      max-width: variables.$max_width;
+    }
+  }
+  &.-full-md {
+    max-width: 100%;
+    & .dd-section__content {
+      max-width: variables.$width_md;
+    }
+  }
+  &.-full-lg {
+    max-width: 100%;
+    & .dd-section__content {
+      max-width: variables.$width_lg;
+    }
+  }
+  &.-full-xl {
+    max-width: 100%;
+    & .dd-section__content {
+      max-width: variables.$width_xl;
+    }
+  }
+  &.-full-xxl {
+    max-width: 100%;
+    & .dd-section__content {
+      max-width: variables.$width_xxl;
+    }
+  }
+  &.-md {
+    max-width: variables.$width_md;
+  }
+  &.-lg {
+    max-width: variables.$width_lg;
+  }
+  &.-xl {
+    max-width: variables.$width_xl;
+  }
+  &.-xxl {
+    max-width: variables.$width_xxl;
+  }
+}

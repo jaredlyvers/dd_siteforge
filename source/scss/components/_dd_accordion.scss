@@ -1,0 +1,185 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-accordion {
+  @include mixins.position_relative();
+  color: variables.$c_text_primary;
+  @include mixins.pref_dark {
+    color: variables.$c_text_primary--dark;
+  }
+  &__items {
+    width: 100%;
+  }
+  &__item { //details element
+    position: relative;
+    border: solid 1px variables.$c_support_border;
+    @include mixins.pref_dark {
+      border: solid 1px variables.$c_support_border--dark;
+    }
+    &:hover {
+      border: solid 1px variables.$c_support_focus;
+      @include mixins.pref_dark {
+        border: solid 1px variables.$c_support_focus--dark;
+      }
+      & .dd-accordion__header {
+        color: variables.$c_support_focus;
+        @include mixins.pref_dark {
+          color: variables.$c_support_focus--dark;
+        }
+      }
+    }
+    &[open],
+    &:open {
+      border-color: variables.$c_support_focus;
+      @include mixins.pref_dark {
+        border-color: variables.$c_support_focus--dark;
+      }
+      & .dd-accordion__header {
+        color: variables.$c_support_focus;
+        @include mixins.pref_dark {
+          color: variables.$c_support_focus--dark;
+        }
+        &::after {
+          content: "-";
+        }
+      }
+    }
+  }
+  &__header { // summary element
+    cursor: pointer;
+    list-style: none;
+    padding: 1rem;
+    &::marker,
+    &::-webkit-details-marker {
+      display: none;
+      content: none;
+    }
+    &::after {
+      position: absolute;
+      top: 0px;
+      right: 0px;
+      padding: 1rem;
+      cursor: pointer;
+      content: "+";
+    }
+  }
+  &__title {
+    //todo
+  }
+  &__copy {
+    padding: 0 1rem;
+  }
+  &.-borderless {
+    & .dd-accordion__item {
+      border: none;
+    }
+  }
+  &.-compact {
+    & .dd-accordion__header {
+      padding: 0.5rem;
+    }
+    & .dd-accordion__copy {
+      padding: 0 0.5rem;
+    }
+  }
+  &.-primary {
+    & .dd-accordion__item { //details element
+      &:hover {
+        border: solid 1px variables.$c_primary_action_default_border;
+        @include mixins.pref_dark {
+          border: solid 1px variables.$c_primary_action_default_border--dark;
+        }
+        & .dd-accordion__header {
+          background-color: variables.$c_primary_action_default_surface;
+          color: variables.$c_primary_action_default_text;
+          @include mixins.pref_dark {
+            background-color: variables.$c_primary_action_default_surface--dark;
+            color: variables.$c_primary_action_default_text--dark;
+          }
+        }
+      }
+      &[open],
+      &:open {
+        //background-color: variables.$c_primary_action_default_surface;
+        border-color: variables.$c_primary_action_default_border;
+        @include mixins.pref_dark {
+          border-color: variables.$c_primary_action_default_border--dark;
+        }
+        & .dd-accordion__header {
+          background-color: variables.$c_primary_action_default_surface;
+          color: variables.$c_primary_action_default_text;
+          @include mixins.pref_dark {
+            background-color: variables.$c_primary_action_default_surface--dark;
+            color: variables.$c_primary_action_default_text--dark;
+          }
+        }
+      }
+    }
+  }
+  &.-secondary {
+    & .dd-accordion__item { //details element
+      &:hover {
+        border: solid 1px variables.$c_secondary_action_default_border;
+        @include mixins.pref_dark {
+          border: solid 1px variables.$c_secondary_action_default_border--dark;
+        }
+        & .dd-accordion__header {
+          background-color: variables.$c_secondary_action_default_surface;
+          color: variables.$c_secondary_action_default_text;
+          @include mixins.pref_dark {
+            background-color: variables.$c_secondary_action_default_surface--dark;
+            color: variables.$c_secondary_action_default_text--dark;
+          }
+        }
+      }
+      &[open],
+      &:open {
+        border-color: variables.$c_secondary_action_default_border;
+        @include mixins.pref_dark {
+          border-color: variables.$c_secondary_action_default_border--dark;
+        }
+        & .dd-accordion__header {
+          background-color: variables.$c_secondary_action_default_surface;
+          color: variables.$c_secondary_action_default_text;
+          @include mixins.pref_dark {
+            background-color: variables.$c_secondary_action_default_surface--dark;
+            color: variables.$c_secondary_action_default_text--dark;
+          }
+        }
+      }
+    }
+  }
+  &.-tertiary {
+    & .dd-accordion__item { //details element
+      &:hover {
+        border: solid 1px variables.$c_tertiary_action_default_border;
+        @include mixins.pref_dark {
+          border: solid 1px variables.$c_tertiary_action_default_border--dark;
+        }
+        & .dd-accordion__header {
+          background-color: variables.$c_tertiary_action_default_surface;
+          color: variables.$c_tertiary_action_default_text;
+          @include mixins.pref_dark {
+            background-color: variables.$c_tertiary_action_default_surface--dark;
+            color: variables.$c_tertiary_action_default_text--dark;
+          }
+        }
+      }
+      &[open],
+      &:open {
+        border-color: variables.$c_tertiary_action_default_border;
+        @include mixins.pref_dark {
+          border-color: variables.$c_tertiary_action_default_border--dark;
+        }
+        & .dd-accordion__header {
+          background-color: variables.$c_tertiary_action_default_surface;
+          color: variables.$c_tertiary_action_default_text;
+          @include mixins.pref_dark {
+            background-color: variables.$c_tertiary_action_default_surface--dark;
+            color: variables.$c_tertiary_action_default_text--dark;
+          }
+        }
+      }
+    }
+  }
+}

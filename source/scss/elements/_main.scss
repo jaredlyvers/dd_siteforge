@@ -1,0 +1,28 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+html {
+  //todo
+}
+
+body {
+  //todo
+}
+
+html,
+body {
+  @include mixins.position_relative();
+  @include mixins.font_base();
+  @include mixins.font_size(16px);
+  background-color: variables.$c_ui_neutral_100;
+  box-sizing: border-box;
+  color: variables.$c_text_primary;
+  line-height: 160%;
+  @include mixins.mq(lg) {
+    @include mixins.font_size(18px);
+  }
+  @include mixins.pref_dark {
+    background-color: variables.$c_ui_neutral_100--dark;
+    color: variables.$c_text_primary--dark;
+  }
+}

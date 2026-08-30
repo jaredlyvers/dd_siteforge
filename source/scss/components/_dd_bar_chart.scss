@@ -1,0 +1,109 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+// dd-bar-chart — dependency-free horizontal bars. The label + value TEXT is the
+// accessible truth; the track/fill are decorative (aria-hidden). Fill tones use
+// the semantic *_text tokens so the fill clears 3:1 vs the track (1.4.11).
+// Reflow (1.4.10): the value is a grid sibling after the track and never wraps
+// or hides behind the bar; the track absorbs the shrink via minmax(0,1fr).
+.dd-bar-chart {
+  margin: 0;
+
+  &__caption {
+    color: variables.$c_text_secondary;
+    @include mixins.font_size(16px);
+    margin-block-end: 12px;
+    @include mixins.pref_dark {
+      color: variables.$c_text_secondary--dark;
+    }
+  }
+
+  &__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: minmax(6rem, auto) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+  }
+
+  &__label,
+  &__value {
+    color: variables.$c_text_primary;
+    @include mixins.font_size(15px);
+    @include mixins.pref_dark {
+      color: variables.$c_text_primary--dark;
+    }
+  }
+
+  &__value {
+    font-weight: 600;
+    white-space: nowrap; // never wrap or clip the value
+    text-align: end;
+  }
+
+  &__track {
+    block-size: 12px;
+    inline-size: 100%;
+    min-inline-size: 0;
+    background-color: variables.$c_support_border;
+    border-radius: 999px;
+    overflow: hidden; // clip the fill here, never at row level
+    @include mixins.pref_dark {
+      background-color: variables.$c_support_border--dark;
+    }
+  }
+
+  &__fill {
+    display: block;
+    block-size: 100%;
+    inline-size: 0; // set inline via style="inline-size:{pct}%"
+    background-color: variables.$c_text_secondary; // overridden per tone
+    border-radius: inherit;
+  }
+
+  &__row.-good &__fill {
+    background-color: variables.$c_success_text;
+    @include mixins.pref_dark {
+      background-color: variables.$c_success_text--dark;
+    }
+  }
+  &__row.-warn &__fill {
+    background-color: variables.$c_warning_text;
+    @include mixins.pref_dark {
+      background-color: variables.$c_warning_text--dark;
+    }
+  }
+  &__row.-bad &__fill {
+    background-color: variables.$c_error_text;
+    @include mixins.pref_dark {
+      background-color: variables.$c_error_text--dark;
+    }
+  }
+
+  // Narrow / high-zoom: stack label+value on one line, full-width track below,
+  // so the value is never compressed (1.4.10 / 1.4.4).
+  @include mixins.mq(30rem, max) {
+    &__row {
+      grid-template-columns: 1fr auto;
+    }
+    &__track {
+      grid-column: 1 / -1;
+    }
+  }
+}
+
+// Fill grow-in only when motion is allowed; the resting width is the inline
+// style, so reduced motion shows the correct bar with no transition.
+@media (prefers-reduced-motion: no-preference) {
+  .dd-bar-chart__fill {
+    transition: inline-size 0.6s ease;
+  }
+}

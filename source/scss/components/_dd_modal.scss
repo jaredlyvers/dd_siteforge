@@ -1,0 +1,25 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-modal {
+  padding: 1rem;
+  background-color: variables.$c_ui_neutral_100;
+  @include mixins.pref_dark {
+    background-color: variables.$c_ui_neutral_100--dark;
+  }
+  &::backdrop {
+    background-color: rgba(variables.$c_ui_neutral_900, 0.5);
+    @include mixins.pref_dark {
+      background-color: rgba(variables.$c_ui_neutral_900--dark, 0.5);
+    }
+  }
+  &__content {
+    color: variables.$c_text_primary;
+    @include mixins.pref_dark {
+      color: variables.$c_text_primary--dark;
+    }
+  }
+  &[open] {
+    //todo
+  }
+}

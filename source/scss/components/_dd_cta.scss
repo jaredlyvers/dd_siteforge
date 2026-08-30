@@ -1,0 +1,109 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-cta {
+  @include mixins.position_relative();
+  &__image {
+    background-position: center center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    line-height: 0px;
+    & img {
+      @include mixins.opacity(0);
+      width: 100%;
+      height: auto;
+      object-fit: cover;
+      @include mixins.mq(lg) {
+        min-height: 100%;
+      }
+    }
+  }
+  &__content {
+    top: 0px;
+    width: 100%;
+    height: 100%;
+    align-content: center;
+    justify-content: center;
+    @include mixins.position_relative();
+    @include mixins.mq(lg) {
+      position: absolute;
+    }
+  }
+  &__copy {
+    border: solid 1px;
+    background-color: variables.$c_ui_neutral_100;
+    @include mixins.pref_dark {
+      background-color: variables.$c_ui_neutral_100--dark;
+    }
+    padding: 2%;
+    text-align: center;
+    @include mixins.mq(lg) {
+      max-width: 50%;
+    }
+  }
+  &__title {
+    & h2 {
+      // todo
+    }
+  }
+  &__links {
+    gap: 1rem;
+  }
+  &__link {
+    // todo
+  }
+  &.-top-left {
+    & .dd-cta__content {
+      justify-content: flex-start;
+      align-content: flex-start;
+    }
+  }
+  &.-top-center {
+    & .dd-cta__content {
+      justify-content: center;
+      align-content: flex-start;
+    }
+  }
+  &.-top-right {
+    & .dd-cta__content {
+      justify-content: flex-end;
+      align-content: flex-start;
+    }
+  }
+  &.-center-left {
+    & .dd-cta__content {
+      justify-content: flex-start;
+      align-content: center;
+    }
+  }
+  &.-center-center {
+    & .dd-cta__content {
+      justify-content: center;
+      align-content: center;
+    }
+  }
+  &.-center-right {
+    & .dd-cta__content {
+      justify-content: flex-end;
+      align-content: center;
+    }
+  }
+  &.-bottom-left {
+    & .dd-cta__content {
+      justify-content: flex-start;
+      align-content: flex-end;
+    }
+  }
+  &.-bottom-center {
+    & .dd-cta__content {
+      justify-content: center;
+      align-content: flex-end;
+    }
+  }
+  &.-bottom-right {
+    & .dd-cta__content {
+      justify-content: flex-end;
+      align-content: flex-end;
+    }
+  }
+}

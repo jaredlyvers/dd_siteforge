@@ -1,0 +1,108 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+// dd-finding — list of audit findings. Each item = embedded dd-badge (severity
+// word, the accessible truth) + title + optional evidence + fix. The left accent
+// stripe is redundant reinforcement of the badge (1.4.1), so it is exempt from
+// 1.4.11 — never make it the sole severity signal.
+.dd-finding {
+  &__heading {
+    @include mixins.font_headline(bold);
+    margin-block-end: 16px;
+  }
+
+  &__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  &__item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 12px;
+    padding: 14px 16px;
+    border-inline-start: solid 4px variables.$c_support_border;
+    background-color: variables.$c_ui_neutral_200;
+    border-radius: 0 6px 6px 0;
+    @include mixins.pref_dark {
+      border-inline-start-color: variables.$c_support_border--dark;
+      background-color: variables.$c_ui_neutral_200--dark;
+    }
+  }
+
+  &__item.-critical {
+    border-inline-start-color: variables.$c_error_border;
+    @include mixins.pref_dark {
+      border-inline-start-color: variables.$c_error_border--dark;
+    }
+  }
+  &__item.-warning {
+    border-inline-start-color: variables.$c_warning_border;
+    @include mixins.pref_dark {
+      border-inline-start-color: variables.$c_warning_border--dark;
+    }
+  }
+  &__item.-info {
+    border-inline-start-color: variables.$c_info_border;
+    @include mixins.pref_dark {
+      border-inline-start-color: variables.$c_info_border--dark;
+    }
+  }
+  &__item.-pass {
+    border-inline-start-color: variables.$c_success_border;
+    @include mixins.pref_dark {
+      border-inline-start-color: variables.$c_success_border--dark;
+    }
+  }
+
+  &__badge {
+    padding-block-start: 2px;
+  }
+
+  &__title {
+    @include mixins.font_headline(bold);
+    color: variables.$c_text_primary;
+    margin: 0 0 6px;
+    @include mixins.pref_dark {
+      color: variables.$c_text_primary--dark;
+    }
+  }
+
+  &__evidence,
+  &__fix {
+    color: variables.$c_text_secondary;
+    @include mixins.font_size(15px);
+    margin: 0 0 4px;
+    @include mixins.pref_dark {
+      color: variables.$c_text_secondary--dark;
+    }
+    // Keep inline links distinguishable by more than colour (1.4.1) and
+    // visibly focusable (2.4.7).
+    a {
+      color: inherit;
+      text-decoration: underline;
+      &:focus-visible {
+        outline: 2px solid variables.$c_text_primary;
+        outline-offset: 2px;
+        @include mixins.pref_dark {
+          outline-color: variables.$c_text_primary--dark;
+        }
+      }
+    }
+  }
+
+  &__fix-label {
+    font-weight: bold;
+  }
+
+  &__empty {
+    color: variables.$c_text_secondary;
+    @include mixins.pref_dark {
+      color: variables.$c_text_secondary--dark;
+    }
+  }
+}

@@ -1,0 +1,40 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-spacer {
+  display: table;
+  position: relative;
+  top: 0px;
+  left: 0px;
+  width: 100%;
+  &.-sm {
+    margin-top: .5rem;
+    margin-bottom: .5rem;
+  }
+  &.-md {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+  }
+  &.-lg {
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  &.-xl {
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+  }
+  &.-xxl {
+    margin-top: 2.5rem;
+    margin-bottom: 2.5rem;
+  }
+  &.-xxxl {
+      margin-top: 3rem;
+      margin-bottom: 3rem;
+    }
+  &.-divider {
+    border: solid 1px variables.$c_primary_default;
+    @include mixins.pref_dark {
+      border: solid 1px variables.$c_primary_default--dark;
+    }
+  }
+}

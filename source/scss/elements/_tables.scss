@@ -1,0 +1,58 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+caption {
+  @include mixins.font_base(bold);
+  @include mixins.font_size(14px);
+  caption-side: bottom;
+  line-height: 160%;
+  padding: 10px;
+}
+
+table {
+  border-collapse: collapse;
+  border: 1px solid variables.$c_ui_neutral_300;
+  @include mixins.pref_dark {
+    border: 1px solid variables.$c_ui_neutral_300--dark;
+  }
+}
+
+tbody {
+  // todo
+}
+
+td,
+th {
+  border: 1px solid variables.$c_ui_neutral_300;
+  @include mixins.pref_dark {
+    border: 1px solid variables.$c_ui_neutral_300--dark;
+  }
+}
+
+tfoot,
+thead {
+  @include mixins.font_headline(bold);
+  @include mixins.font_size(16px);
+  border-bottom: solid 1px variables.$c_ui_neutral_300;
+  @include mixins.pref_dark {
+    border-bottom: solid 1px variables.$c_ui_neutral_300--dark;
+  }
+}
+
+tr {
+  @include mixins.bg_transition();
+
+  &:nth-child(even) {
+    background-color: variables.$c_ui_neutral_200;
+    @include mixins.pref_dark {
+      background-color: variables.$c_ui_neutral_200--dark;
+    }
+  }
+
+  &:nth-child(odd) {
+    background-color: variables.$c_ui_neutral_100;
+    @include mixins.pref_dark {
+      background-color: variables.$c_ui_neutral_100--dark;
+    }
+  }
+}

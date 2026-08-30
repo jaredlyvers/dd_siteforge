@@ -1,0 +1,85 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-timeline {
+  @include mixins.position_relative();
+  &__content {
+    max-width: variables.$width_lg;
+    margin: 0 auto;
+  }
+  &__items {
+    display: flex;
+    flex-direction: column;
+  }
+  &__item {
+    &:nth-child(odd) {
+      justify-items: end;
+      & .dd-timeline__body {
+        @include mixins.mq(lg) {
+          @include mixins.border_radius(0px, 10px, 10px, 0px);
+          border-left: none;
+        }
+      }
+    }
+    &:nth-child(even) {
+      justify-items: start;
+      & .dd-timeline__body {
+        @include mixins.mq(lg) {
+          @include mixins.border_radius(10px, 0px, 0px, 10px);
+          border-right: none;
+        }
+      }
+    }
+    &:first-child {
+      & .dd-timeline__body::before {
+        width: 20px;
+        height: 20px;
+        content: '';
+        background: variables.$c_support_focus;
+        @include mixins.pref_dark {
+          background: variables.$c_support_focus--dark;
+        }
+        border-radius: 50%;
+        position: absolute;
+        top: -10px;
+        left: -10px;
+      }
+    }
+    &:last-child {
+      & .dd-timeline__body::after {
+        width: 20px;
+        height: 20px;
+        content: '';
+        background: variables.$c_support_focus;
+        @include mixins.pref_dark {
+          background: variables.$c_support_focus--dark;
+        }
+        border-radius: 50%;
+        position: absolute;
+        bottom: -10px;
+        left: -10px;
+      }
+    }
+  }
+  &__body {
+    position: relative;
+    border: solid 1px variables.$c_ui_neutral_900;
+    @include mixins.border_radius(10px, 10px, 10px, 10px);
+    width: 100%;
+    @include mixins.mq(md) {
+      width: 50%;
+    }
+  }
+  &__image {
+    //todo
+  }
+  &__copy {
+    //todo
+  }
+  &__year {
+    //todo
+  }
+  &__title {
+    //todo
+  }
+}

@@ -1,0 +1,65 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-footer {
+  background-color:variables.$c_ui_neutral_100;
+  @include mixins.pref_dark {
+    background-color:variables.$c_ui_neutral_100--dark;
+  }
+  & .company-info {
+    align-items: center;
+    &__logo {
+      // todo
+    }
+  }
+  &__copyright {
+    background-color: variables.$c_ui_neutral_300;
+    @include mixins.pref_dark {
+      background-color: variables.$c_ui_neutral_300--dark;
+    }
+  }
+}
+
+.dd-footer-001 {
+  & .dd-footer {
+    &__intro-contact {
+      flex-direction: column;
+      flex-wrap: nowrap;
+      gap: 20px;
+      @include mixins.mq(lg) {
+        flex-direction: row;
+      }
+    }
+    &__intro-menu-content {
+      flex-direction: column;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      height: 100%;
+    }
+    &__intro-menu,
+    &__contact-us-title-menu {
+      @include mixins.border_radius();
+      @include mixins.box_shadow();
+
+    }
+    &__contact-us-content {
+      gap: 20px;
+    }
+  }
+  & .navigation {
+    &.-footer-menu {
+      padding: 20px 0;
+    }
+    &.-social-menu {
+      & .menu {
+        & .menu-item {
+          flex-direction: row;
+          flex-wrap: nowrap;
+          flex-grow: 1;
+          width: auto;
+          @include mixins.border_radius();
+        }
+      }
+    }
+  }
+}

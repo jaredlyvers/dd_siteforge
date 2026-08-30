@@ -1,0 +1,47 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-milestones {
+  $parent: &;
+  &__items {
+    @include mixins.position_relative();
+  }
+  &__item {
+    //todo
+  }
+  &__body {
+    display: flex;
+    flex-direction: column;
+    border: solid 1px variables.$c_ui_neutral_900;
+    @include mixins.pref_dark {
+      border: solid 1px variables.$c_ui_neutral_900--dark;
+    }
+  }
+  &__percentage {
+    @include mixins.font_size(32px);
+  }
+  &__title {
+    @include mixins.font_headline();
+    @include mixins.font_size(18px);
+  }
+  &__subtitle {
+    //todo
+  }
+  &__copy {
+    //todo
+  }
+  &__link {
+    //todo
+  }
+  &.-horizontal {
+    & .dd-milestones__body {
+      flex-direction: row;
+      gap: 1rem;
+    }
+    & .dd-milestones__title {
+      & h2 {
+        margin-top: 0;
+      }
+    }
+  }
+}

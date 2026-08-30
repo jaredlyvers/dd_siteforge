@@ -1,0 +1,322 @@
+/**
+ * Primary (Brand Placeholder)
+ * This is your primary identity color system — the flexible accent that becomes the brand.
+ * It drives recognition and hierarchy without locking you into a specific color palette. Swap these tones for any client brand.
+ */
+$c_primary_default: rgba(136, 217, 247, 1);
+$c_primary_default--dark: rgba(100, 180, 245, 1);
+
+$c_primary_strong: rgba(0, 102, 204, 1);
+$c_primary_strong--dark: rgba(140, 200, 255, 1);
+
+$c_primary_subtle: rgba(232, 245, 255, 1);
+$c_primary_subtle--dark: rgba(20, 45, 80, 1);
+
+/**
+ * Secondary (Brand Placeholder)
+ * This is your secondary identity color system — the flexible accent that becomes the brand.
+ * It drives recognition and hierarchy without locking you into a specific color palette. Swap these tones for any client brand.
+ */
+$c_secondary_default: rgba(255, 202, 118, 1);
+$c_secondary_default--dark: rgba(255, 175, 70, 1);
+
+$c_secondary_strong: rgba(180, 120, 40, 1);
+$c_secondary_strong--dark: rgba(255, 195, 100, 1);
+
+$c_secondary_subtle: rgba(255, 240, 220, 1);
+$c_secondary_subtle--dark: rgba(90, 65, 35, 1);
+
+/**
+ * Tertiary (Brand Placeholder)
+ * This is your tertiary identity color system — the flexible accent that becomes the brand.
+ * It drives recognition and hierarchy without locking you into a specific color palette. Swap these tones for any client brand.
+ */
+$c_tertiary_default: rgba(249, 137, 113 ,1);
+$c_tertiary_default--dark: rgba(255, 160, 135, 1);
+
+$c_tertiary_strong: rgba(220, 90, 70, 1);
+$c_tertiary_strong--dark: rgba(255, 130, 105, 1);
+
+$c_tertiary_subtle: rgba(255, 225, 215, 1);
+$c_tertiary_subtle--dark: rgba(110, 60, 50, 1);
+
+
+
+
+
+/**
+ * Primary Action (cyan-blue family)
+ * Action (CTAs / Buttons / Interactions)
+ * This is your engagement system — designed for clarity, energy, and ADA-compliant interaction states.Every state (default, hover, pressed, disabled) has coordinated surface, border, and text colors for intuitive feedback across light and dark UIs.
+ */
+$c_primary_action_default_surface: rgba(136, 217, 247, 1);
+$c_primary_action_default_surface--dark: rgba(90, 180, 245, 1);
+
+$c_primary_action_default_text: rgba(26, 26, 26, 1);
+$c_primary_action_default_text--dark: rgba(26, 26, 26, 1);
+
+$c_primary_action_default_border: rgba(86, 160, 220, 1);
+$c_primary_action_default_border--dark: rgba(110, 200, 255, 1);
+
+$c_primary_action_hover_surface: rgba(100, 190, 240, 1);
+$c_primary_action_hover_surface--dark: rgba(110, 195, 250, 1);
+
+$c_primary_action_hover_text: rgba(26, 26, 26, 1);
+$c_primary_action_hover_text--dark: rgba(26, 26, 26, 1);
+
+$c_primary_action_hover_border: rgba(70, 150, 210, 1);
+$c_primary_action_hover_border--dark: rgba(130, 210, 255, 1);
+
+$c_primary_action_pressed_surface: rgba(80, 170, 230, 1);
+$c_primary_action_pressed_surface--dark: rgba(70, 160, 230, 1);
+
+$c_primary_action_pressed_text: rgba(26, 26, 26, 1);
+$c_primary_action_pressed_text--dark: rgba(26, 26, 26, 1);
+
+$c_primary_action_pressed_border: rgba(60, 140, 200, 1);
+$c_primary_action_pressed_border--dark: rgba(90, 180, 240, 1);
+
+$c_primary_action_disabled_surface: rgba(180, 210, 230, 1);
+$c_primary_action_disabled_surface--dark: rgba(70, 90, 110, 1);
+
+$c_primary_action_disabled_text: rgba(100, 110, 120, 1);
+$c_primary_action_disabled_text--dark: rgba(160, 170, 180, 1);
+
+$c_primary_action_disabled_border: rgba(160, 190, 210, 1);
+$c_primary_action_disabled_border--dark: rgba(90, 110, 130, 1);
+
+
+
+
+
+/**
+ * Secondary Action (warm peach family)
+ * Action (CTAs / Buttons / Interactions)
+ * This is your engagement system — designed for clarity, energy, and ADA-compliant interaction states.Every state (default, hover, pressed, disabled) has coordinated surface, border, and text colors for intuitive feedback across light and dark UIs.
+ */
+$c_secondary_action_default_surface: rgba(255, 202, 118, 1);
+$c_secondary_action_default_surface--dark: rgba(255, 180, 90, 1);
+
+$c_secondary_action_default_text: rgba(26, 26, 26, 1);
+$c_secondary_action_default_text--dark: rgba(26, 26, 26, 1);
+
+$c_secondary_action_default_border: rgba(220, 160, 80, 1);
+$c_secondary_action_default_border--dark: rgba(255, 200, 110, 1);
+
+$c_secondary_action_hover_surface: rgba(255, 185, 90, 1);
+$c_secondary_action_hover_surface--dark: rgba(255, 195, 110, 1);
+
+$c_secondary_action_hover_text: rgba(26, 26, 26, 1);
+$c_secondary_action_hover_text--dark: rgba(26, 26, 26, 1);
+
+$c_secondary_action_hover_border: rgba(200, 140, 60, 1);
+$c_secondary_action_hover_border--dark: rgba(255, 215, 130, 1);
+
+$c_secondary_action_pressed_surface: rgba(240, 170, 70, 1);
+$c_secondary_action_pressed_surface--dark: rgba(240, 165, 80, 1);
+
+$c_secondary_action_pressed_text: rgba(26, 26, 26, 1);
+$c_secondary_action_pressed_text--dark: rgba(26, 26, 26, 1);
+
+$c_secondary_action_pressed_border: rgba(190, 130, 50, 1);
+$c_secondary_action_pressed_border--dark: rgba(240, 185, 100, 1);
+
+$c_secondary_action_disabled_surface: rgba(240, 220, 190, 1);
+$c_secondary_action_disabled_surface--dark: rgba(120, 90, 60, 1);
+
+$c_secondary_action_disabled_text: rgba(120, 100, 70, 1);
+$c_secondary_action_disabled_text--dark: rgba(180, 160, 140, 1);
+
+$c_secondary_action_disabled_border: rgba(210, 180, 140, 1);
+$c_secondary_action_disabled_border--dark: rgba(150, 120, 90, 1);
+
+
+
+
+
+/**
+ * Tertiary Action (coral family)
+ * Action (CTAs / Buttons / Interactions)
+ * This is your engagement system — designed for clarity, energy, and ADA-compliant interaction states.Every state (default, hover, pressed, disabled) has coordinated surface, border, and text colors for intuitive feedback across light and dark UIs.
+ */
+$c_tertiary_action_default_surface: rgba(249, 137, 113, 1);
+$c_tertiary_action_default_surface--dark: rgba(255, 150, 130, 1);
+
+$c_tertiary_action_default_text: rgba(26, 26, 26, 1);
+$c_tertiary_action_default_text--dark: rgba(26, 26, 26, 1);
+
+$c_tertiary_action_default_border: rgba(220, 100, 80, 1);
+$c_tertiary_action_default_border--dark: rgba(255, 170, 150, 1);
+
+$c_tertiary_action_hover_surface: rgba(240, 110, 90, 1);
+$c_tertiary_action_hover_surface--dark: rgba(255, 165, 145, 1);
+
+$c_tertiary_action_hover_text: rgba(26, 26, 26, 1);
+$c_tertiary_action_hover_text--dark: rgba(26, 26, 26, 1);
+
+$c_tertiary_action_hover_border: rgba(200, 80, 70, 1);
+$c_tertiary_action_hover_border--dark: rgba(255, 185, 165, 1);
+
+$c_tertiary_action_pressed_surface: rgba(230, 90, 75, 1);
+$c_tertiary_action_pressed_surface--dark: rgba(240, 135, 115, 1);
+
+$c_tertiary_action_pressed_text: rgba(26, 26, 26, 1);
+$c_tertiary_action_pressed_text--dark: rgba(26, 26, 26, 1);
+
+$c_tertiary_action_pressed_border: rgba(190, 70, 60, 1);
+$c_tertiary_action_pressed_border--dark: rgba(240, 155, 135, 1);
+
+$c_tertiary_action_disabled_surface: rgba(245, 190, 180, 1);
+$c_tertiary_action_disabled_surface--dark: rgba(130, 80, 70, 1);
+
+$c_tertiary_action_disabled_text: rgba(130, 80, 70, 1);
+$c_tertiary_action_disabled_text--dark: rgba(190, 160, 150, 1);
+
+$c_tertiary_action_disabled_border: rgba(220, 160, 150, 1);
+$c_tertiary_action_disabled_border--dark: rgba(160, 110, 100, 1);
+
+
+
+
+/**
+ * Semantic (Status / Feedback / Alerts)
+ */
+$c_success_surface: rgba(233, 247, 239, 1);
+$c_success_surface--dark: rgba(11, 28, 19, 1);
+
+$c_success_text: rgba(27, 120, 66, 1); // darkened for 4.5:1 on success_surface (was 30,132,73 @ 4.27:1)
+$c_success_text--dark: rgba(130, 224, 170, 1);
+
+$c_success_border: rgba(130, 224, 170, 1);
+$c_success_border--dark: rgba(39, 174, 96, 1);
+
+$c_warning_surface: rgba(254, 245, 231, 1);
+$c_warning_surface--dark: rgba(27, 22, 7, 1);
+
+$c_warning_text: rgba(140, 90, 10, 1); // darkened for 4.5:1 on warning_surface + 3:1 fill/arc vs track (was 185,119,14 @ 3.40:1)
+$c_warning_text--dark: rgba(245, 196, 105, 1);
+
+$c_warning_border: rgba(245, 203, 167, 1);
+$c_warning_border--dark: rgba(185, 119, 14, 1);
+
+$c_error_surface: rgba(253, 237, 236, 1);
+$c_error_surface--dark: rgba(36, 12, 12, 1);
+
+$c_error_text: rgba(169, 50, 38, 1);
+$c_error_text--dark: rgba(229, 115, 115, 1);
+
+$c_error_border: rgba(241, 148, 138, 1);
+$c_error_border--dark: rgba(203, 67, 53, 1);
+
+$c_info_surface: rgba(33, 97, 140, 1);
+$c_info_surface--dark: rgba(93, 173, 226, 1);
+
+$c_info_text: rgba(235, 245, 251, 1);
+$c_info_text--dark: rgba(11, 20, 28, 1);
+
+$c_info_border: rgba(133, 193, 233, 1);
+$c_info_border--dark: rgba(40, 116, 166, 1);
+
+
+
+
+
+
+/**
+ * Text Roles (Color Mapping)
+ */
+$c_text_primary: rgba(28, 30, 33, 1);
+$c_text_primary--dark: rgba(245, 246, 247, 1);
+
+$c_text_secondary: rgba(90, 95, 102, 1);
+$c_text_secondary--dark: rgba(158, 163, 170, 1);
+
+$c_text_disabled: rgba(160, 164, 168, 1);
+$c_text_disabled--dark: rgba(90, 95, 102, 1);
+
+$c_text_inverse: rgba(249, 250, 251, 1);
+$c_text_inverse--dark: rgba(15, 17, 20, 1);
+
+
+
+
+
+/**
+ * Neutrals (Core UI / Backgrounds)
+ */
+$c_ui_neutral_100: rgba(249, 250, 251, 1);
+$c_ui_neutral_100--dark: rgba(15, 17, 20, 1);
+
+$c_ui_neutral_200: rgba(242, 243, 245, 1);
+$c_ui_neutral_200--dark: rgba(26, 28, 31, 1);
+
+$c_ui_neutral_300: rgba(217, 220, 225, 1);
+$c_ui_neutral_300--dark: rgba(42, 45, 49, 1);
+
+$c_ui_neutral_600: rgba(90, 95, 102, 1);
+$c_ui_neutral_600--dark: rgba(158, 163, 170, 1);
+
+$c_ui_neutral_900: rgba(28, 30, 33, 1);
+$c_ui_neutral_900--dark: rgba(245, 246, 247, 1);
+
+
+
+
+/**
+ * Support / Utility
+ * Used for default overlays, borders, and hover / focus states.
+ */
+$c_support_overlay: rgba(0, 0, 0, 0.8);
+$c_support_overlay--dark: rgba(0, 0, 0, 0.8);
+
+$c_support_border: rgba(224, 227, 231, 1);
+$c_support_border--dark: rgba(42, 45, 49, 1);
+
+$c_support_focus: rgba(70, 190, 140, 1);
+$c_support_focus--dark: rgba(90, 210, 160, 1);
+
+$c_support_disabled: rgba(160, 164, 168, 1);
+$c_support_disabled--dark: rgba(90, 95, 102, 1);
+
+
+
+
+
+/**
+ * admin button colors
+ */
+ $c_black: #000000;
+ $c_red: #bb0000;
+ $c_blue: #0074BD;
+ $c_green: #4d8f46;
+ $c_yellow: #e7ff6f;
+ $c_white: #ffffff;
+
+
+
+
+/**
+ * Social Media Colors
+ */
+ $c_facebook: #3b5998;
+ $c_twitter: #00aced;
+ $c_pinterest: #bb0000;
+ $c_instagram: #777777;
+ $c_youtube: #777777;
+ $c_comments: #222222;
+
+
+
+
+/**
+ * Default widths
+ */
+$width_xs: 20.5em;
+$width_sm: 33.5em;
+$width_md: 48em;
+$width_lg: 64em;
+$width_xl: 80em;
+$width_xxl: 120em;
+$width_xxxl: 160em;
+$width_x4k: 240em;
+$max_width: $width_xxl;

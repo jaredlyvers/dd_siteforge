@@ -1,0 +1,10 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+/**
+ * header
+ */
+header {
+  @include mixins.position_relative();
+  z-index: 10;
+}

@@ -1,0 +1,83 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-slider {
+  @include mixins.position_relative();
+  &__items {
+    position: relative;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  &__item {
+    display: inline-block;
+    position: relative;
+    top: 0px;
+    left: 0px;
+    transition: left 0.3s ease;
+    width: 100%;
+  }
+  &__content {
+    overflow: hidden;
+  }
+  &__image {
+    & img {
+      width: 100%;
+      height: auto;
+    }
+  }
+  &__title {
+    //todo
+  }
+  &__copy {
+    //todo
+  }
+  &__links {
+    //todo
+  }
+  &__link {
+    //todo
+  }
+  &__navigation {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    text-align: center;
+    width: 100%;
+    justify-content: center;
+    gap: 20px;
+  }
+  &__tabs {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    margin: 0 !important;
+    & li {
+      align-content: center;
+      justify-items: center;
+      width: 48px;
+      height: 48px;
+    }
+    & button {
+      width: 12px !important;
+      height: 12px !important;
+      border-radius: 50% !important;
+      padding: 0;
+      text-indent: -9000px;
+      &.-current {
+        border-color: variables.$c_primary_action_hover_border;
+        background-color: variables.$c_primary_action_hover_surface;
+      }
+    }
+  }
+  &__previous {
+    //todo
+  }
+  &__next {
+    //todo
+  }
+  &::after {
+    display: table;
+    clear: both;
+    content: '';
+  }
+}

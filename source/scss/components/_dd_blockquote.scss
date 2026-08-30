@@ -1,0 +1,69 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-blockquote {
+  $parent: &;
+  overflow: hidden;
+  &__content {
+    @include mixins.position_relative();
+    flex-direction: column;
+    align-content: center;
+    align-items: center;
+    max-width: variables.$width_lg;
+  }
+  &__icon {
+    //todo
+  }
+  &__person {
+    flex-direction: column;
+    align-items: center;
+  }
+  &__image {
+    max-width: 100px;
+    & img {
+      width: 100%;
+      height: auto;
+    }
+  }
+  &__name-title {
+    //todo
+  }
+  &__name {
+    //todo
+  }
+  &__title {
+    //todo
+  }
+  &__comment {
+    text-align: center;
+  }
+  &.-left {
+    & .dd-blockquote__content,
+    & .dd-blockquote__person  {
+      align-items: flex-start;
+    }
+    & .dd-blockquote__comment {
+      text-align: left;
+    }
+  }
+  &.-right {
+    & .dd-blockquote__content,
+    & .dd-blockquote__person  {
+      align-items: flex-end;
+    }
+    & .dd-blockquote__comment {
+      text-align: right;
+    }
+  }
+  &.-no-icon {
+    & .dd-blockquote__icon {
+      display: none;
+    }
+  }
+  &.-no-image {
+    & .dd-blockquote__image {
+      display: none;
+    }
+  }
+  &.-compact {}
+}

@@ -1,0 +1,316 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+button,
+.dd-button {
+  @include mixins.bg_transition();
+  @include mixins.border_radius(0,0,0,0);
+  box-sizing: border-box;
+  cursor: pointer;
+  display: inline-block;
+  line-height: 130%;
+  padding: 8px 16px;
+  text-align: center;
+  text-decoration: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+  vertical-align: middle;
+  white-space: nowrap;
+  background-color: transparent;
+  border: solid 1px variables.$c_support_border;
+  color: variables.$c_text_primary;
+  @include mixins.pref_dark {
+    border: solid 1px variables.$c_support_border--dark;
+    color: variables.$c_text_primary--dark;
+  }
+  &::-moz-focus-inner { // remove inner focus border in Firefox
+    padding: 0;
+    border: 0;
+  }
+  &:hover,
+  &:focus, {
+    border-color: variables.$c_support_focus;
+    color: variables.$c_support_focus;
+    @include mixins.pref_dark {
+      border-color: variables.$c_support_focus--dark;
+      color: variables.$c_support_focus--dark;
+    }
+  }
+  &:active {
+    border-color: variables.$c_support_focus;
+    color: variables.$c_support_focus;
+    @include mixins.pref_dark {
+      border-color: variables.$c_support_focus--dark;
+      color: variables.$c_support_focus--dark;
+    }
+  }
+  &[disabled],
+  &:disabled,
+  &.-disabled {
+    cursor: not-allowed;
+    pointer-events: none;
+    border-color: variables.$c_support_disabled;
+    color: variables.$c_text_disabled;
+    @include mixins.pref_dark {
+      border-color: variables.$c_support_disabled--dark;
+      color: variables.$c_text_disabled--dark;
+    }
+  }
+  &.-default {
+    border: none !important;
+    color: variables.$c_text_primary;
+    @include mixins.pref_dark {
+      color: variables.$c_text_primary--dark;
+    }
+    &:hover,
+    &:focus,
+    &:active {
+      color: variables.$c_support_focus;
+      @include mixins.pref_dark {
+        color: variables.$c_support_focus--dark;
+      }
+    }
+  }
+  &.-primary {
+    background-color: variables.$c_primary_action_default_surface;
+    border-color: variables.$c_primary_action_default_border;
+    color: variables.$c_primary_action_default_text;
+    @include mixins.pref_dark {
+      background-color: variables.$c_primary_action_default_surface--dark;
+      border-color: variables.$c_primary_action_default_border--dark;
+      color: variables.$c_primary_action_default_text--dark;
+    }
+    &:hover,
+    &:focus,
+    &:active {
+      background-color: variables.$c_primary_action_hover_surface;
+      color: variables.$c_primary_action_hover_text;
+      @include mixins.pref_dark {
+        background-color: variables.$c_primary_action_hover_surface--dark;
+      color: variables.$c_primary_action_hover_text--dark;
+      }
+    }
+  }
+  &.-secondary {
+    background-color: variables.$c_secondary_action_default_surface;
+    border-color: variables.$c_secondary_action_default_border;
+    color: variables.$c_secondary_action_default_text;
+    @include mixins.pref_dark {
+      background-color: variables.$c_secondary_action_default_surface--dark;
+      border-color: variables.$c_secondary_action_default_border--dark;
+      color: variables.$c_secondary_action_default_text--dark;
+    }
+    &:hover,
+    &:focus,
+    &:active {
+      background-color: variables.$c_secondary_action_hover_surface;
+      color: variables.$c_secondary_action_hover_text;
+      @include mixins.pref_dark {
+        background-color: variables.$c_secondary_action_hover_surface--dark;
+        color: variables.$c_secondary_action_hover_text--dark;
+      }
+    }
+  }
+  &.-tertiary {
+    background-color: variables.$c_tertiary_action_default_surface;
+    border-color: variables.$c_tertiary_action_default_border;
+    color: variables.$c_tertiary_action_default_text;
+    @include mixins.pref_dark {
+      background-color: variables.$c_tertiary_action_default_surface--dark;
+      border-color: variables.$c_tertiary_action_default_border--dark;
+      color: variables.$c_tertiary_action_default_text--dark;
+    }
+    &:hover,
+    &:focus,
+    &:active {
+      background-color: variables.$c_tertiary_action_hover_surface;
+      color: variables.$c_tertiary_action_hover_text;
+      @include mixins.pref_dark {
+        background-color: variables.$c_tertiary_action_hover_surface--dark;
+        color: variables.$c_tertiary_action_hover_text--dark;
+      }
+    }
+  }
+  &.-ghost {
+    background-color: transparent !important;
+  }
+  &.-md {
+    line-height: 160%;
+    @include mixins.mq(lg) {
+      @include mixins.font_size(18px);
+    }
+  }
+  &.-sm {
+    line-height: 160%;
+  }
+}
+
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="url"],
+input[type="date"],
+input[type="month"],
+input[type="time"],
+input[type="datetime"],
+input[type="datetime-local"],
+input[type="week"],
+input[type="number"],
+input[type="search"],
+input[type="tel"],
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+select,
+textarea {
+  @include mixins.border_radius();
+  padding: 0.5em 0.6em;
+  display: inline-block;
+  border: 1px solid variables.$c_ui_neutral_300;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+input[type="color"] {
+  @include mixins.border_radius();
+  display: inline-block;
+  border: 1px solid variables.$c_ui_neutral_300;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+input[type="radio"],
+input[type="checkbox"] {
+  accent-color: variables.$c_primary_action_default_surface;
+}
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+input[type="file"],
+input[type="radio"],
+input[type="checkbox"],
+input[type="color"] {
+  cursor: pointer;
+}
+input[type="submit"] {
+  border-color: variables.$c_green;
+  color: variables.$c_green;
+}
+input[type="reset"] {
+  border-color: variables.$c_red;
+  color: variables.$c_red;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="email"]:focus,
+input[type="url"]:focus,
+input[type="date"]:focus,
+input[type="month"]:focus,
+input[type="time"]:focus,
+input[type="datetime"]:focus,
+input[type="datetime-local"]:focus,
+input[type="week"]:focus,
+input[type="number"]:focus,
+input[type="search"]:focus,
+input[type="tel"]:focus,
+input[type="color"]:focus,
+select:focus,
+textarea:focus {
+  //todo
+}
+
+input[type="file"]:focus,
+input[type="radio"]:focus,
+input[type="checkbox"]:focus {
+  //todo
+}
+
+input[type="text"][disabled],
+input[type="password"][disabled],
+input[type="email"][disabled],
+input[type="url"][disabled],
+input[type="date"][disabled],
+input[type="month"][disabled],
+input[type="time"][disabled],
+input[type="datetime"][disabled],
+input[type="datetime-local"][disabled],
+input[type="week"][disabled],
+input[type="number"][disabled],
+input[type="search"][disabled],
+input[type="tel"][disabled],
+input[type="color"][disabled],
+select[disabled],
+textarea[disabled] {
+  cursor: not-allowed;
+  background-color: variables.$c_ui_neutral_300;
+  border-color: variables.$c_ui_neutral_300;
+  color: variables.$c_text_disabled;
+}
+
+input[readonly],
+select[readonly],
+textarea[readonly] {
+  background-color: variables.$c_ui_neutral_300;
+  border-color: variables.$c_ui_neutral_300;
+  color: variables.$c_text_disabled;
+}
+
+input:focus:invalid,
+textarea:focus:invalid,
+select:focus:invalid {
+  border-color: variables.$c_red;
+  color: variables.$c_red;
+}
+input:valid,
+textarea:valid,
+select:valid {
+  //todo
+}
+input[type="file"]:focus:invalid:focus,
+input[type="radio"]:focus:invalid:focus,
+input[type="checkbox"]:focus:invalid:focus {
+  //todo
+}
+
+input {
+  @include mixins.font_base();
+  @include mixins.font_size(16px);
+  line-height: 160%;
+}
+
+select {
+  @include mixins.font_base();
+  @include mixins.font_size(16px);
+  line-height: 160%;
+}
+
+textarea {
+  @include mixins.font_base();
+  @include mixins.font_size(16px);
+  line-height: 160%;
+}
+
+label {
+  @include mixins.font_base(bold);
+  @include mixins.font_size(16px);
+  line-height: 128%;
+  display: block;
+}
+
+fieldset {
+  margin: 0;
+  padding: 0.35em 0 0.75em;
+  border: 0;
+}
+
+legend {
+  @include mixins.border_radius();
+  @include mixins.font_headline(bold);
+  background-color: variables.$c_ui_neutral_300;
+  color: variables.$c_text_primary;
+  padding: 2px 4px;
+}
+
+optgroup {
+  //todo
+}

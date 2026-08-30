@@ -1,0 +1,19 @@
+<div class="dd-filmstrip {{parent_type}}" data-sal="{{sal}}">
+  <ul class="dd-filmstrip__content">
+    {{#each items}}
+    <li>
+      <img src="{{child_image_url}}" alt="{{child_image_alt}}" class="dd-img" loading="lazy">
+      <figure class="dd-filmstrip__title">{{child_title}}</figure>
+    </li>
+    {{/each}}
+  </ul>
+
+  <ul aria-hidden="true" class="dd-filmstrip__content">
+    {{#each items}}
+    <li role="presentation">
+      <img src="{{child_image_url}}" alt="{{child_image_alt}}" class="dd-img" loading="lazy">
+      <figure class="dd-filmstrip__title">{{child_title}}</figure>
+    </li>
+    {{/each}}
+  </ul>
+</div>

@@ -54,9 +54,12 @@ Thumbs.db
 
 /target
 
-# Per-author local state (test site, exports, image source, agent tooling)
+# Per-author local state (test site, export output, agent tooling)
 /site.json
 /site.json.backup
-/source/
 /web/
 /.kilo/
+
+# Author images only. Framework source (js/scss/favicon/vendors/webfonts/templates) is committed.
+/source/images/*
+!/source/images/.gitkeep

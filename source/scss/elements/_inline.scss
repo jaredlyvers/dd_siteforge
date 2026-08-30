@@ -1,0 +1,93 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+a {
+  color: variables.$c_text_primary;
+  @include mixins.pref_dark {
+    color: variables.$c_text_primary--dark;
+  }
+  @include mixins.bg_transition(0.4s);
+
+  &[href*="mailto:"]::before {
+    content: "\f2b6";
+    margin-right: 6px;
+    @include mixins.font_icon();
+  }
+
+  &[href*="tel:"]::before {
+    content: "\f095";
+    margin-right: 6px;
+    @include mixins.font_icon();
+  }
+
+  &[href*=".pdf"]::after {
+    content: "\f1c1";
+    margin-right: 6px;
+    @include mixins.font_icon();
+  }
+
+  &[target="_blank"]::after {
+    content: "\f360";
+    margin-right: 6px;
+    @include mixins.font_icon();
+  }
+}
+
+address {
+  // todo
+}
+
+abbr {
+  color: variables.$c_text_secondary;
+  @include mixins.pref_dark {
+    color: variables.$c_text_secondary--dark;
+  }
+  @include mixins.bg_transition(.4s);
+  @include mixins.font_base();
+}
+
+b,
+strong {
+  @include mixins.font_headline(bold);
+}
+
+cite {
+  @include mixins.font_base();
+}
+
+code {
+  border: solid 1px variables.$c_ui_neutral_300;
+  box-sizing: border-box;
+  border-left: solid 5px variables.$c_ui_neutral_300;
+  @include mixins.pref_dark {
+    border: solid 1px variables.$c_ui_neutral_300--dark;
+    border-left: solid 5px variables.$c_ui_neutral_300--dark;
+  }
+  display: block;
+  margin-bottom: 20px;
+  padding: 8px;
+  word-wrap: break-word;
+  width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  position: relative;
+}
+
+data {
+  @include mixins.font_base();
+  @include mixins.font_size(12px);
+  color: variables.$c_text_disabled;
+  @include mixins.pref_dark {
+    color: variables.$c_text_disabled--dark;
+  }
+  content: ' (ID ' attr(value) ')';
+}
+
+em {
+  font-style: italic;
+}
+
+sub,
+sup {
+  @include mixins.font_size(8px);
+}

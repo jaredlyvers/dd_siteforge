@@ -222,7 +222,11 @@ impl App {
             Ok(report) => {
                 self.site.export_dir = Some(normalized.clone());
                 let display = display_relative_path(&base, &out, &normalized);
-                let msg = format!("Exported {} page(s) to {}", report.pages, display);
+                let msg = if report.wrote_404 {
+                    format!("Exported {} page(s) to {} (wrote 404.html)", report.pages, display)
+                } else {
+                    format!("Exported {} page(s) to {}", report.pages, display)
+                };
                 self.push_toast(ToastLevel::Success, msg);
             }
             Err(e) => {

@@ -1,0 +1,48 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-banner {
+  @include mixins.position_relative();
+  background-color: variables.$c_ui_neutral_200;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  justify-content: center;
+  max-height: 500px;
+  overflow: hidden;
+  height: 100%;
+  &.-bg-top-left {
+    background-position: top left;
+  }
+  &.-bg-top-center {
+    background-position: top center;
+  }
+  &.-bg-top-right {
+    background-position: top right;
+  }
+  &.-bg-center-left {
+    background-position: center left;
+  }
+  &.-bg-center-center {
+    background-position: center center;
+  }
+  &.-bg-center-right {
+    background-position: center right;
+  }
+  &.-bg-bottom-left {
+    background-position: bottom left;
+  }
+  &.-bg-bottom-center {
+    background-position: bottom center;
+  }
+  &.-bg-bottom-right {
+    background-position: bottom right;
+  }
+  &__image {
+    & img {
+      @include mixins.opacity(0);
+      width: 100%;
+      height: auto;
+    }
+  }
+}

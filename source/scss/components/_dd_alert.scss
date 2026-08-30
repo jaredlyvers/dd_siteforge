@@ -1,0 +1,84 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-alert {
+  @include mixins.position_relative();
+  background-color: variables.$c_ui_neutral_100;
+  border-left: solid 4px variables.$c_ui_neutral_600;
+  color: variables.$c_text_primary;
+  @include mixins.pref_dark {
+  	background-color: variables.$c_ui_neutral_100--dark;
+    border-left: solid 4px variables.$c_ui_neutral_600--dark;
+    color: variables.$c_text_primary--dark;
+  }
+  &__content {
+    margin: 0 auto;
+    width: 100%;
+    max-width: variables.$width_xl;
+  }
+  &__heading {
+    @include mixins.font_headline(bold);
+    @include mixins.font_size(25px);
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+    &::before {
+      @include mixins.font_icon();
+      @include mixins.font_size(25px);
+      content: '\f05a';
+    }
+  }
+  &__copy {
+    padding-left: 34px;
+    & a {
+      color: inherit;
+    }
+  }
+  &.-info,
+  &.-minor {
+    background-color: variables.$c_info_surface;
+    border-color: variables.$c_info_border;
+    color: variables.$c_info_text;
+    & .dd-alert__heading:before {
+      content: '\f05a';
+    }
+  }
+  &.-warning,
+  &.-moderate,
+  &.-serious {
+    background-color: variables.$c_warning_surface;
+    border-color: variables.$c_warning_border;
+    color: variables.$c_warning_text;
+    & .dd-alert__heading:before {
+      content: '\f071';
+    }
+  }
+  &.-error,
+  &.-critical {
+    background-color: variables.$c_error_surface;
+    border-color: variables.$c_error_border;
+    color: variables.$c_error_text;
+    & .dd-alert__heading:before {
+      content: '\e417';
+    }
+  }
+  &.-success {
+    background-color: variables.$c_success_surface;
+    border-color: variables.$c_success_border;
+    color: variables.$c_success_text;
+    & .dd-alert__heading:before {
+      content: '\f058';
+    }
+  }
+  &.-compact {
+      & .l-box {
+          padding: 0.5rem;
+      }
+      & .dd-alert__heading {
+          @include mixins.font_size(18px);
+          &::before {
+              @include mixins.font_size(19px);
+          }
+      }
+  }
+}

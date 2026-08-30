@@ -4,7 +4,7 @@ Guidance for Claude / agent sessions working on this repo.
 
 ## What this is
 
-`dd_siteforge` is a Rust terminal-UI CMS. Crate version is in `Cargo.toml` (`1.4.0`). Export writes a self-contained static site (HTML + bundled framework assets + images + sitemap/robots/404). Architecture lives in `Architecture.md`; per-feature design + implementation history lives under `docs/superpowers/`.
+`dd_siteforge` is a Rust terminal-UI CMS. Crate version is in `Cargo.toml` (`1.4.0`). Export writes HTML + sitemap/robots/404, copies Grunt `web/assets` (css/js/webfonts/favicon) when dest is not already `web/`, and copies `source/images/`. Architecture lives in `Architecture.md`; per-feature design + implementation history lives under `docs/superpowers/`.
 
 ## Project conventions
 
@@ -58,7 +58,7 @@ src/
 ├── storage.rs         JSON load/save (atomic) + slug_locked / export_dir back-compat tests
 ├── validate.rs        validate_site + validate_site_with_root (missing-image)
 ├── renderer.rs        per-component render_* fns; handlebars templates inline
-├── export.rs          full site export (HTML + framework assets + images + sitemap/robots/404)
+├── export.rs          full site export (HTML + Grunt assets + images + sitemap/robots/404)
 ├── serve.rs           tiny static HTTP server for preview / `serve`
 ├── tui/mod.rs            App shell (struct, run loop, save/autosave)
 ├── tui/draw.rs           header / sidebar / details / footer frame
@@ -102,8 +102,8 @@ For interactive smoke testing, the user typically launches against a scratch pat
 
 `.gitignore`d on master:
 - `site.json`, `site.json.backup` — author's working site
-- `source/` — author's image source dir
-- `web/` — export output (regenerates)
+- `source/images/*` — author's images (keep `.gitkeep`; js/scss/favicon/vendors/webfonts are committed)
+- `web/` — Grunt + export output (regenerates)
 - `.kilo/` — alternative agent tooling
 
 ## When the user says "ship"

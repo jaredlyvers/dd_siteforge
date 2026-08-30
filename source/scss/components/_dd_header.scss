@@ -1,0 +1,31 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-header {
+  z-index: 200;
+  &__banner {
+    background-color: variables.$c_ui_neutral_600;
+    color: variables.$c_text_primary;
+    @include mixins.pref_dark {
+      background-color: variables.$c_ui_neutral_600--dark;
+      color: variables.$c_text_primary--dark;
+    }
+  }
+  &__banner-copy {
+    max-width: variables.$width_xl;
+    margin: 0 auto;
+  }
+  &__logo {
+    & img {
+      width: 100%;
+      height: auto;
+      max-width: 85px;
+    }
+  }
+  &__menu-icon {
+    display: block;
+    @include mixins.mq(lg) {
+      display: none;
+    }
+  }
+}

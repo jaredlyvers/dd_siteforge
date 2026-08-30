@@ -1,0 +1,25 @@
+<div class="dd-cta {{parent_class}}">
+  <div class="dd-cta__image" style="background-image: url({{parent_image_url}});">
+    <picture>
+      <img src="{{parent_image_url}}" class="dd-img" alt="{{parent_image_alt}}" />
+    </picture>
+  </div>
+  <div class="dd-cta__content dd-g" data-sal="{{sal}}">
+    <div class="dd-cta__copy dd-u-1-1 dd-u-md-12-24">
+      <div class="dd-cta__title">
+        <h2>{{parent_title}}</h2>
+      </div>
+      <div class="dd-cta__subtitle">
+        <strong>{{parent_subtitle}}</strong>
+      </div>
+      <p>{{parent_copy}}</p>
+      {{#if has_link}}
+      <div class="dd-cta__links dd-g -x-center">
+        <div class="dd-cta__link">
+          <a href="{{parent_link_url}}" class="dd-button -primary" target="{{parent_link_target}}">{{parent_link_label}}</a>
+        </div>
+      </div>
+      {{/if}}
+    </div>
+  </div>
+</div>

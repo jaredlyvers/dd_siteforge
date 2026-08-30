@@ -11,6 +11,7 @@ src/
   storage.rs       JSON load/save
   validate.rs      validate_site() + validate_site_with_root() (missing-image)
   renderer.rs      typed-model → HTML via handlebars templates
+  templates.rs     load bundled + source/templates overrides; seed on init
   tui/mod.rs            App shell (struct, run loop, save/autosave)
   tui/draw.rs           header / sidebar / details / footer frame
   tui/events.rs         keyboard, mouse, Pages-panel dispatch
@@ -24,7 +25,13 @@ src/
   tui/component_kind.rs insert-picker kinds
   tui/form_textarea.rs  FormEdit textarea layout
   tui/util.rs           small TUI helpers
+source/            framework source (js, scss, favicon, webfonts; images are local)
+Gruntfile.js       builds source/{js,scss} → web/assets
+package.json       npm run build / dev
+.lando.yml         optional Lando (host npm is the contract)
+.ddev/             optional DDEV
 ```
+
 
 ## Content Hierarchy
 
@@ -63,7 +70,7 @@ Each component spec lives in `components/dd-*.md` (single source of truth for fi
   - `dd-modal` derives `parent_modal_id` from `parent_title` (HTML-id-safe).
   - `dd-slider` derives `parent_uid` from `parent_title`; `uid-<random6>` fallback.
   - `dd-hero.copy` accepts Markdown or HTML, converted at export.
-- Static export: `crate::export::export_site(&site, &out, site_root)`. Writes `{slug}.html`, bundled `assets/` (css/js/favicon/webfonts), copies `<site_dir>/source/images/` → `<out>/assets/images/`, plus `sitemap.xml`, `robots.txt`, and `404.html` when no author 404 page exists.
+- Static export: `crate::export::export_site(&site, &out, site_root)`. Writes `{slug}.html`, copies Grunt `web/assets/{css,js,webfonts,favicon,vendors}` when the dest is not already `web/` (does not clobber a local `grunt build`), fills missing webfonts/favicon from `source/`, copies `<site_dir>/source/images/` → `<out>/assets/images/`, plus `sitemap.xml`, `robots.txt`, and `404.html` when no author 404 page exists.
 - Asset and page hrefs are same-directory relative (`assets/css/style.min.css`, `contact.html`). `p` / `serve` start a local HTTP server so those paths resolve.
 
 ## Validation

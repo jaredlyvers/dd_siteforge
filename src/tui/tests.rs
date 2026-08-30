@@ -1312,6 +1312,9 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
         let imgs = tmp.join("source").join("images");
         std::fs::create_dir_all(&imgs).unwrap();
         std::fs::write(imgs.join("hero.jpg"), b"fake").unwrap();
+        let grunt_css = tmp.join("web").join("assets").join("css");
+        std::fs::create_dir_all(&grunt_css).unwrap();
+        std::fs::write(grunt_css.join("style.min.css"), b"/* grunt */").unwrap();
         let json_path = tmp.join("site.json");
         let mut app = App::new(Site::starter(), Some(json_path.clone()), AppTheme::default(), "default".to_string(), None);
         app.site.export_dir = Some("web".to_string());
@@ -1323,10 +1326,8 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
         assert_eq!(last.level, ToastLevel::Success);
         assert!(last.message.to_lowercase().contains("exported"));
         assert!(tmp.join("web").exists(), "export directory should have been created");
-        assert!(
-            tmp.join("web").join("assets").join("css").join("style.min.css").exists(),
-            "export must include framework CSS"
-        );
+        let css = std::fs::read_to_string(grunt_css.join("style.min.css")).unwrap();
+        assert_eq!(css, "/* grunt */", "export must not clobber grunt CSS");
 
         std::fs::remove_dir_all(&tmp).ok();
     }

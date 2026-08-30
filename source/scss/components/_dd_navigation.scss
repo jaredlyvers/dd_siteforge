@@ -1,0 +1,203 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+@use "../elements/forms";
+
+/**
+ * Global menu options.
+ */
+ body.-active-menu {
+  height: 100vh;
+  overflow: hidden;
+ }
+ .navigation {
+  position: relative;
+  box-sizing: border-box;
+  & .menu {
+    @include mixins.position_relative();
+    & {
+      margin: 0 auto;
+    }
+    &-item {
+      cursor: pointer;
+      display: block;
+      & span,
+      & a {
+        display: block;
+        text-decoration: none;
+        &:hover {
+          text-decoration: none;
+        }
+      }
+      &.button {
+        & a {
+          @extend .dd-button;
+        }
+      }
+      &::before {
+        display: none;
+      }
+    }
+  }
+  & .sub-menu {
+    background-color: variables.$c_ui_neutral_100;
+    @include mixins.pref_dark {
+      background-color: variables.$c_ui_neutral_100--dark;
+    }
+    z-index: 2000;
+    @include mixins.position_relative();
+  }
+}
+
+
+// Main Menu
+.navigation {
+  &.-main-menu {
+    position: fixed;
+    top: 0px;
+    left: 0px;
+    display: none;
+    height: 100vh;
+    @include mixins.mq(lg) {
+      position: relative;
+      display: block;
+      padding-right: 40px;
+      height: auto;
+    }
+    & nav {
+      width: 100vw;
+      @include mixins.mq(lg) {
+        width: auto;
+      }
+    }
+    & .dd-menu__close {
+      display: none;
+      text-align: right;
+      @include mixins.font_size(20px);
+    }
+    & .menu {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      @include mixins.mq(lg) {
+        justify-content: flex-end;
+        gap: 20px;
+      }
+      & > li {
+        width: 100%;
+        @include mixins.mq(lg) {
+          width: auto;
+        }
+      }
+      &-item {
+        &:hover {
+          // todo
+        }
+      }
+    }
+    & .menu-item-has-children {
+      position: relative;
+      & > a {
+        &::after {
+          content: '\f0d7';
+          padding-left: 8px;
+          @include mixins.font_icon();
+        }
+      }
+      &:hover {
+        color: variables.$c_primary_action_hover_text;
+        @include mixins.pref_dark {
+          color: variables.$c_primary_action_hover_text--dark;
+        }
+      }
+      &.-active {
+        & > a {
+          &::after {
+            content: '\f0d8';
+          }
+        }
+        & .sub-menu {
+          display: flex;
+          @include mixins.mq(lg) {
+            position: absolute;
+            top: 32px;
+            padding: 1rem;
+            width: max-content;
+          }
+        }
+      }
+    }
+    & .sub-menu {
+      display: none;
+      flex-direction: column;
+    }
+    & .get-involved {
+      @extend .dd-button;
+    }
+  }
+}
+// When the menu is opened via mobile
+.-active {
+  &.navigation {
+    z-index: 2000;
+    &.-main-menu {
+      background-color: variables.$c_ui_neutral_100;
+      @include mixins.pref_dark {
+        background-color: variables.$c_ui_neutral_100--dark;
+      }
+      top: 90px;
+      height: calc(100vh - 90px);
+      display: flex;
+      flex-direction: column;
+      z-index: 9000;
+      @include mixins.vertical_scroll();
+      & .dd-menu__close {
+        display: none; // hide because we still show main menu close icon
+        padding: 15px 40px;
+      }
+    }
+  }
+}
+
+// Footer Menu
+.navigation {
+  &.-footer-menu {
+    & .menu {
+      display: flex;
+      flex-wrap: wrap;
+      flex-direction: column;
+      gap: 20px;
+      justify-content: space-between;
+      @include mixins.mq(md) {
+        flex-wrap: nowrap;
+        flex-direction: row;
+      }
+    }
+  }
+}
+
+// Social Media Menu
+.navigation {
+  &.-social-menu {
+    & .menu {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 22px;
+      & > li {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 53px;
+        height: 53px;
+        @include mixins.font_size(22px);
+        @include mixins.border_radius(50%, 50%, 50%, 50%);
+        @include mixins.box_shadow();
+      }
+      & a {
+        @include mixins.font_size(22px);
+      }
+      & i {
+        @include mixins.font_size(22px);
+      }
+    }
+  }
+}

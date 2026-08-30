@@ -1,0 +1,88 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+blockquote {
+  // todo
+}
+
+div {
+  box-sizing: border-box;
+}
+
+dl {
+  dt {
+    @include mixins.font_headline();
+    @include mixins.font_size(16px);
+  }
+
+  dd {
+    @include mixins.font_base(regular);
+    @include mixins.font_size(14px);
+  }
+}
+
+figure {
+  border: solid 1px variables.$c_ui_neutral_300;
+  @include mixins.pref_dark {
+    border: solid 1px variables.$c_ui_neutral_300--dark;
+  }
+  padding: 4px;
+  text-align: center;
+  @include mixins.position_relative();
+  @include mixins.border_radius();
+  & figcaption {
+    background-color: variables.$c_ui_neutral_300;
+    @include mixins.pref_dark {
+      background-color: variables.$c_ui_neutral_300--dark;
+    }
+    padding: 8px;
+  }
+}
+
+hr {
+  color: variables.$c_primary_default;
+  @include mixins.pref_dark {
+    color: variables.$c_primary_default--dark;
+  }
+}
+
+ol {
+  li {
+    &::marker {
+      color: variables.$c_success_border;
+      @include mixins.pref_dark {
+        color: variables.$c_success_border--dark;
+      }
+    }
+  }
+}
+
+p {
+  // todo
+}
+
+pre {
+  word-wrap: break-word;
+  width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  box-sizing: border-box;
+}
+
+ul {
+  & li {
+    &::marker {
+      color: variables.$c_success_border;
+      @include mixins.pref_dark {
+        color: variables.$c_success_border--dark;
+      }
+    }
+  }
+  &.-nostyle {
+    padding: 0px;
+    list-style: none;
+    & li::marker {
+      display: none;
+    }
+  }
+}

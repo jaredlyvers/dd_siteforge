@@ -1,0 +1,54 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-tabs {
+  @include mixins.position_relative();
+  &__content {
+    flex-direction: row;
+  }
+  &__menu {
+    flex-direction: row;
+    list-style: none;
+    gap: 8px;
+    padding: 0;
+    width: 100%;
+  }
+  &__menu-item {
+    &::before {
+      display: none;
+    }
+  }
+  &__menu-link {
+    text-decoration: none;
+    &.-active {
+      border-bottom: solid 1px;
+    }
+  }
+  &__items {
+    width: 100%;
+  }
+  &__item {
+    @include mixins.opacity(0);
+    display: none;
+    width: 100%;
+    &.-active {
+      display: block;
+      @include mixins.fade_in();
+    }
+  }
+  &.-horizontal {
+    & .dd-tabs__menu,
+    & .dd-tabs__items {
+      width: 100%;
+    }
+  }
+  &.-vertical {
+    & .dd-tabs__menu {
+      flex-direction: column;
+      width: 20%;
+    }
+    & .dd-tabs__items {
+      width: 80%;
+    }
+  }
+}

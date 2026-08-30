@@ -1,0 +1,25 @@
+<div class="dd-milestones">
+  <div class="dd-milestones__content">
+    <div class="dd-milestones__items dd-g">
+      {{#each items}}
+      <div class="dd-milestones__item l-box {{../parent_width}}" data-sal="{{../sal}}"{{#if sal_delay}} data-sal-delay="{{sal_delay}}"{{/if}}>
+        <div class="dd-milestones__body l-box">
+          <div class="dd-milestones__percentage" data-number="{{child_percentage}}"><span class="number">{{child_percentage}}</span>%</div>
+          <div>
+            <div class="dd-milestones__title"><h2>{{child_title}}</h2></div>
+            <div class="dd-milestones__subtitle"><strong>{{child_subtitle}}</strong></div>
+            <div class="dd-milestones__copy">{{child_copy}}</div>
+            {{#if has_link}}
+            <div class="dd-milestones__links">
+              <div class="dd-milestones__link">
+                <a href="{{child_link_url}}" target="{{child_link_target}}" class="dd-button -primary">{{child_link_label}}</a>
+              </div>
+            </div>
+            {{/if}}
+          </div>
+        </div>
+      </div>
+      {{/each}}
+    </div>
+  </div>
+</div>

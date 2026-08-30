@@ -1,0 +1,63 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-card {
+  @include mixins.position_relative();
+  margin: 0 auto;
+  &__items {
+    //todo
+  }
+  &__item {
+    //todo
+  }
+  &__body {
+    border: solid 1px variables.$c_ui_neutral_600;
+    flex-direction: column;
+    flex-wrap: wrap;
+  }
+  &__image {
+    line-height: 0px;
+    overflow: hidden;
+    width: 100%;
+    & img {
+      object-fit: fill;
+      width: 100%;
+      height: auto;
+    }
+  }
+  &__copy {
+    //todo
+  }
+  &__title {
+    //todo
+  }
+  &__sub-title {
+    //todo
+  }
+  &__links {
+    //todo
+  }
+  &__link {
+    //todo
+  }
+  &.-horizontal {
+    & .dd-card__body {
+      flex-direction: column;
+      flex-wrap: nowrap;
+      @include mixins.mq(md) {
+        flex-direction: row;
+      }
+    }
+    & .dd-card__image {
+      & img {
+        height: 100%;
+        object-fit: cover;
+      }
+    }
+  }
+  &.-no-image {
+    & .dd-card__image {
+      display: none;
+    }
+  }
+}

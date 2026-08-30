@@ -1,0 +1,112 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+article {
+  // todo
+}
+
+aside {
+  // todo
+}
+
+img {
+  &.dd-img {
+    display: block;
+    height: auto;
+    max-width: 100%;
+  }
+}
+
+h1,
+.h1,
+h2,
+.h2,
+h3,
+.h3,
+h4,
+.h4,
+h5,
+.h5,
+h6,
+.h6,
+.display {
+  @include mixins.font_headline(bold);
+  color: variables.$c_text_primary;
+  @include mixins.pref_dark {
+    color: variables.$c_text_primary--dark;
+  }
+}
+
+.display {
+  @include mixins.font_size(44px);
+  line-height: 120%;
+  @include mixins.mq(lg) {
+    @include mixins.font_size(56px);
+  }
+}
+h1,
+.h1 {
+  @include mixins.font_size(32px);
+  line-height: 120%;
+  @include mixins.mq(lg) {
+    @include mixins.font_size(40px);
+  }
+}
+
+h2,
+.h2 {
+  @include mixins.font_size(28px);
+  line-height: 125%;
+  @include mixins.mq(lg) {
+    @include mixins.font_size(32px);
+  }
+}
+
+h3,
+.h3 {
+  @include mixins.font_size(22px);
+  line-height: 130%;
+  @include mixins.mq(lg) {
+    @include mixins.font_size(24px);
+  }
+}
+
+h4,
+.h4 {
+  @include mixins.font_size(18px);
+  line-height: 135%;
+  @include mixins.mq(lg) {
+    @include mixins.font_size(20px);
+  }
+}
+
+h5,
+.h5 {
+  @include mixins.font_size(16px);
+  line-height: 140%;
+  @include mixins.mq(lg) {
+    @include mixins.font_size(18px);
+  }
+}
+
+h6,
+.h6 {
+  @include mixins.font_size(14px);
+  line-height: 140%;
+  @include mixins.mq(lg) {
+    @include mixins.font_size(16px);
+  }
+}
+
+
+main {
+  @include mixins.position_relative();
+}
+
+nav {
+  @include mixins.position_relative();
+}
+
+section {
+  @include mixins.position_relative();
+}

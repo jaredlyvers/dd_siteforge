@@ -1,0 +1,47 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-filmstrip {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  user-select: none;
+  gap: 1rem;
+  &__content {
+    list-style: none;
+    flex-shrink: 0;
+    display: flex;
+    justify-content: space-around;
+    gap: 1rem;
+    padding: 0;
+    min-width: 100%;
+    animation: scroll 15s linear infinite;
+  }
+  &:hover {
+    & .dd-filmstrip__content {
+      animation-play-state: paused;
+    }
+  }
+  &.-reverse {
+    & .dd-filmstrip__content {
+      animation-direction: reverse;
+    }
+  }
+}
+
+/* scroll animation */
+@keyframes scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-100% - 1rem));
+  }
+}
+
+/* pause if reduced-motion is set */
+@media (prefers-reduced-motion: reduce) {
+  .dd-filmstrip__content {
+    animation-play-state: paused !important;
+  }
+}

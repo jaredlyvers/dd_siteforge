@@ -1,0 +1,27 @@
+@keyframes fade_in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes slide_up_bottom {
+  0% {
+    opacity: 0;
+    transform: translateY(250px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes bg_slide_up_bottom {
+  0% {
+    background-position-y: 500px;
+  }
+  100% {
+    background-position-y: top;
+  }
+}

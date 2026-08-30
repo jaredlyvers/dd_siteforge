@@ -1,0 +1,113 @@
+@use "../partials/mixins";
+@use "../partials/variables";
+
+.dd-hero {
+  @include mixins.position_relative();
+  &__image {
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    position: relative;
+    width: fit-content;
+    height: 100%;
+    line-height: 0px;
+    @include mixins.mq(lg) {
+      position: absolute;
+      top: 0px;
+      right: 0px;
+      bottom: 0px;
+      left: 0px;
+    }
+    & img {
+      width: fit-content;
+      height: auto;
+      @include mixins.opacity(0);
+    }
+  }
+  &__content {
+    top: 0px;
+    width: 100%;
+    align-items: center;
+    align-content: center;
+    @include mixins.position_relative();
+  }
+  &__copy {
+    @include mixins.position_relative();
+    background-color: variables.$c_ui_neutral_100;
+    @include mixins.pref_dark {
+      background-color: variables.$c_ui_neutral_100--dark;
+    }
+    border: solid 1px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+    z-index: 10;
+    @include mixins.mq(lg) {
+      align-items: flex-start;
+      margin: 40px;
+    }
+  }
+  &__title {
+    & h1 {
+      //todo
+    }
+  }
+  &__body {
+    text-align: center;
+    @include mixins.mq(lg) {
+      text-align: left;
+    }
+  }
+  &__links {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    @include mixins.mq(lg) {
+      justify-content: flex-start;
+    }
+  }
+  &__link {
+    // todo
+  }
+  &.-left {
+    & .dd-hero__content {
+      justify-content: flex-start;
+    }
+  }
+  &.-center {
+    & .dd-hero__content {
+      justify-content: center;
+    }
+  }
+  &.-right {
+    & .dd-hero__content {
+      justify-content: flex-end;
+    }
+  }
+  &.-overlay-light {
+    &::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: variables.$c_ui_neutral_100;
+      z-index: 1;
+    }
+  }
+  &.-overlay-dark {
+    &::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: variables.$c_ui_neutral_100--dark;
+      z-index: 1;
+    }
+  }
+}

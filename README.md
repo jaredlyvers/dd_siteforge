@@ -33,11 +33,37 @@ cargo install --path .            # cargo's bin dir (~/.cargo/bin)
 cargo build --release             # binary at target/release/dd_siteforge
 ```
 
+## CSS / JS build
+
+Host Node is the contract. Lando and DDEV are optional wrappers around the same `npm` / `grunt` commands.
+
+```bash
+npm install
+npx grunt build          # or: npm run build
+```
+
+Writes `web/assets/css`, `web/assets/js`, `web/assets/webfonts`, and axe helpers. `npx grunt dev` rebuilds on change and serves `web/` (or proxies `BROWSERSYNC_PROXY` when set).
+
+**Lando** (optional): `lando start` then `lando grunt build`. Site at https://dd-siteforge.lndo.site (also http://localhost:8888).
+
+**DDEV** (optional): `ddev start` then `ddev npm run build`. `ddev launch` opens the site.
+
+**BrowserSync proxy** (optional, for `grunt dev` behind Lando/DDEV):
+
+```bash
+BROWSERSYNC_PROXY=https://dd-siteforge.lndo.site npx grunt dev
+```
+
 ## Usage
 
 ```bash
-# Create a starter site at site.json
+# Create a starter site at site.json (also seeds source/templates/)
 dd_siteforge init-site site.json
+
+# Re-seed templates (skips existing; --force overwrites)
+dd_siteforge init-templates site.json
+dd_siteforge init-templates site.json --force
+dd_siteforge init-templates site.json --force --name dd-hero
 
 # Edit interactively
 dd_siteforge tui site.json
@@ -45,7 +71,7 @@ dd_siteforge tui site.json
 # Validate (exits non-zero on errors; checks local images next to the JSON)
 dd_siteforge validate-site site.json
 
-# Export a self-contained site (HTML + framework assets + images)
+# Export HTML + copy Grunt assets/images (run `npx grunt build` first for css/js)
 dd_siteforge export-html site.json ./web/
 
 # Export then serve at http://127.0.0.1:8765/
@@ -79,7 +105,10 @@ dd_siteforge show-site site.json
 │   ├── export.rs                  full site export (assets + sitemap/robots/404)
 │   ├── serve.rs                   local HTTP preview server
 │   └── tui/                       interactive editor (App, theme, help, forms)
-├── framework/                     bundled dd-framework css/js/favicon/webfonts
+├── source/                        framework source (js, scss, favicon, webfonts, images)
+├── templates/                     bundled Handlebars (seeded to source/templates on init)
+├── Gruntfile.js / package.json    CSS/JS build → web/assets
+├── .lando.yml / .ddev/            optional local env (host npm is the contract)
 ├── docs/superpowers/{specs,plans}/  design + implementation plan archive
 ├── Architecture.md                module map, render/validation rules, key bindings
 ├── THEME_STRUCTURE_STANDARD.md    theme token schema
@@ -92,7 +121,7 @@ dd_siteforge show-site site.json
 1. `init-site` → starter `site.json`.
 2. Drop image source files in `./source/images/` next to the JSON.
 3. `tui` → edit pages, components, head metadata. Autosave writes every 2s; manual `s` makes a checkpoint backup.
-4. `Shift+E` to export validates first, then writes HTML, bundled framework assets (`assets/css`, `assets/js`, favicons, webfonts), `sitemap.xml`, `robots.txt`, `404.html`, and copies `source/images/` to `web/assets/images/`.
+4. `npx grunt build` then `Shift+E` to export: validates, writes HTML, copies Grunt `web/assets` (css/js/webfonts/favicon) when dest is not already `web/`, copies `source/images/` to `web/assets/images/`, plus `sitemap.xml`, `robots.txt`, `404.html`.
 5. `p` exports, starts a local HTTP server, and opens the current page in the system browser. `dd_siteforge serve site.json` does the same from the CLI.
 
 ## Theme

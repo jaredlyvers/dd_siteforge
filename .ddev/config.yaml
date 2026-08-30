@@ -1,0 +1,18 @@
+# Optional. Host Node is the real build:
+#   npm install && npx grunt build
+#
+# DDEV wraps the same commands and serves ./web.
+#   ddev start
+#   ddev npm install    # first time / after package.json change
+#   ddev npm run build
+#   ddev launch
+#
+name: dd-siteforge
+type: php
+docroot: web
+php_version: "8.2"
+webserver_type: apache-fpm
+nodejs_version: "20"
+disable_settings_management: true
+omit_containers:
+  - db
