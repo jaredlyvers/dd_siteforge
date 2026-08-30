@@ -11,11 +11,19 @@ src/
   storage.rs       JSON load/save
   validate.rs      validate_site() + validate_site_with_root() (missing-image)
   renderer.rs      typed-model → HTML via handlebars templates
-  tui/mod.rs       interactive editor (App + Modal enum + render/event loop)
-  tui/theme.rs     TUI theme load
-  tui/help.rs      F1/F2 modal text
-  tui/cursor.rs    component → form-state mapping for the unified editor
-  tui/editform.rs  declarative form definitions (FormEdit values)
+  tui/mod.rs            App shell (struct, run loop, save/autosave)
+  tui/draw.rs           header / sidebar / details / footer frame
+  tui/events.rs         keyboard, mouse, Pages-panel dispatch
+  tui/modals.rs         Modal enum + render/event handlers
+  tui/tree.rs           layout tree rows + structural edits
+  tui/details.rs        Details panel ASCII maps
+  tui/theme.rs          TUI theme load
+  tui/help.rs           F1/F2 modal text
+  tui/cursor.rs         component → form-state mapping
+  tui/editform.rs       declarative form definitions (FormEdit values)
+  tui/component_kind.rs insert-picker kinds
+  tui/form_textarea.rs  FormEdit textarea layout
+  tui/util.rs           small TUI helpers
 ```
 
 ## Content Hierarchy
@@ -123,7 +131,7 @@ The TUI now exposes `theme.app_shell` and `theme.active_border` (Style) for the 
 `theme.modal_header` colors inner section headers (e.g. cards in F1 help modal).
 F2 opens the Theme info modal (source, load status, sampled color tokens with hex) using identical chrome and scroll mechanics to the F1 help modal.
 
-See `src/tui/mod.rs` (draw) and `src/tui/theme.rs` (AppTheme::load, choose_header_copy) for the concrete implementation.
+See `src/tui/draw.rs` and `src/tui/theme.rs` (AppTheme::load, choose_header_copy) for the concrete implementation.
 The Details panel title now includes current page context ("Details — 03: Home").
 Former persistent status messages are delivered as toasts.
 

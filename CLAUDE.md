@@ -59,12 +59,19 @@ src/
 ├── renderer.rs        per-component render_* fns; handlebars templates inline
 ├── export.rs          full site export (HTML + framework assets + images + sitemap/robots/404)
 ├── serve.rs           tiny static HTTP server for preview / `serve`
-├── tui/mod.rs         App, Modal enum, draw + event loop
-├── tui/theme.rs       TUI theme load
-├── tui/help.rs        F1/F2 modal text
-└── tui/
-    ├── cursor.rs      component → form-state mapping; apply_edit_form_to_component
-    └── editform.rs    declarative FormEdit values for every migrated component
+├── tui/mod.rs            App shell (struct, run loop, save/autosave)
+├── tui/draw.rs           header / sidebar / details / footer frame
+├── tui/events.rs         keyboard, mouse, Pages-panel dispatch
+├── tui/modals.rs         Modal enum + render/event handlers
+├── tui/tree.rs           layout tree rows + structural edits
+├── tui/details.rs        Details panel ASCII maps
+├── tui/theme.rs          TUI theme load
+├── tui/help.rs           F1/F2 modal text
+├── tui/cursor.rs         component → form-state mapping; apply_edit_form_to_component
+├── tui/editform.rs       declarative FormEdit values for every migrated component
+├── tui/component_kind.rs insert-picker kinds
+├── tui/form_textarea.rs  FormEdit textarea layout
+└── tui/util.rs           small TUI helpers
 
 components/dd-*.md     component specs (humans + agents read these)
 docs/superpowers/      design specs + implementation plans
