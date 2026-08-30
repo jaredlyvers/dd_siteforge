@@ -110,6 +110,8 @@ struct App {
     details_scroll_row: usize,
     regions_area: Rect,
     pages_area: Rect,
+    pages_list_state: ListState,
+    layout_list_state: ListState,
     last_mouse_click: Option<(u16, u16, std::time::Instant)>,
     path: Option<PathBuf>,
     preview_server: Option<crate::serve::StaticServer>,
@@ -2784,6 +2786,11 @@ impl App {
         let _ = self.modal.as_ref()?;
 
         if let Event::Key(key) = &evt {
+            if key.code == KeyCode::F(1) {
+                self.show_help = true;
+                self.help_scroll = 0;
+                return Some(ModalResult::Continue);
+            }
             let key = *key;
             return match self.modal.as_ref()? {
                 Modal::Edit { .. } => self.handle_edit_modal_event_unified(key),
@@ -4330,6 +4337,8 @@ impl App {
             details_scroll_row: 0,
             regions_area: Rect::default(),
             pages_area: Rect::default(),
+            pages_list_state: ListState::default(),
+            layout_list_state: ListState::default(),
             last_mouse_click: None,
             path,
             preview_server: None,
@@ -4583,10 +4592,19 @@ impl App {
                 ListItem::new(label).style(style)
             })
             .collect();
+        let pages_title = if self.site.pages.is_empty() {
+            "[2] Pages".to_string()
+        } else {
+            format!(
+                "[2] Pages {}/{}",
+                self.selected_page + 1,
+                self.site.pages.len()
+            )
+        };
         let pages_list = List::new(page_items)
             .block(
                 Block::default()
-                    .title("[2] Nodes")
+                    .title(pages_title)
                     .borders(Borders::ALL)
                     .style(
                         Style::default()
@@ -4612,11 +4630,12 @@ impl App {
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol("> ");
-        let mut pages_state = ListState::default();
         if !self.site.pages.is_empty() {
-            pages_state.select(Some(self.selected_page));
+            self.pages_list_state.select(Some(self.selected_page));
+        } else {
+            self.pages_list_state.select(None);
         }
-        frame.render_widget(pages_list, sidebar[1]);
+        frame.render_stateful_widget(pages_list, sidebar[1], &mut self.pages_list_state);
         self.pages_area = sidebar[1];
 
         // Layouts section (component tree)
@@ -4665,11 +4684,13 @@ impl App {
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol("> ");
-        let mut layouts_state = ListState::default();
         if !tree_rows.is_empty() {
-            layouts_state.select(Some(self.selected_tree_row.min(tree_rows.len() - 1)));
+            self.layout_list_state
+                .select(Some(self.selected_tree_row.min(tree_rows.len() - 1)));
+        } else {
+            self.layout_list_state.select(None);
         }
-        frame.render_stateful_widget(layouts_list, sidebar[2], &mut layouts_state);
+        frame.render_stateful_widget(layouts_list, sidebar[2], &mut self.layout_list_state);
         self.list_area = sidebar[2];
 
         self.details_area = main[1];
@@ -4758,14 +4779,7 @@ impl App {
             }
         }
 
-        // === NEW 1-line adaptive footer (borderless, keys only, app_shell, always F1:Help first) ===
-        let footer_text = if root[2].width < 75 {
-            "F1:Help  F2:Theme  q:Quit  s:Save  /:Insert  Enter:Edit  j/k:Nav  Spc:Toggle  1/2/3:Focus"
-        } else if root[2].width < 110 {
-            "F1: Help   F2: Theme   s: Save   /: Insert   Enter: Edit   Tab: Switch page   Shift+E: Export   p: Preview   q: Quit"
-        } else {
-            "F1: Help   F2: Theme   s: Save   /: Insert component   Enter: Edit   Tab/Shift+Tab: switch page   Shift+E: Export   p: Preview   F3: Validate   Ctrl+Q: Quit   (mouse: click/scroll/drag)"
-        };
+        let footer_text = self.footer_hint(root[2].width);
         let footer = Paragraph::new(footer_text).style(self.theme.app_shell);
         frame.render_widget(footer, root[2]);
 
@@ -5575,12 +5589,14 @@ impl App {
     }
 
     fn handle_event(&mut self, evt: Event) -> anyhow::Result<()> {
-        // Unified modal handling - takes priority over legacy modals
-        if let Some(modal_result) = self.handle_modal_event(evt.clone()) {
-            match modal_result {
-                ModalResult::Continue => return Ok(()),
-                ModalResult::CloseSuccess => return Ok(()),
-                ModalResult::CloseCancel => return Ok(()),
+        // Help/theme overlays sit above modals so F1 works from FormEdit.
+        if !(self.show_help || self.show_theme) {
+            if let Some(modal_result) = self.handle_modal_event(evt.clone()) {
+                match modal_result {
+                    ModalResult::Continue => return Ok(()),
+                    ModalResult::CloseSuccess => return Ok(()),
+                    ModalResult::CloseCancel => return Ok(()),
+                }
             }
         }
 
@@ -5717,7 +5733,10 @@ impl App {
                 KeyCode::Char('p') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.begin_preview_flow();
                 }
-                KeyCode::Char('q') if k.modifiers.contains(KeyModifiers::CONTROL) => {
+                KeyCode::Char('q')
+                    if k.modifiers.contains(KeyModifiers::CONTROL)
+                        || k.modifiers.is_empty() =>
+                {
                     self.should_quit = true
                 }
                 KeyCode::Up => self.handle_up(),
@@ -5749,21 +5768,15 @@ impl App {
                 KeyCode::Char('X') => self.remove_selected_collection_item(),
                 KeyCode::Char('1') => {
                     self.selected_sidebar_section = SidebarSection::Regions;
-                    self.push_toast(ToastLevel::Info, "Switched to Regions section.");
                 }
                 KeyCode::Char('2') => {
                     self.selected_sidebar_section = SidebarSection::Pages;
                     self.selected_region = SelectedRegion::Page;
                     self.selected_tree_row = 0;
                     self.sync_tree_row_with_selection();
-                    self.push_toast(ToastLevel::Info, "Switched to Pages section.");
                 }
                 KeyCode::Char('3') => {
                     self.selected_sidebar_section = SidebarSection::Layouts;
-                    self.push_toast(ToastLevel::Info, "Switched to Layout section.");
-                }
-                KeyCode::Char('4') => {
-                    self.push_toast(ToastLevel::Info, "Details panel active.");
                 }
                 _ => {}
                 }
@@ -7833,13 +7846,24 @@ impl App {
     fn begin_save_prompt(&mut self) {
         self.component_picker = None;
         self.input_mode = None;
-        self.save_prompt_open = true;
-        self.save_input = self
-            .path
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| "site.json".to_string());
-        self.push_toast(ToastLevel::Info, "Save prompt opened.");
+        self.save_prompt_open = false;
+        if let Some(path) = self.path.clone() {
+            match self.commit_save_with_backup(&path) {
+                Ok(()) => {
+                    self.push_toast(
+                        ToastLevel::Success,
+                        format!("Saved {}", path.display()),
+                    );
+                }
+                Err(e) => {
+                    self.push_toast(ToastLevel::Warning, format!("Failed to save: {}", e));
+                }
+            }
+            return;
+        }
+        self.modal = Some(Modal::SavePrompt {
+            path: "site.json".to_string(),
+        });
     }
 
     fn handle_save_prompt_event(&mut self, evt: Event) -> anyhow::Result<()> {
@@ -9867,7 +9891,7 @@ impl App {
             if y < body_top || y >= body_bottom {
                 return;
             }
-            let idx = (y - body_top) as usize;
+            let idx = (y - body_top) as usize + self.layout_list_state.offset();
             if idx < tree_rows.len() {
                 self.selected_tree_row = idx;
                 self.apply_tree_row_selection(tree_rows[idx]);
@@ -9881,7 +9905,7 @@ impl App {
         if contains(self.pages_area, x, y) {
             let body_top = self.pages_area.y.saturating_add(1);
             if y >= body_top {
-                let rel = (y - body_top) as usize;
+                let rel = (y - body_top) as usize + self.pages_list_state.offset();
                 if rel < self.site.pages.len() {
                     self.selected_page = rel;
                     self.selected_node = 0;
@@ -9892,9 +9916,8 @@ impl App {
                     self.selected_tree_row = 0;
                     self.page_head_selected = false;
                     self.selected_region = SelectedRegion::Page;
-                    self.selected_sidebar_section = SidebarSection::Layouts;
+                    self.selected_sidebar_section = SidebarSection::Pages;
                     self.sync_tree_row_with_selection();
-                    self.push_toast(ToastLevel::Info, format!("Selected page {:02}", rel + 1));
                 }
             }
             return;
@@ -11567,11 +11590,11 @@ impl App {
 
     fn open_component_picker(&mut self) {
         self.input_mode = None;
-        self.component_picker = Some(ComponentPickerState {
+        self.component_picker = None;
+        self.modal = Some(Modal::ComponentPicker {
             query: String::new(),
             selected: 0,
         });
-        self.push_toast(ToastLevel::Info, "Insert picker opened.");
     }
 
     /// If the selected tree row points at a migrated section component
@@ -13576,7 +13599,7 @@ impl App {
             SidebarSection::Regions => {
                 self.selected_region = SelectedRegion::Footer;
                 self.selected_tree_row = 0;
-                self.push_toast(ToastLevel::Info, "Selected Footer region (not yet implemented).");
+                self.push_toast(ToastLevel::Info, "Selected Footer region.");
             }
             SidebarSection::Pages => {
                 if self.site.pages.is_empty() {
@@ -13688,10 +13711,68 @@ impl App {
         self.sync_tree_row_with_selection();
     }
 
+    fn footer_hint(&self, width: u16) -> String {
+        let parts: &[&str] = if self.modal.is_some() || self.show_help || self.show_theme {
+            &["F1:Help", "Esc:Close", "Ctrl+Q:Quit"]
+        } else {
+            match self.selected_sidebar_section {
+                SidebarSection::Pages => {
+                    if width < 80 {
+                        &["F1:Help", "Shift+A:Add", "r:Rename", "Ctrl+Q:Quit"]
+                    } else {
+                        &[
+                            "F1:Help",
+                            "Shift+A:Add",
+                            "Shift+X:Del",
+                            "u:Undo",
+                            "r:Rename",
+                            "Shift+J/K:Move",
+                            "Ctrl+Q:Quit",
+                        ]
+                    }
+                }
+                SidebarSection::Regions => {
+                    &["F1:Help", "j/k:Header/Footer", "Enter:Edit", "Ctrl+Q:Quit"]
+                }
+                SidebarSection::Layouts => {
+                    if width < 80 {
+                        &["F1:Help", "Enter:Edit", "/:Insert", "j/k:Nav", "Ctrl+Q:Quit"]
+                    } else if width < 110 {
+                        &[
+                            "F1:Help",
+                            "s:Save",
+                            "/:Insert",
+                            "Enter:Edit",
+                            "p:Preview",
+                            "Ctrl+Q:Quit",
+                        ]
+                    } else {
+                        &[
+                            "F1:Help",
+                            "F2:Theme",
+                            "s:Save",
+                            "/:Insert",
+                            "Enter:Edit",
+                            "Shift+E:Export",
+                            "p:Preview",
+                            "F3:Validate",
+                            "Ctrl+Q:Quit",
+                        ]
+                    }
+                }
+            }
+        };
+        let joined = parts.join("  ");
+        if width == 0 {
+            return String::new();
+        }
+        joined.chars().take(width as usize).collect()
+    }
+
     fn details_text(&self, detail_width: usize) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
         match self.selected_region {
             SelectedRegion::Header => (self.header_details_text(detail_width), vec![]),
-            SelectedRegion::Footer => ("Footer editing not yet implemented.".to_string(), vec![]),
+            SelectedRegion::Footer => (self.footer_details_text(detail_width), vec![]),
             SelectedRegion::Page => self.page_details_text(detail_width),
         }
     }
@@ -13719,6 +13800,26 @@ impl App {
             self.header_selection_summary(),
             self.component_kind.label()
         ));
+        out.join("\n")
+    }
+
+    fn footer_details_text(&self, detail_width: usize) -> String {
+        let mut out = Vec::new();
+        out.push("Site footer".to_string());
+        out.push(String::new());
+        let marker = if matches!(self.selected_region, SelectedRegion::Footer) {
+            "*"
+        } else {
+            " "
+        };
+        out.push(format!("{}[01] dd-footer {}", marker, self.site.footer.id));
+        let (fmap, _f_hits) = footer_ascii_map(
+            &self.site.footer,
+            self.selected_header_section,
+            self.selected_header_column,
+            detail_width,
+        );
+        out.push(fmap);
         out.join("\n")
     }
 
@@ -17013,6 +17114,82 @@ fn header_ascii_map(
         }
     }
 
+    let border = format!("+{}+", "-".repeat(inner_width + 2));
+    let mut out = Vec::new();
+    out.push(border.clone());
+    for line in lines {
+        out.push(format!("| {} |", line));
+    }
+    out.push(border);
+    let s = out.join("\n");
+    let hits = vec![vec![]; out.len()];
+    (s, hits)
+}
+
+fn footer_ascii_map(
+    footer: &crate::model::DdFooter,
+    selected_section: usize,
+    selected_column: usize,
+    panel_width: usize,
+) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
+    let inner_width = panel_width.saturating_sub(4).max(12);
+    let mut lines = vec![
+        fit_ascii_cell("FOOTER", inner_width),
+        fit_ascii_cell(&format!("id: {}", footer.id), inner_width),
+        fit_ascii_cell(
+            &format!(
+                "custom_css: {}",
+                footer.custom_css.as_deref().unwrap_or("(none)")
+            ),
+            inner_width,
+        ),
+        fit_ascii_cell("sections:", inner_width),
+    ];
+    if footer.sections.is_empty() {
+        lines.push(fit_ascii_cell(
+            "(no sections - press '/' to add)",
+            inner_width,
+        ));
+    } else {
+        let active_section = selected_section.min(footer.sections.len().saturating_sub(1));
+        for (s_idx, section) in footer.sections.iter().enumerate() {
+            let s_marker = if s_idx == active_section { "*" } else { "-" };
+            lines.push(fit_ascii_cell(
+                &format!("{s_marker} section: {}", section.id),
+                inner_width,
+            ));
+            if section.columns.is_empty() {
+                lines.push(fit_ascii_cell("  (no columns)", inner_width));
+            } else {
+                let active_col = if s_idx == active_section {
+                    selected_column.min(section.columns.len().saturating_sub(1))
+                } else {
+                    0
+                };
+                for (c_idx, col) in section.columns.iter().enumerate() {
+                    let c_marker = if s_idx == active_section && c_idx == active_col {
+                        "*"
+                    } else {
+                        "-"
+                    };
+                    lines.push(fit_ascii_cell(
+                        &format!("  {c_marker} column: {} [{}]", col.id, col.width_class),
+                        inner_width,
+                    ));
+                    if col.components.is_empty() {
+                        lines.push(fit_ascii_cell("    (empty)", inner_width));
+                    } else {
+                        for comp in col.components.iter() {
+                            lines.push(fit_ascii_cell(
+                                &format!("    - {}", component_label(comp)),
+                                inner_width,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
     let border = format!("+{}+", "-".repeat(inner_width + 2));
     let mut out = Vec::new();
     out.push(border.clone());
@@ -21326,6 +21503,76 @@ mod tests {
             app.header_copy
         );
         assert_eq!(app.theme_source, "default");
+    }
+
+    #[test]
+    fn q_without_modifiers_quits() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        send_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE);
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn slash_opens_unified_component_picker() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        send_key(&mut app, KeyCode::Char('/'), KeyModifiers::NONE);
+        assert!(matches!(app.modal, Some(Modal::ComponentPicker { .. })));
+        assert!(app.component_picker.is_none());
+    }
+
+    #[test]
+    fn s_without_path_opens_unified_save_prompt() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::NONE);
+        match &app.modal {
+            Some(Modal::SavePrompt { path }) => assert_eq!(path, "site.json"),
+            _ => panic!("expected SavePrompt"),
+        }
+        assert!(!app.save_prompt_open);
+    }
+
+    #[test]
+    fn page_list_click_keeps_pages_focus() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.pages_area = Rect {
+            x: 0,
+            y: 1,
+            width: 30,
+            height: 10,
+            ..Default::default()
+        };
+        app.list_area = Rect::default();
+        app.regions_area = Rect::default();
+        app.details_area = Rect::default();
+        app.handle_click(10, 2);
+        assert_eq!(app.selected_page, 0);
+        assert_eq!(app.selected_sidebar_section, SidebarSection::Pages);
+    }
+
+    #[test]
+    fn footer_details_are_not_a_stub() {
+        let app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        let (text, _) = app.details_text(40);
+        // default region is Page; switch check via footer helper
+        let footer = app.footer_details_text(40);
+        assert!(footer.contains("dd-footer"), "{footer}");
+        assert!(!footer.to_lowercase().contains("not yet implemented"));
+        let _ = text;
+    }
+
+    #[test]
+    fn f1_opens_help_while_form_edit_is_open() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.modal = Some(Modal::FormEdit {
+            state: editform::EditFormState::new(&editform::CTA_FORM),
+            cursor: cursor::Cursor::PageHero { page: 0, node: 0 },
+            cursor_pos: 0,
+            drill_stack: Vec::new(),
+            scroll_offset: 0,
+        });
+        send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
+        assert!(app.show_help);
+        assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
     }
 }
 

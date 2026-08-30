@@ -88,7 +88,7 @@ loop:
 | `/` | Insert component fuzzy picker |
 | `Tab` / `Shift+Tab` | Next/prev page |
 | `1` / `2` / `3` | Sidebar focus: Regions / Pages / Layout |
-| `Ctrl+Q` | Quit |
+| `q` / `Ctrl+Q` | Quit |
 
 ### Pages panel (`[2] Nodes`)
 
