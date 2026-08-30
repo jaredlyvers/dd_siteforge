@@ -90,7 +90,7 @@ loop:
 | `1` / `2` / `3` | Sidebar focus: Regions / Pages / Layout |
 | `q` / `Ctrl+Q` | Quit |
 
-### Pages panel (`[2] Nodes`)
+### Pages panel (`[2] Pages`)
 
 `Shift+A` add (template picker) · `Shift+X` delete (confirm + session trash) · `u` undo delete · `Shift+J/K` reorder · `r` rename.
 
