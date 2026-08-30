@@ -59,7 +59,9 @@ src/
 ├── renderer.rs        per-component render_* fns; handlebars templates inline
 ├── export.rs          full site export (HTML + framework assets + images + sitemap/robots/404)
 ├── serve.rs           tiny static HTTP server for preview / `serve`
-├── tui.rs             App, Modal enum, draw + event loop
+├── tui/mod.rs         App, Modal enum, draw + event loop
+├── tui/theme.rs       TUI theme load
+├── tui/help.rs        F1/F2 modal text
 └── tui/
     ├── cursor.rs      component → form-state mapping; apply_edit_form_to_component
     └── editform.rs    declarative FormEdit values for every migrated component

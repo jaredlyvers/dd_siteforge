@@ -11,7 +11,9 @@ src/
   storage.rs       JSON load/save
   validate.rs      validate_site() + validate_site_with_root() (missing-image)
   renderer.rs      typed-model → HTML via handlebars templates
-  tui.rs           interactive editor (App + Modal enum + render/event loop)
+  tui/mod.rs       interactive editor (App + Modal enum + render/event loop)
+  tui/theme.rs     TUI theme load
+  tui/help.rs      F1/F2 modal text
   tui/cursor.rs    component → form-state mapping for the unified editor
   tui/editform.rs  declarative form definitions (FormEdit values)
 ```
@@ -121,7 +123,7 @@ The TUI now exposes `theme.app_shell` and `theme.active_border` (Style) for the 
 `theme.modal_header` colors inner section headers (e.g. cards in F1 help modal).
 F2 opens the Theme info modal (source, load status, sampled color tokens with hex) using identical chrome and scroll mechanics to the F1 help modal.
 
-See `src/tui.rs` (draw, AppTheme::load, choose_header_copy, default_header_quotes) for the concrete implementation.
+See `src/tui/mod.rs` (draw) and `src/tui/theme.rs` (AppTheme::load, choose_header_copy) for the concrete implementation.
 The Details panel title now includes current page context ("Details — 03: Home").
 Former persistent status messages are delivered as toasts.
 

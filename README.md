@@ -78,8 +78,7 @@ dd_siteforge show-site site.json
 │   ├── renderer.rs                handlebars-driven HTML export
 │   ├── export.rs                  full site export (assets + sitemap/robots/404)
 │   ├── serve.rs                   local HTTP preview server
-│   ├── tui.rs                     interactive editor (App + Modal)
-│   └── tui/{cursor,editform}.rs   form-state + declarative form definitions
+│   └── tui/                       interactive editor (App, theme, help, forms)
 ├── framework/                     bundled dd-framework css/js/favicon/webfonts
 ├── docs/superpowers/{specs,plans}/  design + implementation plan archive
 ├── Architecture.md                module map, render/validation rules, key bindings
