@@ -92,6 +92,9 @@ struct App {
     /// Session trash — deleted pages pushed here for `u` undo.
     /// Not persisted. Capped at 20 entries (oldest drops off).
     deleted_pages: Vec<crate::model::Page>,
+    /// Site snapshots taken before structural tree edits. `u` in Layout pops.
+    /// Capped at 20.
+    undo_stack: Vec<crate::model::Site>,
     /// Title captured while the TemplatePicker is open after the title prompt.
     /// None outside of the add-page flow.
     pending_new_page_title: Option<String>,
@@ -269,6 +272,7 @@ enum ModalResult {
 #[derive(Debug, Clone)]
 enum ConfirmKind {
     DeletePage,
+    QuitUnsaved,
 }
 
 /// Live state of an open image picker. `root` and `cwd` are absolute
@@ -4102,6 +4106,7 @@ impl App {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 match kind {
                     ConfirmKind::DeletePage => self.commit_delete_page(),
+                    ConfirmKind::QuitUnsaved => self.should_quit = true,
                 }
                 self.modal = None;
                 Some(ModalResult::CloseSuccess)
@@ -4330,6 +4335,7 @@ impl App {
             selected_header_component: 0,
             page_head_selected: false,
             deleted_pages: Vec::new(),
+            undo_stack: Vec::new(),
             pending_new_page_title: None,
             toasts: Vec::new(),
             list_area: Rect::default(),
@@ -5733,11 +5739,8 @@ impl App {
                 KeyCode::Char('p') if !k.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.begin_preview_flow();
                 }
-                KeyCode::Char('q')
-                    if k.modifiers.contains(KeyModifiers::CONTROL)
-                        || k.modifiers.is_empty() =>
-                {
-                    self.should_quit = true
+                KeyCode::Char('q') if k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.request_quit();
                 }
                 KeyCode::Up => self.handle_up(),
                 KeyCode::Down => self.handle_down(),
@@ -5755,9 +5758,11 @@ impl App {
                 KeyCode::BackTab => self.select_prev_page(),
                 KeyCode::Char('s') => self.begin_save_prompt(),
                 KeyCode::Char('/') => self.open_component_picker(),
-                KeyCode::Char('d') => self.delete_selected_node(),
-                KeyCode::Char('J') => self.move_selected_column_down(),
-                KeyCode::Char('K') => self.move_selected_column_up(),
+                KeyCode::Char('d') => self.delete_selected_row(),
+                KeyCode::Char('y') => self.duplicate_selected_row(),
+                KeyCode::Char('u') => self.undo_last(),
+                KeyCode::Char('J') => self.move_selected_row(1),
+                KeyCode::Char('K') => self.move_selected_row(-1),
                 KeyCode::Char('C') => self.add_column(),
                 KeyCode::Char('V') => self.remove_selected_column(),
                 KeyCode::Char('c') => self.select_prev_column(),
@@ -12041,22 +12046,19 @@ impl App {
     }
 
     fn insert_selected_component_kind(&mut self) {
+        self.push_undo();
         match self.component_kind {
             ComponentKind::Hero => self.add_hero(),
-            ComponentKind::Section => {
-                if self.selected_region == SelectedRegion::Header {
-                    self.add_header_section();
-                } else {
-                    self.add_section();
-                }
-            }
-            _ => {
-                if self.selected_region == SelectedRegion::Header {
-                    self.add_component_to_header_section();
-                } else {
-                    self.add_selected_component_to_section();
-                }
-            }
+            ComponentKind::Section => match self.selected_region {
+                SelectedRegion::Header => self.add_header_section(),
+                SelectedRegion::Footer => self.add_footer_section(),
+                SelectedRegion::Page => self.add_section(),
+            },
+            _ => match self.selected_region {
+                SelectedRegion::Header => self.add_component_to_header_section(),
+                SelectedRegion::Footer => self.add_component_to_footer_section(),
+                SelectedRegion::Page => self.add_selected_component_to_section(),
+            },
         }
     }
 
@@ -12072,14 +12074,41 @@ impl App {
                 components: Vec::new(),
             }],
         };
-        self.site.header.sections.push(section);
-        self.selected_header_section = self.site.header.sections.len() - 1;
+        let insert_at = (self.selected_header_section + 1).min(self.site.header.sections.len());
+        self.site.header.sections.insert(insert_at, section);
+        self.selected_header_section = insert_at;
         self.selected_header_column = 0;
         self.selected_header_component = 0;
         self.push_toast(ToastLevel::Info, format!(
             "Added dd-section to header at position {}.",
             self.selected_header_section + 1
         ));
+    }
+
+    fn add_footer_section(&mut self) {
+        let section = crate::model::DdSection {
+            id: format!("footer-section-{}", self.site.footer.sections.len() + 1),
+            section_title: None,
+            section_class: Some(crate::model::SectionClass::FullContained),
+            item_box_class: Some(crate::model::SectionItemBoxClass::LBox),
+            columns: vec![SectionColumn {
+                id: "column-1".to_string(),
+                width_class: "dd-u-1-1".to_string(),
+                components: Vec::new(),
+            }],
+        };
+        let insert_at = (self.selected_header_section + 1).min(self.site.footer.sections.len());
+        self.site.footer.sections.insert(insert_at, section);
+        self.selected_header_section = insert_at;
+        self.selected_header_column = 0;
+        self.selected_header_component = 0;
+        self.push_toast(
+            ToastLevel::Info,
+            format!(
+                "Added dd-section to footer at position {}.",
+                self.selected_header_section + 1
+            ),
+        );
     }
 
     fn add_component_to_header_section(&mut self) {
@@ -12098,18 +12127,56 @@ impl App {
         );
         let kind = self.component_kind;
         let component = kind.default_component();
-        self.site.header.sections[section_idx].columns[col_idx]
-            .components
-            .push(component);
-        self.selected_header_component = self.site.header.sections[section_idx].columns[col_idx]
-            .components
-            .len()
-            - 1;
+        let col = &mut self.site.header.sections[section_idx].columns[col_idx];
+        let insert_at = if col.components.is_empty() {
+            0
+        } else {
+            (self.selected_header_component + 1).min(col.components.len())
+        };
+        col.components.insert(insert_at, component);
+        self.selected_header_component = insert_at;
         self.push_toast(ToastLevel::Info, format!(
             "Added {} to header section column '{}'.",
             kind.label(),
             self.site.header.sections[section_idx].columns[col_idx].id
         ));
+    }
+
+    fn add_component_to_footer_section(&mut self) {
+        if self.site.footer.sections.is_empty() {
+            self.push_toast(
+                ToastLevel::Warning,
+                "No footer section available. Add a section first with '/'.",
+            );
+            return;
+        }
+        let section_idx = self
+            .selected_header_section
+            .min(self.site.footer.sections.len().saturating_sub(1));
+        let col_idx = self.selected_header_column.min(
+            self.site.footer.sections[section_idx]
+                .columns
+                .len()
+                .saturating_sub(1),
+        );
+        let kind = self.component_kind;
+        let component = kind.default_component();
+        let col = &mut self.site.footer.sections[section_idx].columns[col_idx];
+        let insert_at = if col.components.is_empty() {
+            0
+        } else {
+            (self.selected_header_component + 1).min(col.components.len())
+        };
+        col.components.insert(insert_at, component);
+        self.selected_header_component = insert_at;
+        self.push_toast(
+            ToastLevel::Info,
+            format!(
+                "Added {} to footer section column '{}'.",
+                kind.label(),
+                self.site.footer.sections[section_idx].columns[col_idx].id
+            ),
+        );
     }
 
     fn normalize_component_picker_selection(&mut self) {
@@ -13736,33 +13803,37 @@ impl App {
                 }
                 SidebarSection::Layouts => {
                     if width < 80 {
-                        &["F1:Help", "Enter:Edit", "/:Insert", "j/k:Nav", "Ctrl+Q:Quit"]
+                        &["F1:Help", "Enter:Edit", "d:Del", "y:Dup", "Ctrl+Q:Quit"]
                     } else if width < 110 {
                         &[
                             "F1:Help",
-                            "s:Save",
                             "/:Insert",
-                            "Enter:Edit",
-                            "p:Preview",
+                            "d:Del",
+                            "y:Dup",
+                            "u:Undo",
+                            "J/K:Move",
                             "Ctrl+Q:Quit",
                         ]
                     } else {
                         &[
                             "F1:Help",
-                            "F2:Theme",
-                            "s:Save",
                             "/:Insert",
                             "Enter:Edit",
-                            "Shift+E:Export",
+                            "d:Del",
+                            "y:Dup",
+                            "u:Undo",
+                            "J/K:Move",
                             "p:Preview",
-                            "F3:Validate",
                             "Ctrl+Q:Quit",
                         ]
                     }
                 }
             }
         };
-        let joined = parts.join("  ");
+        let mut joined = parts.join("  ");
+        if self.dirty {
+            joined = format!("*  {joined}");
+        }
         if width == 0 {
             return String::new();
         }
@@ -13965,6 +14036,585 @@ impl App {
         self.push_toast(ToastLevel::Info, format!("Deleted node {}.", idx + 1));
     }
 
+    fn selected_tree_row_kind(&self) -> Option<TreeRowKind> {
+        let rows = self.build_tree_rows();
+        if rows.is_empty() {
+            return None;
+        }
+        Some(rows[self.selected_tree_row.min(rows.len() - 1)].kind)
+    }
+
+    fn push_undo(&mut self) {
+        self.undo_stack.push(self.site.clone());
+        if self.undo_stack.len() > 20 {
+            self.undo_stack.remove(0);
+        }
+    }
+
+    fn undo_last(&mut self) {
+        let Some(site) = self.undo_stack.pop() else {
+            self.push_toast(ToastLevel::Warning, "Nothing to undo.");
+            return;
+        };
+        self.site = site;
+        if self.selected_page >= self.site.pages.len() {
+            self.selected_page = self.site.pages.len().saturating_sub(1);
+        }
+        self.sync_tree_row_with_selection();
+        self.push_toast(ToastLevel::Success, "Undid last change.");
+    }
+
+    fn request_quit(&mut self) {
+        if self.dirty {
+            self.modal = Some(Modal::ConfirmPrompt {
+                message: "Unsaved changes. Quit anyway? y/n".to_string(),
+                on_confirm: ConfirmKind::QuitUnsaved,
+            });
+        } else {
+            self.should_quit = true;
+        }
+    }
+
+    fn delete_selected_row(&mut self) {
+        let Some(kind) = self.selected_tree_row_kind() else {
+            self.push_toast(ToastLevel::Warning, "Nothing selected to delete.");
+            return;
+        };
+        match kind {
+            TreeRowKind::PageHead | TreeRowKind::HeaderRoot | TreeRowKind::FooterRoot => {
+                self.push_toast(ToastLevel::Warning, "Cannot delete this row.");
+            }
+            TreeRowKind::Hero { .. } | TreeRowKind::Section { .. } => {
+                self.push_undo();
+                self.delete_selected_node();
+                self.sync_tree_row_with_selection();
+            }
+            TreeRowKind::Component {
+                node_idx,
+                column_idx,
+                component_idx,
+            } => {
+                self.push_undo();
+                self.delete_page_component(node_idx, column_idx, component_idx);
+            }
+            TreeRowKind::HeaderComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            } => {
+                self.push_undo();
+                self.delete_header_component(section_idx, column_idx, component_idx);
+            }
+            TreeRowKind::FooterComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            } => {
+                self.push_undo();
+                self.delete_footer_component(section_idx, column_idx, component_idx);
+            }
+            TreeRowKind::AccordionItem { .. }
+            | TreeRowKind::AlternatingItem { .. }
+            | TreeRowKind::CardItem { .. }
+            | TreeRowKind::FilmstripItem { .. }
+            | TreeRowKind::MilestonesItem { .. }
+            | TreeRowKind::SliderItem { .. } => {
+                self.push_undo();
+                self.remove_selected_collection_item();
+                self.sync_tree_row_with_selection();
+            }
+            TreeRowKind::Column { .. }
+            | TreeRowKind::HeaderColumn { .. }
+            | TreeRowKind::FooterColumn { .. } => {
+                self.push_undo();
+                self.remove_selected_column();
+                self.sync_tree_row_with_selection();
+            }
+            TreeRowKind::HeaderSection { section_idx } => {
+                if self.site.header.sections.len() <= 1 {
+                    self.push_toast(ToastLevel::Warning, "Cannot delete last header section.");
+                    return;
+                }
+                self.push_undo();
+                if section_idx < self.site.header.sections.len() {
+                    self.site.header.sections.remove(section_idx);
+                    self.selected_header_section =
+                        section_idx.min(self.site.header.sections.len().saturating_sub(1));
+                    self.selected_header_column = 0;
+                    self.selected_header_component = 0;
+                    self.push_toast(ToastLevel::Info, "Deleted header section.");
+                    self.sync_tree_row_with_selection();
+                }
+            }
+            TreeRowKind::FooterSection { section_idx } => {
+                if self.site.footer.sections.len() <= 1 {
+                    self.push_toast(ToastLevel::Warning, "Cannot delete last footer section.");
+                    return;
+                }
+                self.push_undo();
+                if section_idx < self.site.footer.sections.len() {
+                    self.site.footer.sections.remove(section_idx);
+                    self.selected_header_section =
+                        section_idx.min(self.site.footer.sections.len().saturating_sub(1));
+                    self.selected_header_column = 0;
+                    self.selected_header_component = 0;
+                    self.push_toast(ToastLevel::Info, "Deleted footer section.");
+                    self.sync_tree_row_with_selection();
+                }
+            }
+        }
+    }
+
+    fn delete_page_component(&mut self, node_idx: usize, column_idx: usize, component_idx: usize) {
+        let new_selected = {
+            let Some(page) = self.current_page_mut() else {
+                return;
+            };
+            let Some(PageNode::Section(section)) = page.nodes.get_mut(node_idx) else {
+                self.push_toast(ToastLevel::Warning, "Selected row is not a section.");
+                return;
+            };
+            let Some(col) = section.columns.get_mut(column_idx) else {
+                return;
+            };
+            if component_idx >= col.components.len() {
+                return;
+            }
+            col.components.remove(component_idx);
+            component_idx.min(col.components.len().saturating_sub(1))
+        };
+        self.selected_node = node_idx;
+        self.selected_column = column_idx;
+        self.selected_component = new_selected;
+        self.selected_nested_item = 0;
+        self.push_toast(ToastLevel::Info, "Deleted component.");
+        self.sync_tree_row_with_selection();
+    }
+
+    fn delete_header_component(
+        &mut self,
+        section_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+    ) {
+        let Some(section) = self.site.header.sections.get_mut(section_idx) else {
+            return;
+        };
+        let Some(col) = section.columns.get_mut(column_idx) else {
+            return;
+        };
+        if component_idx >= col.components.len() {
+            return;
+        }
+        col.components.remove(component_idx);
+        self.selected_header_section = section_idx;
+        self.selected_header_column = column_idx;
+        self.selected_header_component = component_idx.min(col.components.len().saturating_sub(1));
+        self.push_toast(ToastLevel::Info, "Deleted header component.");
+        self.sync_tree_row_with_selection();
+    }
+
+    fn delete_footer_component(
+        &mut self,
+        section_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+    ) {
+        let Some(section) = self.site.footer.sections.get_mut(section_idx) else {
+            return;
+        };
+        let Some(col) = section.columns.get_mut(column_idx) else {
+            return;
+        };
+        if component_idx >= col.components.len() {
+            return;
+        }
+        col.components.remove(component_idx);
+        self.selected_header_section = section_idx;
+        self.selected_header_column = column_idx;
+        self.selected_header_component = component_idx.min(col.components.len().saturating_sub(1));
+        self.push_toast(ToastLevel::Info, "Deleted footer component.");
+        self.sync_tree_row_with_selection();
+    }
+
+    fn duplicate_selected_row(&mut self) {
+        let Some(kind) = self.selected_tree_row_kind() else {
+            self.push_toast(ToastLevel::Warning, "Nothing selected to duplicate.");
+            return;
+        };
+        match kind {
+            TreeRowKind::Hero { node_idx } | TreeRowKind::Section { node_idx } => {
+                self.push_undo();
+                let Some(page) = self.current_page_mut() else {
+                    self.undo_stack.pop();
+                    return;
+                };
+                if node_idx >= page.nodes.len() {
+                    self.undo_stack.pop();
+                    return;
+                }
+                let clone = page.nodes[node_idx].clone();
+                page.nodes.insert(node_idx + 1, clone);
+                self.selected_node = node_idx + 1;
+                self.selected_column = 0;
+                self.selected_component = 0;
+                self.selected_nested_item = 0;
+                self.push_toast(ToastLevel::Success, "Duplicated node.");
+                self.sync_tree_row_with_selection();
+            }
+            TreeRowKind::Component {
+                node_idx,
+                column_idx,
+                component_idx,
+            } => {
+                self.push_undo();
+                let Some(page) = self.current_page_mut() else {
+                    self.undo_stack.pop();
+                    return;
+                };
+                let Some(PageNode::Section(section)) = page.nodes.get_mut(node_idx) else {
+                    self.undo_stack.pop();
+                    return;
+                };
+                let Some(col) = section.columns.get_mut(column_idx) else {
+                    self.undo_stack.pop();
+                    return;
+                };
+                if component_idx >= col.components.len() {
+                    self.undo_stack.pop();
+                    return;
+                }
+                let clone = col.components[component_idx].clone();
+                col.components.insert(component_idx + 1, clone);
+                self.selected_node = node_idx;
+                self.selected_column = column_idx;
+                self.selected_component = component_idx + 1;
+                self.push_toast(ToastLevel::Success, "Duplicated component.");
+                self.sync_tree_row_with_selection();
+            }
+            TreeRowKind::HeaderComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            } => {
+                self.push_undo();
+                let Some(section) = self.site.header.sections.get_mut(section_idx) else {
+                    self.undo_stack.pop();
+                    return;
+                };
+                let Some(col) = section.columns.get_mut(column_idx) else {
+                    self.undo_stack.pop();
+                    return;
+                };
+                if component_idx >= col.components.len() {
+                    self.undo_stack.pop();
+                    return;
+                }
+                let clone = col.components[component_idx].clone();
+                col.components.insert(component_idx + 1, clone);
+                self.selected_header_component = component_idx + 1;
+                self.push_toast(ToastLevel::Success, "Duplicated header component.");
+                self.sync_tree_row_with_selection();
+            }
+            TreeRowKind::FooterComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            } => {
+                self.push_undo();
+                let Some(section) = self.site.footer.sections.get_mut(section_idx) else {
+                    self.undo_stack.pop();
+                    return;
+                };
+                let Some(col) = section.columns.get_mut(column_idx) else {
+                    self.undo_stack.pop();
+                    return;
+                };
+                if component_idx >= col.components.len() {
+                    self.undo_stack.pop();
+                    return;
+                }
+                let clone = col.components[component_idx].clone();
+                col.components.insert(component_idx + 1, clone);
+                self.selected_header_component = component_idx + 1;
+                self.push_toast(ToastLevel::Success, "Duplicated footer component.");
+                self.sync_tree_row_with_selection();
+            }
+            TreeRowKind::AccordionItem { .. }
+            | TreeRowKind::AlternatingItem { .. }
+            | TreeRowKind::CardItem { .. }
+            | TreeRowKind::FilmstripItem { .. }
+            | TreeRowKind::MilestonesItem { .. }
+            | TreeRowKind::SliderItem { .. } => {
+                self.push_undo();
+                if self.duplicate_selected_collection_item() {
+                    self.push_toast(ToastLevel::Success, "Duplicated item.");
+                    self.sync_tree_row_with_selection();
+                } else {
+                    self.undo_stack.pop();
+                    self.push_toast(ToastLevel::Warning, "Could not duplicate item.");
+                }
+            }
+            _ => {
+                self.push_toast(ToastLevel::Warning, "Cannot duplicate this row.");
+            }
+        }
+    }
+
+    fn duplicate_selected_collection_item(&mut self) -> bool {
+        let ni = self.selected_node;
+        let col_i = self.selected_column;
+        let selected_component = self.selected_component;
+        let item_idx = self.selected_nested_item;
+        let Some(page) = self.current_page_mut() else {
+            return false;
+        };
+        let ni = ni.min(page.nodes.len().saturating_sub(1));
+        let PageNode::Section(section) = &mut page.nodes[ni] else {
+            return false;
+        };
+        let col_i = col_i.min(section.columns.len().saturating_sub(1));
+        let ci = match component_index(
+            section.columns[col_i].components.len(),
+            selected_component,
+        ) {
+            Some(v) => v,
+            None => return false,
+        };
+        let components = &mut section.columns[col_i].components[ci];
+        let inserted = match components {
+            crate::model::SectionComponent::Accordion(a) if item_idx < a.items.len() => {
+                let clone = a.items[item_idx].clone();
+                a.items.insert(item_idx + 1, clone);
+                true
+            }
+            crate::model::SectionComponent::Alternating(a) if item_idx < a.items.len() => {
+                let clone = a.items[item_idx].clone();
+                a.items.insert(item_idx + 1, clone);
+                true
+            }
+            crate::model::SectionComponent::Card(a) if item_idx < a.items.len() => {
+                let clone = a.items[item_idx].clone();
+                a.items.insert(item_idx + 1, clone);
+                true
+            }
+            crate::model::SectionComponent::Filmstrip(a) if item_idx < a.items.len() => {
+                let clone = a.items[item_idx].clone();
+                a.items.insert(item_idx + 1, clone);
+                true
+            }
+            crate::model::SectionComponent::Milestones(a) if item_idx < a.items.len() => {
+                let clone = a.items[item_idx].clone();
+                a.items.insert(item_idx + 1, clone);
+                true
+            }
+            crate::model::SectionComponent::Slider(a) if item_idx < a.items.len() => {
+                let clone = a.items[item_idx].clone();
+                a.items.insert(item_idx + 1, clone);
+                true
+            }
+            _ => false,
+        };
+        if inserted {
+            self.selected_nested_item = item_idx + 1;
+        }
+        inserted
+    }
+
+    fn move_selected_row(&mut self, delta: isize) {
+        let Some(kind) = self.selected_tree_row_kind() else {
+            return;
+        };
+        match kind {
+            TreeRowKind::Hero { node_idx } | TreeRowKind::Section { node_idx } => {
+                let dest = node_idx as isize + delta;
+                let len = self.current_page().nodes.len();
+                if len < 2 || node_idx >= len || dest < 0 || dest as usize >= len {
+                    return;
+                }
+                self.push_undo();
+                let page = self.current_page_mut().unwrap();
+                page.nodes.swap(node_idx, dest as usize);
+                self.selected_node = dest as usize;
+                self.push_toast(ToastLevel::Info, "Moved node.");
+                self.sync_tree_row_with_selection();
+            }
+            TreeRowKind::Component {
+                node_idx,
+                column_idx,
+                component_idx,
+            } => {
+                let dest = component_idx as isize + delta;
+                let can_move = match self.current_page().nodes.get(node_idx) {
+                    Some(PageNode::Section(section)) => section
+                        .columns
+                        .get(column_idx)
+                        .map(|col| dest >= 0 && (dest as usize) < col.components.len())
+                        .unwrap_or(false),
+                    _ => false,
+                };
+                if !can_move {
+                    return;
+                }
+                self.push_undo();
+                let page = self.current_page_mut().unwrap();
+                let PageNode::Section(section) = &mut page.nodes[node_idx] else {
+                    self.undo_stack.pop();
+                    return;
+                };
+                section.columns[column_idx]
+                    .components
+                    .swap(component_idx, dest as usize);
+                self.selected_component = dest as usize;
+                self.push_toast(ToastLevel::Info, "Moved component.");
+                self.sync_tree_row_with_selection();
+            }
+            TreeRowKind::HeaderComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            } => self.move_region_component(false, section_idx, column_idx, component_idx, delta),
+            TreeRowKind::FooterComponent {
+                section_idx,
+                column_idx,
+                component_idx,
+            } => self.move_region_component(true, section_idx, column_idx, component_idx, delta),
+            TreeRowKind::Column { .. }
+            | TreeRowKind::HeaderColumn { .. }
+            | TreeRowKind::FooterColumn { .. } => {
+                self.push_undo();
+                if delta > 0 {
+                    self.move_selected_column_down();
+                } else {
+                    self.move_selected_column_up();
+                }
+            }
+            TreeRowKind::AccordionItem { .. }
+            | TreeRowKind::AlternatingItem { .. }
+            | TreeRowKind::CardItem { .. }
+            | TreeRowKind::FilmstripItem { .. }
+            | TreeRowKind::MilestonesItem { .. }
+            | TreeRowKind::SliderItem { .. } => {
+                self.push_undo();
+                if self.move_selected_collection_item(delta) {
+                    self.push_toast(ToastLevel::Info, "Moved item.");
+                    self.sync_tree_row_with_selection();
+                } else {
+                    self.undo_stack.pop();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn move_region_component(
+        &mut self,
+        footer: bool,
+        section_idx: usize,
+        column_idx: usize,
+        component_idx: usize,
+        delta: isize,
+    ) {
+        let dest = component_idx as isize + delta;
+        let len = if footer {
+            self.site
+                .footer
+                .sections
+                .get(section_idx)
+                .and_then(|s| s.columns.get(column_idx))
+                .map(|c| c.components.len())
+        } else {
+            self.site
+                .header
+                .sections
+                .get(section_idx)
+                .and_then(|s| s.columns.get(column_idx))
+                .map(|c| c.components.len())
+        };
+        let Some(len) = len else {
+            return;
+        };
+        if dest < 0 || dest as usize >= len {
+            return;
+        }
+        self.push_undo();
+        let sections = if footer {
+            &mut self.site.footer.sections
+        } else {
+            &mut self.site.header.sections
+        };
+        let col = &mut sections[section_idx].columns[column_idx];
+        col.components.swap(component_idx, dest as usize);
+        self.selected_header_component = dest as usize;
+        self.push_toast(
+            ToastLevel::Info,
+            if footer {
+                "Moved footer component."
+            } else {
+                "Moved header component."
+            },
+        );
+        self.sync_tree_row_with_selection();
+    }
+
+    fn move_selected_collection_item(&mut self, delta: isize) -> bool {
+        let ni = self.selected_node;
+        let col_i = self.selected_column;
+        let selected_component = self.selected_component;
+        let item_idx = self.selected_nested_item;
+        let Some(page) = self.current_page_mut() else {
+            return false;
+        };
+        let ni = ni.min(page.nodes.len().saturating_sub(1));
+        let PageNode::Section(section) = &mut page.nodes[ni] else {
+            return false;
+        };
+        let col_i = col_i.min(section.columns.len().saturating_sub(1));
+        let ci = match component_index(
+            section.columns[col_i].components.len(),
+            selected_component,
+        ) {
+            Some(v) => v,
+            None => return false,
+        };
+        let dest = item_idx as isize + delta;
+        if dest < 0 {
+            return false;
+        }
+        let dest = dest as usize;
+        let swapped = match &mut section.columns[col_i].components[ci] {
+            crate::model::SectionComponent::Accordion(a) if dest < a.items.len() => {
+                a.items.swap(item_idx, dest);
+                true
+            }
+            crate::model::SectionComponent::Alternating(a) if dest < a.items.len() => {
+                a.items.swap(item_idx, dest);
+                true
+            }
+            crate::model::SectionComponent::Card(a) if dest < a.items.len() => {
+                a.items.swap(item_idx, dest);
+                true
+            }
+            crate::model::SectionComponent::Filmstrip(a) if dest < a.items.len() => {
+                a.items.swap(item_idx, dest);
+                true
+            }
+            crate::model::SectionComponent::Milestones(a) if dest < a.items.len() => {
+                a.items.swap(item_idx, dest);
+                true
+            }
+            crate::model::SectionComponent::Slider(a) if dest < a.items.len() => {
+                a.items.swap(item_idx, dest);
+                true
+            }
+            _ => false,
+        };
+        if swapped {
+            self.selected_nested_item = dest;
+        }
+        swapped
+    }
+
     fn add_selected_component_to_section(&mut self) {
         let kind = self.component_kind;
         if matches!(kind, ComponentKind::Hero | ComponentKind::Section) {
@@ -13973,6 +14623,7 @@ impl App {
         }
         let selected = self.selected_node;
         let selected_column = self.selected_column;
+        let selected_component = self.selected_component;
         let Some(page) = self.current_page_mut() else {
             return;
         };
@@ -13987,9 +14638,14 @@ impl App {
                 let col_i = selected_column.min(section.columns.len().saturating_sub(1));
                 let components = &mut section.columns[col_i].components;
                 let inserted = kind.default_component();
-                components.push(inserted);
+                let insert_at = if components.is_empty() {
+                    0
+                } else {
+                    (selected_component + 1).min(components.len())
+                };
+                components.insert(insert_at, inserted);
                 (
-                    Some(components.len().saturating_sub(1)),
+                    Some(insert_at),
                     format!(
                         "Added {} to selected section column '{}'.",
                         kind.label(),
@@ -19397,9 +20053,12 @@ fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
             ("PageUp/PageDown", "Scroll Details blueprint panel"),
             ("Enter", "Edit selected row"),
             ("Space", "Expand/collapse selected section or accordion/alternating/card/filmstrip/milestones/slider items"),
-            ("/", "Open insert fuzzy finder (hero/section/cta/.../slider)"),
+            ("/", "Open insert fuzzy finder (hero/section/cta/.../slider); inserts after the selected row"),
             ("A / X", "Add/remove dd-accordion, dd-alternating, dd-card, dd-filmstrip, dd-milestones, or dd-slider item"),
-            ("d", "Delete selected node"),
+            ("d", "Delete selected row (node, component, or collection item)"),
+            ("y", "Duplicate selected row after the current one"),
+            ("u", "Undo last tree edit (session snapshots, cap 20)"),
+            ("J / K", "Move selected row down / up (node, component, item, or column)"),
         ],
         "•",
         h_style,
@@ -19415,7 +20074,7 @@ fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
         &[
             ("Shift+A", "Add page (title prompt → template picker: Blank / Hero only / Hero + Section / Duplicate)"),
             ("Shift+X", "Delete current page (confirms; refuses if only 1 page)"),
-            ("u", "Undo last page deletion (session only)"),
+            ("u", "Undo last page deletion (session trash)"),
             ("Shift+J / Shift+K", "Move current page down / up (also = sitemap order)"),
             ("r", "Rename page (auto-slug until first disk save; locked pages expose a Slug field in [HEAD])"),
         ],
@@ -19433,7 +20092,7 @@ fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
         &[
             ("C / V", "Add/remove selected column"),
             ("c / v", "Select previous/next column"),
-            ("J / K", "Move selected column down/up"),
+            ("J / K", "Move selected grain down/up (column when a column row is selected)"),
             ("r / f", "Edit selected column id / width class"),
             ("Details pane", "Shows ASCII blueprint (click selects, double-click edits)"),
         ],
@@ -20082,6 +20741,16 @@ mod tests {
         app.selected_nested_item = 0;
         app.sync_tree_row_with_selection();
         app
+    }
+
+    fn select_first_component_row(app: &mut App) {
+        let rows = app.build_tree_rows();
+        let idx = rows
+            .iter()
+            .position(|r| matches!(r.kind, TreeRowKind::Component { .. }))
+            .expect("expected a component tree row");
+        app.selected_tree_row = idx;
+        app.apply_tree_row_selection(rows[idx]);
     }
 
     #[test]
@@ -21506,10 +22175,146 @@ mod tests {
     }
 
     #[test]
-    fn q_without_modifiers_quits() {
+    fn q_without_modifiers_does_not_quit() {
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
         send_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE);
+        assert!(!app.should_quit);
+        send_key(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL);
         assert!(app.should_quit);
+    }
+
+    #[test]
+    fn d_deletes_selected_component() {
+        let mut app = app_with_component(ComponentKind::Banner);
+        app.selected_sidebar_section = SidebarSection::Layouts;
+        select_first_component_row(&mut app);
+        send_key(&mut app, KeyCode::Char('d'), KeyModifiers::NONE);
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => assert!(s.columns[0].components.is_empty()),
+            _ => panic!("expected section"),
+        }
+    }
+
+    #[test]
+    fn y_duplicates_selected_component() {
+        let mut app = app_with_component(ComponentKind::Banner);
+        app.selected_sidebar_section = SidebarSection::Layouts;
+        select_first_component_row(&mut app);
+        send_key(&mut app, KeyCode::Char('y'), KeyModifiers::NONE);
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => assert_eq!(s.columns[0].components.len(), 2),
+            _ => panic!("expected section"),
+        }
+    }
+
+    #[test]
+    fn jk_reorders_nodes() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.selected_sidebar_section = SidebarSection::Layouts;
+        app.selected_node = 0;
+        app.page_head_selected = false;
+        app.sync_tree_row_with_selection();
+        send_key(&mut app, KeyCode::Char('J'), KeyModifiers::SHIFT);
+        assert!(matches!(app.site.pages[0].nodes[0], PageNode::Section(_)));
+        assert!(matches!(app.site.pages[0].nodes[1], PageNode::Hero(_)));
+        send_key(&mut app, KeyCode::Char('K'), KeyModifiers::SHIFT);
+        assert!(matches!(app.site.pages[0].nodes[0], PageNode::Hero(_)));
+    }
+
+    #[test]
+    fn insert_component_after_selected_not_append() {
+        let mut app = app_with_component(ComponentKind::Banner);
+        app.component_kind = ComponentKind::Alert;
+        app.add_selected_component_to_section();
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => {
+                assert_eq!(s.columns[0].components.len(), 2);
+                assert!(matches!(
+                    s.columns[0].components[1],
+                    crate::model::SectionComponent::Alert(_)
+                ));
+            }
+            _ => panic!("expected section"),
+        }
+        app.selected_component = 0;
+        app.sync_tree_row_with_selection();
+        app.component_kind = ComponentKind::Image;
+        app.add_selected_component_to_section();
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => {
+                assert_eq!(s.columns[0].components.len(), 3);
+                assert!(matches!(
+                    s.columns[0].components[1],
+                    crate::model::SectionComponent::Image(_)
+                ));
+            }
+            _ => panic!("expected section"),
+        }
+    }
+
+    #[test]
+    fn footer_insert_adds_to_footer_not_page() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.selected_region = SelectedRegion::Footer;
+        app.component_kind = ComponentKind::RichText;
+        let page_comps_before = match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => s.columns[0].components.len(),
+            _ => 0,
+        };
+        app.insert_selected_component_kind();
+        assert!(
+            app.site.footer.sections[0].columns[0]
+                .components
+                .iter()
+                .any(|c| matches!(c, crate::model::SectionComponent::RichText(_)))
+        );
+        let page_comps_after = match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => s.columns[0].components.len(),
+            _ => 0,
+        };
+        assert_eq!(page_comps_before, page_comps_after);
+    }
+
+    #[test]
+    fn u_undoes_component_delete() {
+        let mut app = app_with_component(ComponentKind::Banner);
+        app.selected_sidebar_section = SidebarSection::Layouts;
+        select_first_component_row(&mut app);
+        send_key(&mut app, KeyCode::Char('d'), KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Char('u'), KeyModifiers::NONE);
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => assert_eq!(s.columns[0].components.len(), 1),
+            _ => panic!("expected section"),
+        }
+    }
+
+    #[test]
+    fn ctrl_q_when_dirty_opens_confirm() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.site.pages[0].head.title = "Changed".to_string();
+        app.mark_dirty_if_changed();
+        assert!(app.dirty);
+        send_key(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL);
+        assert!(!app.should_quit);
+        assert!(matches!(
+            app.modal,
+            Some(Modal::ConfirmPrompt {
+                on_confirm: ConfirmKind::QuitUnsaved,
+                ..
+            })
+        ));
+        send_key(&mut app, KeyCode::Char('y'), KeyModifiers::NONE);
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn footer_hint_marks_dirty() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        let clean = app.footer_hint(120);
+        assert!(!clean.starts_with('*'));
+        app.dirty = true;
+        let dirty = app.footer_hint(120);
+        assert!(dirty.starts_with('*'), "{dirty}");
     }
 
     #[test]

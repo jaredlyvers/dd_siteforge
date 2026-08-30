@@ -88,7 +88,7 @@ loop:
 | `/` | Insert component fuzzy picker |
 | `Tab` / `Shift+Tab` | Next/prev page |
 | `1` / `2` / `3` | Sidebar focus: Regions / Pages / Layout |
-| `q` / `Ctrl+Q` | Quit |
+| `Ctrl+Q` | Quit (confirms if unsaved) |
 
 ### Pages panel (`[2] Pages`)
 
@@ -96,7 +96,7 @@ loop:
 
 ### Layout panel (`[3]`)
 
-`Up/Down` or `j/k` move row · `g`/`G` first/last · `h`/`l` collapse/expand · `Space` toggle expand · `Enter` edit row · `J/K` move column up/down · `C/V` add/remove column · `c/v` prev/next column · `r/f` edit column id/width-class.
+`Up/Down` or `j/k` move row · `g`/`G` first/last · `h`/`l` collapse/expand · `Space` toggle expand · `Enter` edit row · `d` delete selected grain · `y` duplicate after · `u` undo · `J/K` move selected grain down/up · `C/V` add/remove column · `c/v` prev/next column · `r/f` edit column id/width-class.
 
 ### Edit modal
 

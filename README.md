@@ -57,11 +57,11 @@ dd_siteforge show-site site.json
 
 ## TUI cheatsheet
 
-**Global:** `F1` help · `F3` validate · `Shift+E` export · `p` preview in browser · `s` save (+ writes `.backup`) · `/` insert component · `Tab`/`Shift+Tab` next/prev page · `Ctrl+Q` quit.
+**Global:** `F1` help · `F3` validate · `Shift+E` export · `p` preview in browser · `s` save (+ writes `.backup`) · `/` insert component · `Tab`/`Shift+Tab` next/prev page · `Ctrl+Q` quit (confirms if unsaved).
 
 **Pages panel (`[2] Nodes`):** `Shift+A` add · `Shift+X` delete · `u` undo delete · `Shift+J`/`Shift+K` reorder · `r` rename.
 
-**Layout panel (`[3]`):** `j`/`k` or arrows move · `h`/`l` collapse/expand · `Space` toggle · `Enter` edit · `J`/`K` move column · `C`/`V` add/remove column · `r`/`f` edit column id/width.
+**Layout panel (`[3]`):** `j`/`k` or arrows move · `h`/`l` collapse/expand · `Space` toggle · `Enter` edit · `d` delete · `y` duplicate · `u` undo · `J`/`K` move selected grain · `C`/`V` add/remove column · `r`/`f` edit column id/width.
 
 **Edit modal:** `Tab` navigate · `Left`/`Right` cycle enums · `Ctrl+S` save · `Esc` cancel · `Ctrl+P` in any URL field opens an image picker (for `*_image_url`) or page picker (for `*_link_url`). Mouse wheel scrolls; click any input box to focus.
 
