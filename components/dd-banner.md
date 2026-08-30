@@ -6,7 +6,7 @@ node_scope: section_item   # one of: page_node | section_item
 insert:
   defaults:
     parent_class: "-bg-center-center"
-    parent_data_aos: "fade-in"
+    sal: "fade"
     parent_image_url: "https://dummyimage.com/1920x1080/000/fff"
     parent_image_alt: "Banner alt text"
 
@@ -18,12 +18,12 @@ fields:
     default: "-bg-center-center"
     maps_to: ".dd-banner class token"
 
-  - id: parent_data_aos
+  - id: sal
     required: true
     type: enum
-    options: ["fade-in","fade-up","fade-right","fade-down","fade-left","zoom-in","zoom-in-up","zoom-in-down"]
-    default: "fade-in"
-    maps_to: ".dd-banner[data-aos]"
+    options: ["fade","slide-up","slide-down","slide-left","slide-right","zoom-in","zoom-out","flip-up","flip-down","flip-left","flip-right"]
+    default: "fade"
+    maps_to: ".dd-banner[data-sal]"
 
   - id: parent_image_url
     required: true
@@ -38,7 +38,7 @@ fields:
 edit_ui:
   tab_order:
     - parent_class
-    - parent_data_aos
+    - sal
     - parent_image_url
     - parent_image_alt
 
@@ -48,7 +48,7 @@ edit_ui:
   modal_fields:
     parent_edit_modes:
       - parent_class
-      - parent_data_aos
+      - sal
       - parent_image_url
       - parent_image_alt
     hide_when_editing_component:
@@ -64,7 +64,7 @@ blueprint:
 ## HTML Template
 
 ```html
-<div class="dd-banner [parent_class]" data-aos="[parent_data_aos]" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100" style="background-image: url([banner_image_url]);">
+<div class="dd-banner [parent_class]" data-sal="[sal]" style="background-image: url([banner_image_url]);">
   <div class="dd-banner__image">
     <img src="[parent_image_url]" class="dd-img" alt="[parent_image_alt]" loading="lazy" />
   </div>

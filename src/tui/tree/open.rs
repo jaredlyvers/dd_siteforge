@@ -639,7 +639,7 @@ impl App {
         let hero = crate::model::DdHero {
             parent_image_url: "/assets/images/hero-new.jpg".to_string(),
             parent_class: Some(crate::model::HeroImageClass::FullFull),
-            parent_data_aos: Some(crate::model::HeroAos::FadeIn),
+            sal: Some(crate::model::SalAnimation::Fade),
             parent_custom_css: None,
             parent_title: "New Hero".to_string(),
             parent_subtitle: "Add subtitle".to_string(),

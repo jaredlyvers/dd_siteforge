@@ -8,7 +8,7 @@ insert:
     # parent fields
     parent_type: "-default"
     parent_class: "-primary"
-    parent_data_aos: "fade-in"
+    sal: "fade"
     parent_group_name: "group1"
 
     # required children collection
@@ -36,12 +36,12 @@ fields:
     default: "-primary"
     maps_to: ".dd-accordion class token"
 
-  - id: parent_data_aos
+  - id: sal
     required: true
     type: enum
-    options: ["fade-in","fade-up","fade-right","fade-down","fade-left","zoom-in","zoom-in-up","zoom-in-down"]
-    default: "fade-in"
-    maps_to: ".dd-accordion__item[data-aos]"
+    options: ["fade","slide-up","slide-down","slide-left","slide-right","zoom-in","zoom-out","flip-up","flip-down","flip-left","flip-right"]
+    default: "fade"
+    maps_to: ".dd-accordion__item[data-sal]"
 
   - id: parent_group_name
     required: true
@@ -82,7 +82,7 @@ edit_ui:
     # parent edit order
     - parent_type
     - parent_class
-    - parent_data_aos
+    - sal
     - parent_group_name
 
     # child edit order (used when editing an item row)
@@ -109,7 +109,7 @@ edit_ui:
     parent_edit_modes:
       - parent_type
       - parent_class
-      - parent_data_aos
+      - sal
       - parent_group_name
     item_edit_modes:
       - items[].child_title
@@ -131,7 +131,7 @@ blueprint:
 <div class="dd-accordion [parent_type] [parent_class]">
   <div class="dd-accordion__items dd-g">
     <!-- repeat: items -->
-    <details name="[group_name]" class="dd-accordion__item l-box" data-aos="[parent_data_aos]" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+    <details name="[group_name]" class="dd-accordion__item l-box" data-sal="[sal]">
       <summary class="dd-accordion__header dd-g -y-center">
         <div class="dd-accordion__title dd-u-1-1"><h3>[child_title]</h3></div>
       </summary>

@@ -571,8 +571,8 @@ pub(in crate::tui) fn hero_ascii_map(hero: &crate::model::DdHero, panel_width: u
         ),
         fit_ascii_cell(
             &format!(
-                "aos: {}",
-                parent_data_aos_to_str(hero.parent_data_aos.unwrap_or(crate::model::HeroAos::FadeIn))
+                "sal: {}",
+                sal_to_str(hero.sal.unwrap_or(crate::model::SalAnimation::Fade))
             ),
             inner_width,
         ),

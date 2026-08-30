@@ -161,7 +161,7 @@ fn not_found_page() -> Page {
                 width_class: "dd-u-1-1".to_string(),
                 components: vec![SectionComponent::RichText(DdRichText {
                     parent_class: None,
-                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    sal: crate::model::SalAnimation::Fade,
                     parent_copy: "This page does not exist.".to_string(),
                 })],
             }],

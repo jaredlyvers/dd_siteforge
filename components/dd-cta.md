@@ -8,7 +8,7 @@ insert:
     parent_class: "-top-left"
     parent_image_url: "https://dummyimage.com/1920x1080/000000/fff"
     parent_image_alt: "Image alt"
-    parent_data_aos: "fade-in"
+    sal: "fade"
     parent_title: "Title"
     parent_subtitle: "Subtitle"
     parent_copy: "Copy"
@@ -36,12 +36,12 @@ fields:
     default: "Image alt"
     maps_to: ".dd-cta__image img[alt]"
 
-  - id: parent_data_aos
+  - id: sal
     required: true
     type: enum
-    options: ["fade-in","fade-up","fade-right","fade-down","fade-left","zoom-in","zoom-in-up","zoom-in-down"]
-    default: "fade-in"
-    maps_to: ".dd-cta__content[data-aos]"
+    options: ["fade","slide-up","slide-down","slide-left","slide-right","zoom-in","zoom-out","flip-up","flip-down","flip-left","flip-right"]
+    default: "fade"
+    maps_to: ".dd-cta__content[data-sal]"
 
   - id: parent_title
     required: true
@@ -91,7 +91,7 @@ edit_ui:
     - parent_class
     - parent_image_url
     - parent_image_alt
-    - parent_data_aos
+    - sal
     - parent_title
     - parent_subtitle
     - parent_copy
@@ -107,7 +107,7 @@ edit_ui:
       - parent_class
       - parent_image_url
       - parent_image_alt
-      - parent_data_aos
+      - sal
       - parent_title
       - parent_subtitle
       - parent_copy
@@ -133,7 +133,7 @@ blueprint:
       <img src="[parent_image_url]" class="dd-img" alt="[parent_image_alt]" />
     </picture>
   </div>
-  <div class="dd-cta__content dd-g" data-aos="[parent_data_aos]" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-center" data-aos-delay="100">
+  <div class="dd-cta__content dd-g" data-sal="[sal]">
     <div class="dd-cta__copy dd-u-1-1 dd-u-md-12-24">
       <div class="dd-cta__title">
         <h2>[parent_title]</h2>

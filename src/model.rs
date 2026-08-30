@@ -56,7 +56,8 @@ pub struct DdHero {
     pub parent_image_url: String,
     pub parent_image_alt: Option<String>,
     pub parent_class: Option<HeroImageClass>,
-    pub parent_data_aos: Option<HeroAos>,
+    #[serde(default, alias = "parent_data_aos")]
+    pub sal: Option<SalAnimation>,
     pub parent_custom_css: Option<String>,
     pub parent_title: String,
     pub parent_subtitle: String,
@@ -118,8 +119,8 @@ pub struct DdAlternating {
     pub parent_type: AlternatingType,
     #[serde(default = "default_alternating_parent_class")]
     pub parent_class: String,
-    #[serde(default = "default_alternating_parent_data_aos")]
-    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_alternating_sal", alias = "parent_data_aos")]
+    pub sal: SalAnimation,
     pub items: Vec<AlternatingItem>,
 }
 
@@ -135,8 +136,8 @@ pub struct AlternatingItem {
 pub struct DdCard {
     #[serde(default = "default_card_parent_type")]
     pub parent_type: CardType,
-    #[serde(default = "default_card_parent_data_aos")]
-    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_card_sal", alias = "parent_data_aos")]
+    pub sal: SalAnimation,
     #[serde(default = "default_card_parent_width")]
     pub parent_width: String,
     pub items: Vec<CardItem>,
@@ -158,8 +159,8 @@ pub struct CardItem {
 pub struct DdBanner {
     #[serde(default = "default_banner_parent_class")]
     pub parent_class: BannerClass,
-    #[serde(default = "default_banner_parent_data_aos")]
-    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_banner_sal", alias = "parent_data_aos")]
+    pub sal: SalAnimation,
     pub parent_image_url: String,
     pub parent_image_alt: String,
 }
@@ -170,8 +171,8 @@ pub struct DdCta {
     pub parent_class: CtaClass,
     pub parent_image_url: String,
     pub parent_image_alt: String,
-    #[serde(default = "default_cta_parent_data_aos")]
-    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_cta_sal", alias = "parent_data_aos")]
+    pub sal: SalAnimation,
     pub parent_title: String,
     pub parent_subtitle: String,
     pub parent_copy: String,
@@ -184,8 +185,8 @@ pub struct DdCta {
 pub struct DdFilmstrip {
     #[serde(default = "default_filmstrip_parent_type")]
     pub parent_type: FilmstripType,
-    #[serde(default = "default_filmstrip_parent_data_aos")]
-    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_filmstrip_sal", alias = "parent_data_aos")]
+    pub sal: SalAnimation,
     pub items: Vec<FilmstripItem>,
 }
 
@@ -198,8 +199,8 @@ pub struct FilmstripItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DdMilestones {
-    #[serde(default = "default_milestones_parent_data_aos")]
-    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_milestones_sal", alias = "parent_data_aos")]
+    pub sal: SalAnimation,
     #[serde(default = "default_milestones_parent_width")]
     pub parent_width: String,
     pub items: Vec<MilestonesItem>,
@@ -246,8 +247,8 @@ pub struct DdAccordion {
     pub parent_type: AccordionType,
     #[serde(default = "default_accordion_parent_class")]
     pub parent_class: AccordionClass,
-    #[serde(default = "default_accordion_parent_data_aos")]
-    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_accordion_sal", alias = "parent_data_aos")]
+    pub sal: SalAnimation,
     #[serde(default = "default_accordion_parent_group_name")]
     pub parent_group_name: String,
     pub items: Vec<AccordionItem>,
@@ -266,16 +267,16 @@ pub struct DdAlert {
     pub parent_type: AlertType,
     #[serde(default = "default_alert_parent_class")]
     pub parent_class: AlertClass,
-    #[serde(default = "default_alert_parent_data_aos")]
-    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_alert_sal", alias = "parent_data_aos")]
+    pub sal: SalAnimation,
     pub parent_title: Option<String>,
     pub parent_copy: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DdBlockquote {
-    #[serde(default = "default_blockquote_parent_data_aos")]
-    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_blockquote_sal", alias = "parent_data_aos")]
+    pub sal: SalAnimation,
     pub parent_image_url: String,
     pub parent_image_alt: String,
     pub parent_name: String,
@@ -285,8 +286,8 @@ pub struct DdBlockquote {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DdImage {
-    #[serde(default = "default_image_parent_data_aos")]
-    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_image_sal", alias = "parent_data_aos")]
+    pub sal: SalAnimation,
     pub parent_image_url: String,
     pub parent_image_alt: String,
     pub parent_link_url: Option<String>,
@@ -297,8 +298,8 @@ pub struct DdImage {
 pub struct DdRichText {
     #[serde(default)]
     pub parent_class: Option<String>,
-    #[serde(default = "default_rich_text_parent_data_aos")]
-    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_rich_text_sal", alias = "parent_data_aos")]
+    pub sal: SalAnimation,
     pub parent_copy: String,
 }
 
@@ -308,8 +309,8 @@ pub struct DdNavigation {
     pub parent_type: NavigationType,
     #[serde(default = "default_navigation_parent_class")]
     pub parent_class: NavigationClass,
-    #[serde(default = "default_navigation_parent_data_aos")]
-    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_navigation_sal", alias = "parent_data_aos")]
+    pub sal: SalAnimation,
     #[serde(default = "default_navigation_parent_width")]
     pub parent_width: String,
     pub items: Vec<NavigationItem>,
@@ -331,16 +332,16 @@ pub struct NavigationItem {
 pub struct DdHeaderSearch {
     #[serde(default = "default_header_search_parent_width")]
     pub parent_width: String,
-    #[serde(default = "default_header_search_parent_data_aos")]
-    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_header_search_sal", alias = "parent_data_aos")]
+    pub sal: SalAnimation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DdHeaderMenu {
     #[serde(default = "default_header_menu_parent_width")]
     pub parent_width: String,
-    #[serde(default = "default_header_menu_parent_data_aos")]
-    pub parent_data_aos: HeroAos,
+    #[serde(default = "default_header_menu_sal", alias = "parent_data_aos")]
+    pub sal: SalAnimation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -383,8 +384,8 @@ fn default_alert_parent_class() -> AlertClass {
     AlertClass::Default
 }
 
-fn default_alert_parent_data_aos() -> HeroAos {
-    HeroAos::FadeIn
+fn default_alert_sal() -> SalAnimation {
+    SalAnimation::Fade
 }
 
 fn default_accordion_parent_group_name() -> String {
@@ -399,8 +400,8 @@ fn default_accordion_parent_class() -> AccordionClass {
     AccordionClass::Primary
 }
 
-fn default_accordion_parent_data_aos() -> HeroAos {
-    HeroAos::FadeIn
+fn default_accordion_sal() -> SalAnimation {
+    SalAnimation::Fade
 }
 
 fn default_alternating_parent_type() -> AlternatingType {
@@ -411,16 +412,16 @@ fn default_alternating_parent_class() -> String {
     "-default".to_string()
 }
 
-fn default_alternating_parent_data_aos() -> HeroAos {
-    HeroAos::FadeIn
+fn default_alternating_sal() -> SalAnimation {
+    SalAnimation::Fade
 }
 
 fn default_card_parent_type() -> CardType {
     CardType::Default
 }
 
-fn default_card_parent_data_aos() -> HeroAos {
-    HeroAos::FadeIn
+fn default_card_sal() -> SalAnimation {
+    SalAnimation::Fade
 }
 
 fn default_card_parent_width() -> String {
@@ -431,44 +432,44 @@ fn default_banner_parent_class() -> BannerClass {
     BannerClass::BgCenterCenter
 }
 
-fn default_banner_parent_data_aos() -> HeroAos {
-    HeroAos::FadeIn
+fn default_banner_sal() -> SalAnimation {
+    SalAnimation::Fade
 }
 
 fn default_cta_parent_class() -> CtaClass {
     CtaClass::TopLeft
 }
 
-fn default_cta_parent_data_aos() -> HeroAos {
-    HeroAos::FadeIn
+fn default_cta_sal() -> SalAnimation {
+    SalAnimation::Fade
 }
 
 fn default_filmstrip_parent_type() -> FilmstripType {
     FilmstripType::Default
 }
 
-fn default_filmstrip_parent_data_aos() -> HeroAos {
-    HeroAos::FadeIn
+fn default_filmstrip_sal() -> SalAnimation {
+    SalAnimation::Fade
 }
 
-fn default_milestones_parent_data_aos() -> HeroAos {
-    HeroAos::FadeIn
+fn default_milestones_sal() -> SalAnimation {
+    SalAnimation::Fade
 }
 
 fn default_milestones_parent_width() -> String {
     "dd-u-1-1 dd-u-md-12-24".to_string()
 }
 
-fn default_blockquote_parent_data_aos() -> HeroAos {
-    HeroAos::FadeIn
+fn default_blockquote_sal() -> SalAnimation {
+    SalAnimation::Fade
 }
 
-fn default_image_parent_data_aos() -> HeroAos {
-    HeroAos::FadeIn
+fn default_image_sal() -> SalAnimation {
+    SalAnimation::Fade
 }
 
-fn default_rich_text_parent_data_aos() -> HeroAos {
-    HeroAos::FadeIn
+fn default_rich_text_sal() -> SalAnimation {
+    SalAnimation::Fade
 }
 
 fn default_navigation_parent_type() -> NavigationType {
@@ -479,8 +480,8 @@ fn default_navigation_parent_class() -> NavigationClass {
     NavigationClass::MainMenu
 }
 
-fn default_navigation_parent_data_aos() -> HeroAos {
-    HeroAos::FadeIn
+fn default_navigation_sal() -> SalAnimation {
+    SalAnimation::Fade
 }
 
 fn default_navigation_parent_width() -> String {
@@ -495,16 +496,16 @@ fn default_header_search_parent_width() -> String {
     "dd-u-3-24 dd-u-sm-3-24 dd-u-md-3-24 dd-u-lg-4-24".to_string()
 }
 
-fn default_header_search_parent_data_aos() -> HeroAos {
-    HeroAos::FadeIn
+fn default_header_search_sal() -> SalAnimation {
+    SalAnimation::Fade
 }
 
 fn default_header_menu_parent_width() -> String {
     "dd-u-3-24 dd-u-sm-3-24 dd-u-md-3-24".to_string()
 }
 
-fn default_header_menu_parent_data_aos() -> HeroAos {
-    HeroAos::FadeIn
+fn default_header_menu_sal() -> SalAnimation {
+    SalAnimation::Fade
 }
 
 fn default_head_robots() -> RobotsDirective {
@@ -552,23 +553,29 @@ pub enum HeroImageClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum HeroAos {
-    #[serde(rename = "fade-in")]
-    FadeIn,
-    #[serde(rename = "fade-up")]
-    FadeUp,
-    #[serde(rename = "fade-right")]
-    FadeRight,
-    #[serde(rename = "fade-down")]
-    FadeDown,
-    #[serde(rename = "fade-left")]
-    FadeLeft,
-    #[serde(rename = "zoom-in")]
+pub enum SalAnimation {
+    #[serde(rename = "fade", alias = "fade-in")]
+    Fade,
+    #[serde(rename = "slide-up", alias = "fade-up")]
+    SlideUp,
+    #[serde(rename = "slide-down", alias = "fade-down")]
+    SlideDown,
+    #[serde(rename = "slide-left", alias = "fade-left")]
+    SlideLeft,
+    #[serde(rename = "slide-right", alias = "fade-right")]
+    SlideRight,
+    #[serde(rename = "zoom-in", alias = "zoom-in-up", alias = "zoom-in-down")]
     ZoomIn,
-    #[serde(rename = "zoom-in-up")]
-    ZoomInUp,
-    #[serde(rename = "zoom-in-down")]
-    ZoomInDown,
+    #[serde(rename = "zoom-out")]
+    ZoomOut,
+    #[serde(rename = "flip-up")]
+    FlipUp,
+    #[serde(rename = "flip-down")]
+    FlipDown,
+    #[serde(rename = "flip-left")]
+    FlipLeft,
+    #[serde(rename = "flip-right")]
+    FlipRight,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -819,7 +826,7 @@ impl Site {
                                 .to_string(),
                             components: vec![SectionComponent::HeaderSearch(DdHeaderSearch {
                                 parent_width: default_header_search_parent_width(),
-                                parent_data_aos: HeroAos::FadeIn,
+                                sal: SalAnimation::Fade,
                             })],
                         },
                         SectionColumn {
@@ -827,7 +834,7 @@ impl Site {
                             width_class: "dd-u-3-24 dd-u-sm-3-24 dd-u-md-3-24".to_string(),
                             components: vec![SectionComponent::HeaderMenu(DdHeaderMenu {
                                 parent_width: default_header_menu_parent_width(),
-                                parent_data_aos: HeroAos::FadeIn,
+                                sal: SalAnimation::Fade,
                             })],
                         },
                     ],
@@ -870,7 +877,7 @@ impl Site {
                         parent_image_url: "assets/images/hero.jpg".to_string(),
                         parent_image_alt: Some("Decorative hero".to_string()),
                         parent_class: Some(HeroImageClass::FullFull),
-                        parent_data_aos: Some(HeroAos::FadeIn),
+                        sal: Some(SalAnimation::Fade),
                         parent_custom_css: None,
                         parent_title: "Build with dd-framework".to_string(),
                         parent_subtitle: "Framework-native static page builder".to_string(),
@@ -965,7 +972,7 @@ impl Page {
             parent_image_url: String::new(),
             parent_image_alt: None,
             parent_class: Some(HeroImageClass::FullFull),
-            parent_data_aos: Some(HeroAos::FadeIn),
+            sal: Some(SalAnimation::Fade),
             parent_custom_css: None,
             parent_title: String::new(),
             parent_subtitle: String::new(),
@@ -1153,5 +1160,36 @@ mod tests {
         );
         assert!(absolute_url(None, "index.html").is_none());
         assert!(absolute_url(Some("  "), "index.html").is_none());
+    }
+
+    #[test]
+    fn sal_field_loads_legacy_parent_data_aos_and_old_animation_names() {
+        let banner: crate::model::DdBanner = serde_json::from_str(
+            r#"{
+                "parent_class": "-bg-center-center",
+                "parent_data_aos": "fade-up",
+                "parent_image_url": "/x.jpg",
+                "parent_image_alt": "x"
+            }"#,
+        )
+        .expect("legacy banner JSON should load");
+        assert_eq!(banner.sal, SalAnimation::SlideUp);
+
+        let zoom: crate::model::DdBanner = serde_json::from_str(
+            r#"{
+                "parent_class": "-bg-center-center",
+                "parent_data_aos": "zoom-in-down",
+                "parent_image_url": "/x.jpg",
+                "parent_image_alt": "x"
+            }"#,
+        )
+        .expect("legacy zoom-in-down should map to zoom-in");
+        assert_eq!(zoom.sal, SalAnimation::ZoomIn);
+
+        let fresh = serde_json::to_string(&banner).unwrap();
+        assert!(fresh.contains("\"sal\""));
+        assert!(!fresh.contains("parent_data_aos"));
+        assert!(fresh.contains("slide-up"));
+        assert!(!fresh.contains("fade-up"));
     }
 }

@@ -256,15 +256,18 @@ impl EditFormState {
 }
 
 // Shared option lists reused by several forms.
-pub(super) const AOS_OPTIONS: &[&str] = &[
-    "fade-in",
-    "fade-up",
-    "fade-right",
-    "fade-down",
-    "fade-left",
+pub(super) const SAL_OPTIONS: &[&str] = &[
+    "fade",
+    "slide-up",
+    "slide-down",
+    "slide-left",
+    "slide-right",
     "zoom-in",
-    "zoom-in-up",
-    "zoom-in-down",
+    "zoom-out",
+    "flip-up",
+    "flip-down",
+    "flip-left",
+    "flip-right",
 ];
 
 pub(super) const LINK_TARGET_OPTIONS: &[&str] = &["_self", "_blank"];

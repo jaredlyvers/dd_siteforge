@@ -39,20 +39,11 @@ pub static CTA_FORM: EditForm = EditForm {
             visible_when: None,
         },
         FormField {
-            id: "parent_data_aos",
+            id: "sal",
             label: "Animation",
             kind: FieldKind::Enum {
-                options: &[
-                    "fade-in",
-                    "fade-up",
-                    "fade-right",
-                    "fade-down",
-                    "fade-left",
-                    "zoom-in",
-                    "zoom-in-up",
-                    "zoom-in-down",
-                ],
-                default: "fade-in",
+                options: SAL_OPTIONS,
+                default: "fade",
             },
             required: true,
             visible_when: None,
@@ -132,11 +123,11 @@ pub static BANNER_FORM: EditForm = EditForm {
             visible_when: None,
         },
         FormField {
-            id: "parent_data_aos",
+            id: "sal",
             label: "Animation",
             kind: FieldKind::Enum {
-                options: AOS_OPTIONS,
-                default: "fade-in",
+                options: SAL_OPTIONS,
+                default: "fade",
             },
             required: true,
             visible_when: None,
@@ -162,11 +153,11 @@ pub static IMAGE_FORM: EditForm = EditForm {
     title: "dd-image",
     fields: &[
         FormField {
-            id: "parent_data_aos",
+            id: "sal",
             label: "Animation",
             kind: FieldKind::Enum {
-                options: AOS_OPTIONS,
-                default: "fade-in",
+                options: SAL_OPTIONS,
+                default: "fade",
             },
             required: true,
             visible_when: None,
@@ -216,11 +207,11 @@ pub static HEADER_SEARCH_FORM: EditForm = EditForm {
             visible_when: None,
         },
         FormField {
-            id: "parent_data_aos",
+            id: "sal",
             label: "Animation",
             kind: FieldKind::Enum {
-                options: AOS_OPTIONS,
-                default: "fade-in",
+                options: SAL_OPTIONS,
+                default: "fade",
             },
             required: true,
             visible_when: None,
@@ -239,11 +230,11 @@ pub static HEADER_MENU_FORM: EditForm = EditForm {
             visible_when: None,
         },
         FormField {
-            id: "parent_data_aos",
+            id: "sal",
             label: "Animation",
             kind: FieldKind::Enum {
-                options: AOS_OPTIONS,
-                default: "fade-in",
+                options: SAL_OPTIONS,
+                default: "fade",
             },
             required: true,
             visible_when: None,
@@ -262,11 +253,11 @@ pub static RICH_TEXT_FORM: EditForm = EditForm {
             visible_when: None,
         },
         FormField {
-            id: "parent_data_aos",
+            id: "sal",
             label: "Animation",
             kind: FieldKind::Enum {
-                options: AOS_OPTIONS,
-                default: "fade-in",
+                options: SAL_OPTIONS,
+                default: "fade",
             },
             required: true,
             visible_when: None,
@@ -308,11 +299,11 @@ pub static ALERT_FORM: EditForm = EditForm {
             visible_when: None,
         },
         FormField {
-            id: "parent_data_aos",
+            id: "sal",
             label: "Animation",
             kind: FieldKind::Enum {
-                options: AOS_OPTIONS,
-                default: "fade-in",
+                options: SAL_OPTIONS,
+                default: "fade",
             },
             required: true,
             visible_when: None,
@@ -364,11 +355,11 @@ pub static BLOCKQUOTE_FORM: EditForm = EditForm {
     title: "dd-blockquote",
     fields: &[
         FormField {
-            id: "parent_data_aos",
+            id: "sal",
             label: "Animation",
             kind: FieldKind::Enum {
-                options: AOS_OPTIONS,
-                default: "fade-in",
+                options: SAL_OPTIONS,
+                default: "fade",
             },
             required: true,
             visible_when: None,

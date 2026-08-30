@@ -7,7 +7,7 @@ insert:
   defaults:
     # parent fields
     parent_type: "-default"
-    parent_data_aos: "fade-in"
+    sal: "fade"
     parent_width: "dd-u-1-1 dd-u-md-12-24 dd-u-lg-8-24"
 
     # required children collection
@@ -32,12 +32,12 @@ fields:
     default: "-default"
     maps_to: ".dd-card class token"
 
-  - id: parent_data_aos
+  - id: sal
     required: true
     type: enum
-    options: ["fade-in","fade-up","fade-right","fade-down","fade-left","zoom-in","zoom-in-up","zoom-in-down"]
-    default: "fade-in"
-    maps_to: ".dd-card[data-aos] OR child[data-aos]"
+    options: ["fade","slide-up","slide-down","slide-left","slide-right","zoom-in","zoom-out","flip-up","flip-down","flip-left","flip-right"]
+    default: "fade"
+    maps_to: ".dd-card[data-sal] OR child[data-sal]"
 
   - id: parent_width
     required: true
@@ -110,7 +110,7 @@ edit_ui:
   tab_order:
     # parent edit order
     - parent_type
-    - parent_data_aos
+    - sal
     - parent_width
 
     # child edit order (used when editing an item row)
@@ -143,7 +143,7 @@ edit_ui:
     parent_edit_modes:
       - parent_type
       - parent_class
-      - parent_data_aos
+      - sal
       - parent_width
     item_edit_modes:
       - items[].child_image_url
@@ -171,7 +171,7 @@ blueprint:
 <div class="dd-card [parent_type] [parent_class]">
   <div class="dd-card__items dd-g">
     <!-- repeat: items -->
-    <div class="dd-card__item l-box [parent_width]" data-aos="[parent_data_aos]">
+    <div class="dd-card__item l-box [parent_width]" data-sal="[sal]">
       <div class="dd-card__body dd-g">
         <div class="dd-card__image">
           <img src="[child_image_url]" alt="[child_image_alt]" class="dd-img" loading="lazy">
@@ -194,7 +194,7 @@ blueprint:
 <div class="dd-card [parent_type]">
   <div class="dd-card__items dd-g"><!-- cards loop inside items -->
     <!-- repeat: items -->
-    <div class="dd-card__item l-box [parent_width]" data-aos="[parent_data_aos]" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+    <div class="dd-card__item l-box [parent_width]" data-sal="[sal]">
       <div class="dd-card__body dd-g">
         <div class="dd-card__image">
           <img src="[child_image_url]" alt="[child_image_alt]" class="dd-img" loading="lazy">

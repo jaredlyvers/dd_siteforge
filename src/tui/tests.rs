@@ -333,15 +333,15 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
     fn tier_a_image_form_edit_round_trip() {
         let mut app = app_with_component(ComponentKind::Image);
         open_form_edit_on_page_component(&mut app);
-        // Cycle parent_data_aos once (focused field 0).
+        // Cycle sal once (focused field 0).
         send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
         send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
         match &app.site.pages[0].nodes[1] {
             PageNode::Section(s) => match &s.columns[0].components[0] {
                 crate::model::SectionComponent::Image(i) => assert_eq!(
-                    i.parent_data_aos,
-                    crate::model::HeroAos::FadeUp,
-                    "image data_aos should advance one step from default"
+                    i.sal,
+                    crate::model::SalAnimation::SlideUp,
+                    "image sal should advance one step from default"
                 ),
                 _ => panic!("expected Image"),
             },
@@ -440,13 +440,13 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
     fn tier_a_blockquote_form_edit_round_trip() {
         let mut app = app_with_component(ComponentKind::Blockquote);
         open_form_edit_on_page_component(&mut app);
-        // parent_data_aos first: cycle once.
+        // sal first: cycle once.
         send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
         send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
         match &app.site.pages[0].nodes[1] {
             PageNode::Section(s) => match &s.columns[0].components[0] {
                 crate::model::SectionComponent::Blockquote(bq) => {
-                    assert_eq!(bq.parent_data_aos, crate::model::HeroAos::FadeUp);
+                    assert_eq!(bq.sal, crate::model::SalAnimation::SlideUp);
                 }
                 _ => panic!("expected Blockquote"),
             },

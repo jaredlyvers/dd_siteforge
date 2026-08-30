@@ -19,7 +19,7 @@ use crate::model::{
     DdAccordion, DdAlert, DdAlternating, DdBanner, DdBlockquote, DdCard, DdCta, DdFilmstrip,
     DdFooter, DdHead, DdHeader, DdHeaderMenu, DdHeaderSearch, DdHero, DdImage, DdMilestones,
     DdModal, DdNavigation, DdRichText, DdSection, DdSlider, FilmstripItem, FilmstripType,
-    HeroAos, HeroImageClass, MilestonesItem, NavigationClass, NavigationItem, NavigationKind,
+    SalAnimation, HeroImageClass, MilestonesItem, NavigationClass, NavigationItem, NavigationKind,
     NavigationType, PageNode, SectionClass, SectionColumn, SectionComponent, SectionItemBoxClass,
     Site, SliderItem,
 };
@@ -273,8 +273,8 @@ fn apply_cta_values(cta: &mut DdCta, state: &EditFormState) -> Result<()> {
         .context("invalid parent_class")?;
     cta.parent_image_url = state.get("parent_image_url").trim().to_string();
     cta.parent_image_alt = state.get("parent_image_alt").trim().to_string();
-    cta.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
-        .context("invalid parent_data_aos")?;
+    cta.sal = parse_enum::<SalAnimation>(state.get("sal"))
+        .context("invalid sal")?;
     cta.parent_title = state.get("parent_title").to_string();
     cta.parent_subtitle = state.get("parent_subtitle").to_string();
     cta.parent_copy = state.get("parent_copy").to_string();
@@ -327,7 +327,7 @@ pub fn cta_to_form_state(cta: &DdCta) -> EditFormState {
     state.set("parent_class", enum_serde_str(cta.parent_class));
     state.set("parent_image_url", cta.parent_image_url.clone());
     state.set("parent_image_alt", cta.parent_image_alt.clone());
-    state.set("parent_data_aos", enum_serde_str(cta.parent_data_aos));
+    state.set("sal", enum_serde_str(cta.sal));
     state.set("parent_title", cta.parent_title.clone());
     state.set("parent_subtitle", cta.parent_subtitle.clone());
     state.set("parent_copy", cta.parent_copy.clone());
@@ -353,7 +353,7 @@ pub fn cta_to_form_state(cta: &DdCta) -> EditFormState {
 pub fn banner_to_form_state(b: &DdBanner) -> EditFormState {
     let mut s = EditFormState::new(&editform::BANNER_FORM);
     s.set("parent_class", enum_serde_str(b.parent_class));
-    s.set("parent_data_aos", enum_serde_str(b.parent_data_aos));
+    s.set("sal", enum_serde_str(b.sal));
     s.set("parent_image_url", b.parent_image_url.clone());
     s.set("parent_image_alt", b.parent_image_alt.clone());
     s
@@ -361,8 +361,8 @@ pub fn banner_to_form_state(b: &DdBanner) -> EditFormState {
 fn apply_banner_values(b: &mut DdBanner, state: &EditFormState) -> Result<()> {
     b.parent_class =
         parse_enum::<BannerClass>(state.get("parent_class")).context("invalid parent_class")?;
-    b.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
-        .context("invalid parent_data_aos")?;
+    b.sal = parse_enum::<SalAnimation>(state.get("sal"))
+        .context("invalid sal")?;
     b.parent_image_url = state.get("parent_image_url").trim().to_string();
     b.parent_image_alt = state.get("parent_image_alt").trim().to_string();
     Ok(())
@@ -370,7 +370,7 @@ fn apply_banner_values(b: &mut DdBanner, state: &EditFormState) -> Result<()> {
 
 pub fn image_to_form_state(i: &DdImage) -> EditFormState {
     let mut s = EditFormState::new(&editform::IMAGE_FORM);
-    s.set("parent_data_aos", enum_serde_str(i.parent_data_aos));
+    s.set("sal", enum_serde_str(i.sal));
     s.set("parent_image_url", i.parent_image_url.clone());
     s.set("parent_image_alt", i.parent_image_alt.clone());
     s.set(
@@ -386,8 +386,8 @@ pub fn image_to_form_state(i: &DdImage) -> EditFormState {
     s
 }
 fn apply_image_values(i: &mut DdImage, state: &EditFormState) -> Result<()> {
-    i.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
-        .context("invalid parent_data_aos")?;
+    i.sal = parse_enum::<SalAnimation>(state.get("sal"))
+        .context("invalid sal")?;
     i.parent_image_url = state.get("parent_image_url").trim().to_string();
     i.parent_image_alt = state.get("parent_image_alt").trim().to_string();
     let link = state.get("parent_link_url").trim().to_string();
@@ -407,26 +407,26 @@ fn apply_image_values(i: &mut DdImage, state: &EditFormState) -> Result<()> {
 pub fn header_search_to_form_state(h: &DdHeaderSearch) -> EditFormState {
     let mut s = EditFormState::new(&editform::HEADER_SEARCH_FORM);
     s.set("parent_width", h.parent_width.clone());
-    s.set("parent_data_aos", enum_serde_str(h.parent_data_aos));
+    s.set("sal", enum_serde_str(h.sal));
     s
 }
 fn apply_header_search_values(h: &mut DdHeaderSearch, state: &EditFormState) -> Result<()> {
     h.parent_width = state.get("parent_width").trim().to_string();
-    h.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
-        .context("invalid parent_data_aos")?;
+    h.sal = parse_enum::<SalAnimation>(state.get("sal"))
+        .context("invalid sal")?;
     Ok(())
 }
 
 pub fn header_menu_to_form_state(h: &DdHeaderMenu) -> EditFormState {
     let mut s = EditFormState::new(&editform::HEADER_MENU_FORM);
     s.set("parent_width", h.parent_width.clone());
-    s.set("parent_data_aos", enum_serde_str(h.parent_data_aos));
+    s.set("sal", enum_serde_str(h.sal));
     s
 }
 fn apply_header_menu_values(h: &mut DdHeaderMenu, state: &EditFormState) -> Result<()> {
     h.parent_width = state.get("parent_width").trim().to_string();
-    h.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
-        .context("invalid parent_data_aos")?;
+    h.sal = parse_enum::<SalAnimation>(state.get("sal"))
+        .context("invalid sal")?;
     Ok(())
 }
 
@@ -436,15 +436,15 @@ pub fn rich_text_to_form_state(r: &DdRichText) -> EditFormState {
         "parent_class",
         r.parent_class.clone().unwrap_or_default(),
     );
-    s.set("parent_data_aos", enum_serde_str(r.parent_data_aos));
+    s.set("sal", enum_serde_str(r.sal));
     s.set("parent_copy", r.parent_copy.clone());
     s
 }
 fn apply_rich_text_values(r: &mut DdRichText, state: &EditFormState) -> Result<()> {
     let class = state.get("parent_class").trim().to_string();
     r.parent_class = if class.is_empty() { None } else { Some(class) };
-    r.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
-        .context("invalid parent_data_aos")?;
+    r.sal = parse_enum::<SalAnimation>(state.get("sal"))
+        .context("invalid sal")?;
     r.parent_copy = state.get("parent_copy").to_string();
     Ok(())
 }
@@ -453,7 +453,7 @@ pub fn alert_to_form_state(a: &DdAlert) -> EditFormState {
     let mut s = EditFormState::new(&editform::ALERT_FORM);
     s.set("parent_type", enum_serde_str(a.parent_type));
     s.set("parent_class", enum_serde_str(a.parent_class));
-    s.set("parent_data_aos", enum_serde_str(a.parent_data_aos));
+    s.set("sal", enum_serde_str(a.sal));
     s.set(
         "parent_title",
         a.parent_title.clone().unwrap_or_default(),
@@ -466,8 +466,8 @@ fn apply_alert_values(a: &mut DdAlert, state: &EditFormState) -> Result<()> {
         parse_enum::<AlertType>(state.get("parent_type")).context("invalid parent_type")?;
     a.parent_class =
         parse_enum::<AlertClass>(state.get("parent_class")).context("invalid parent_class")?;
-    a.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
-        .context("invalid parent_data_aos")?;
+    a.sal = parse_enum::<SalAnimation>(state.get("sal"))
+        .context("invalid sal")?;
     let title = state.get("parent_title").trim().to_string();
     a.parent_title = if title.is_empty() { None } else { Some(title) };
     a.parent_copy = state.get("parent_copy").to_string();
@@ -488,7 +488,7 @@ fn apply_modal_values(m: &mut DdModal, state: &EditFormState) -> Result<()> {
 
 pub fn blockquote_to_form_state(bq: &DdBlockquote) -> EditFormState {
     let mut s = EditFormState::new(&editform::BLOCKQUOTE_FORM);
-    s.set("parent_data_aos", enum_serde_str(bq.parent_data_aos));
+    s.set("sal", enum_serde_str(bq.sal));
     s.set("parent_image_url", bq.parent_image_url.clone());
     s.set("parent_image_alt", bq.parent_image_alt.clone());
     s.set("parent_name", bq.parent_name.clone());
@@ -497,8 +497,8 @@ pub fn blockquote_to_form_state(bq: &DdBlockquote) -> EditFormState {
     s
 }
 fn apply_blockquote_values(bq: &mut DdBlockquote, state: &EditFormState) -> Result<()> {
-    bq.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))
-        .context("invalid parent_data_aos")?;
+    bq.sal = parse_enum::<SalAnimation>(state.get("sal"))
+        .context("invalid sal")?;
     bq.parent_image_url = state.get("parent_image_url").trim().to_string();
     bq.parent_image_alt = state.get("parent_image_alt").trim().to_string();
     bq.parent_name = state.get("parent_name").to_string();
@@ -512,7 +512,7 @@ fn apply_blockquote_values(bq: &mut DdBlockquote, state: &EditFormState) -> Resu
 pub fn card_to_form_state(c: &DdCard) -> EditFormState {
     let mut s = EditFormState::new(&editform::CARD_FORM);
     s.set("parent_type", enum_serde_str(c.parent_type));
-    s.set("parent_data_aos", enum_serde_str(c.parent_data_aos));
+    s.set("sal", enum_serde_str(c.sal));
     s.set("parent_width", c.parent_width.clone());
     let mut items = Vec::new();
     for it in &c.items {
@@ -544,7 +544,7 @@ pub fn card_to_form_state(c: &DdCard) -> EditFormState {
 }
 fn apply_card_values(c: &mut DdCard, state: &EditFormState) -> Result<()> {
     c.parent_type = parse_enum::<CardType>(state.get("parent_type"))?;
-    c.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))?;
+    c.sal = parse_enum::<SalAnimation>(state.get("sal"))?;
     c.parent_width = state.get("parent_width").trim().to_string();
     c.items.clear();
     if let Some(items) = state.sub_state.get("items") {
@@ -579,7 +579,7 @@ fn apply_card_values(c: &mut DdCard, state: &EditFormState) -> Result<()> {
 pub fn filmstrip_to_form_state(f: &DdFilmstrip) -> EditFormState {
     let mut s = EditFormState::new(&editform::FILMSTRIP_FORM);
     s.set("parent_type", enum_serde_str(f.parent_type));
-    s.set("parent_data_aos", enum_serde_str(f.parent_data_aos));
+    s.set("sal", enum_serde_str(f.sal));
     let mut items = Vec::new();
     for it in &f.items {
         let mut item = EditFormState::new(&editform::FILMSTRIP_ITEM_FORM);
@@ -594,7 +594,7 @@ pub fn filmstrip_to_form_state(f: &DdFilmstrip) -> EditFormState {
 }
 fn apply_filmstrip_values(f: &mut DdFilmstrip, state: &EditFormState) -> Result<()> {
     f.parent_type = parse_enum::<FilmstripType>(state.get("parent_type"))?;
-    f.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))?;
+    f.sal = parse_enum::<SalAnimation>(state.get("sal"))?;
     f.items.clear();
     if let Some(items) = state.sub_state.get("items") {
         for item_s in items {
@@ -610,7 +610,7 @@ fn apply_filmstrip_values(f: &mut DdFilmstrip, state: &EditFormState) -> Result<
 
 pub fn milestones_to_form_state(m: &DdMilestones) -> EditFormState {
     let mut s = EditFormState::new(&editform::MILESTONES_FORM);
-    s.set("parent_data_aos", enum_serde_str(m.parent_data_aos));
+    s.set("sal", enum_serde_str(m.sal));
     s.set("parent_width", m.parent_width.clone());
     let mut items = Vec::new();
     for it in &m.items {
@@ -640,7 +640,7 @@ pub fn milestones_to_form_state(m: &DdMilestones) -> EditFormState {
     s
 }
 fn apply_milestones_values(m: &mut DdMilestones, state: &EditFormState) -> Result<()> {
-    m.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))?;
+    m.sal = parse_enum::<SalAnimation>(state.get("sal"))?;
     m.parent_width = state.get("parent_width").trim().to_string();
     m.items.clear();
     if let Some(items) = state.sub_state.get("items") {
@@ -736,7 +736,7 @@ pub fn accordion_to_form_state(a: &DdAccordion) -> EditFormState {
     let mut s = EditFormState::new(&editform::ACCORDION_FORM);
     s.set("parent_type", enum_serde_str(a.parent_type));
     s.set("parent_class", enum_serde_str(a.parent_class));
-    s.set("parent_data_aos", enum_serde_str(a.parent_data_aos));
+    s.set("sal", enum_serde_str(a.sal));
     s.set("parent_group_name", a.parent_group_name.clone());
     let mut items = Vec::new();
     for it in &a.items {
@@ -752,7 +752,7 @@ pub fn accordion_to_form_state(a: &DdAccordion) -> EditFormState {
 fn apply_accordion_values(a: &mut DdAccordion, state: &EditFormState) -> Result<()> {
     a.parent_type = parse_enum::<AccordionType>(state.get("parent_type"))?;
     a.parent_class = parse_enum::<AccordionClass>(state.get("parent_class"))?;
-    a.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))?;
+    a.sal = parse_enum::<SalAnimation>(state.get("sal"))?;
     a.parent_group_name = state.get("parent_group_name").trim().to_string();
     a.items.clear();
     if let Some(items) = state.sub_state.get("items") {
@@ -770,7 +770,7 @@ pub fn alternating_to_form_state(a: &DdAlternating) -> EditFormState {
     let mut s = EditFormState::new(&editform::ALTERNATING_FORM);
     s.set("parent_type", enum_serde_str(a.parent_type));
     s.set("parent_class", a.parent_class.clone());
-    s.set("parent_data_aos", enum_serde_str(a.parent_data_aos));
+    s.set("sal", enum_serde_str(a.sal));
     let mut items = Vec::new();
     for it in &a.items {
         let mut item = EditFormState::new(&editform::ALTERNATING_ITEM_FORM);
@@ -787,7 +787,7 @@ pub fn alternating_to_form_state(a: &DdAlternating) -> EditFormState {
 fn apply_alternating_values(a: &mut DdAlternating, state: &EditFormState) -> Result<()> {
     a.parent_type = parse_enum::<AlternatingType>(state.get("parent_type"))?;
     a.parent_class = state.get("parent_class").to_string();
-    a.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))?;
+    a.sal = parse_enum::<SalAnimation>(state.get("sal"))?;
     a.items.clear();
     if let Some(items) = state.sub_state.get("items") {
         for item_s in items {
@@ -819,10 +819,10 @@ pub fn hero_to_form_state(hero: &DdHero) -> EditFormState {
             .unwrap_or_else(|| "-full-full".to_string()),
     );
     s.set(
-        "parent_data_aos",
-        hero.parent_data_aos
+        "sal",
+        hero.sal
             .map(enum_serde_str)
-            .unwrap_or_else(|| "fade-in".to_string()),
+            .unwrap_or_else(|| "fade".to_string()),
     );
     s.set(
         "parent_custom_css",
@@ -879,7 +879,7 @@ fn apply_hero_values(hero: &mut DdHero, state: &EditFormState) -> Result<()> {
         Some(copy)
     };
     hero.parent_class = Some(parse_enum::<HeroImageClass>(state.get("parent_class"))?);
-    hero.parent_data_aos = Some(parse_enum::<HeroAos>(state.get("parent_data_aos"))?);
+    hero.sal = Some(parse_enum::<SalAnimation>(state.get("sal"))?);
     let css = state.get("parent_custom_css").trim().to_string();
     hero.parent_custom_css = if css.is_empty() { None } else { Some(css) };
     hero.parent_image_url = state.get("parent_image_url").trim().to_string();
@@ -1089,7 +1089,7 @@ pub fn navigation_to_form_state(nav: &DdNavigation) -> EditFormState {
     let mut s = EditFormState::new(&editform::NAVIGATION_FORM);
     s.set("parent_type", enum_serde_str(nav.parent_type));
     s.set("parent_class", enum_serde_str(nav.parent_class));
-    s.set("parent_data_aos", enum_serde_str(nav.parent_data_aos));
+    s.set("sal", enum_serde_str(nav.sal));
     s.set("parent_width", nav.parent_width.clone());
     let mut items = Vec::new();
     for it in &nav.items {
@@ -1130,7 +1130,7 @@ fn nav_item_to_form_state(item: &NavigationItem) -> EditFormState {
 fn apply_navigation_values(nav: &mut DdNavigation, state: &EditFormState) -> Result<()> {
     nav.parent_type = parse_enum::<NavigationType>(state.get("parent_type"))?;
     nav.parent_class = parse_enum::<NavigationClass>(state.get("parent_class"))?;
-    nav.parent_data_aos = parse_enum::<HeroAos>(state.get("parent_data_aos"))?;
+    nav.sal = parse_enum::<SalAnimation>(state.get("sal"))?;
     nav.parent_width = state.get("parent_width").trim().to_string();
     nav.items.clear();
     if let Some(items) = state.sub_state.get("items") {

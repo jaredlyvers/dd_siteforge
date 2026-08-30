@@ -8,7 +8,7 @@ insert:
     # parent fields
     parent_type: "dd-header__navigation"
     parent_class: "-main-menu"
-    parent_data_aos: "fade-in"
+    sal: "fade"
     parent_width: "dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-18-24"
 
     # required children collection (recursive shape)
@@ -38,12 +38,12 @@ fields:
     default: "-main-menu"
     maps_to: ".dd-navigation class token"
 
-  - id: parent_data_aos
+  - id: sal
     required: true
     type: enum
-    options: ["fade-in", "fade-up", "fade-right", "fade-down", "fade-left", "zoom-in", "zoom-in-up", "zoom-in-down"]
-    default: "fade-in"
-    maps_to: ".dd-navigation[data-aos]"
+    options: ["fade","slide-up","slide-down","slide-left","slide-right","zoom-in","zoom-out","flip-up","flip-down","flip-left","flip-right"]
+    default: "fade"
+    maps_to: ".dd-navigation[data-sal]"
 
   - id: parent_width
     required: true
@@ -106,7 +106,7 @@ edit_ui:
     # parent edit order
     - parent_type
     - parent_class
-    - parent_data_aos
+    - sal
     - parent_width
 
     # item edit order (applies at every depth)
@@ -138,7 +138,7 @@ edit_ui:
     parent_edit_modes:
       - parent_type
       - parent_class
-      - parent_data_aos
+      - sal
       - parent_width
     item_edit_modes:
       - child_kind

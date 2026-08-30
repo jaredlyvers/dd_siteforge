@@ -8,7 +8,7 @@ insert:
     # parent fields
     parent_type: "-default"
     parent_class: "-default"
-    parent_data_aos: "fade-in"
+    sal: "fade"
 
     # required children collection
     items:
@@ -36,12 +36,12 @@ fields:
     default: "-primary"
     maps_to: ".dd-alternating class token"
 
-  - id: parent_data_aos
+  - id: sal
     required: true
     type: enum
-    options: ["fade-in","fade-up","fade-right","fade-down","fade-left","zoom-in","zoom-in-up","zoom-in-down"]
-    default: "fade-in"
-    maps_to: ".dd-alternating[data-aos] OR child[data-aos]"
+    options: ["fade","slide-up","slide-down","slide-left","slide-right","zoom-in","zoom-out","flip-up","flip-down","flip-left","flip-right"]
+    default: "fade"
+    maps_to: ".dd-alternating[data-sal] OR child[data-sal]"
 
   # ---------------------------
   # child items[] fields
@@ -92,7 +92,7 @@ edit_ui:
     # parent edit order
     - parent_type
     - parent_class
-    - parent_data_aos
+    - sal
 
     # child edit order (used when editing an item row)
     - items[].child_image_url
@@ -121,7 +121,7 @@ edit_ui:
     parent_edit_modes:
       - parent_type
       - parent_class
-      - parent_data_aos
+      - sal
     item_edit_modes:
       - items[].child_image_url
       - items[].child_image_alt
@@ -147,10 +147,10 @@ blueprint:
     <!-- repeat: items -->
     <div class="dd-alternating__item dd-u-1-1">
       <div class="dd-alternating__body dd-g">
-        <div class="dd-alternating__image dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-aos="[parent_data_aos]" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+        <div class="dd-alternating__image dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-sal="[sal]">
           <img src="[child_image_url]" alt="[child_image_alt]" class="dd-img" loading="lazy">
         </div>
-        <div class="dd-alternating__copy l-box dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-aos="[parent_data_aos]" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+        <div class="dd-alternating__copy l-box dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-sal="[sal]">
           <div class="dd-alternating__title"><h2>[child_title]</h2></div>
           <div class="dd-alternating__subtitle"><strong>[child_subtitle]</strong></div>
           <div class="dd-alternating__body">

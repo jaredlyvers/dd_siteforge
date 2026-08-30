@@ -6,7 +6,7 @@ node_scope: section_item   # one of: page_node | section_item
 insert:
   defaults:
     # parent fields
-    parent_data_aos: "fade-in"
+    sal: "fade"
     parent_width: "dd-u-1-1 dd-u-md-12-24"
 
     # required children collection
@@ -23,12 +23,12 @@ fields:
   # ---------------------------
   # parent fields
   # ---------------------------
-  - id: parent_data_aos
+  - id: sal
     required: true
     type: enum
-    options: ["fade-in","fade-up","fade-right","fade-down","fade-left","zoom-in","zoom-in-up","zoom-in-down"]
-    default: "fade-in"
-    maps_to: ".dd-milestones__item[data-aos]"
+    options: ["fade","slide-up","slide-down","slide-left","slide-right","zoom-in","zoom-out","flip-up","flip-down","flip-left","flip-right"]
+    default: "fade"
+    maps_to: ".dd-milestones__item[data-sal]"
 
   - id: parent_width
     required: true
@@ -96,7 +96,7 @@ fields:
 edit_ui:
   tab_order:
     # parent edit order
-    - parent_data_aos
+    - sal
     - parent_width
 
     # child edit order (used when editing an item row)
@@ -126,7 +126,7 @@ edit_ui:
 
   modal_fields:
     parent_edit_modes:
-      - parent_data_aos
+      - sal
       - parent_width
     item_edit_modes:
       - items[].child_percentage
@@ -155,7 +155,7 @@ blueprint:
   <div class="dd-milestones__content">
     <div class="dd-milestones__items dd-g">
       <!-- repeat: items -->
-      <div class="dd-milestones__item l-box [parent_width]" data-aos="[parent_data_aos]" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-center" data-aos-delay="100">
+      <div class="dd-milestones__item l-box [parent_width]" data-sal="[sal]">
         <div class="dd-milestones__body l-box">
           <div class="dd-milestones__percentage" data-number="[child_percentage]"><span class="number">[child_percentage]</span>%</div>
           <div>

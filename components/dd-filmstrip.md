@@ -8,7 +8,7 @@ insert:
   defaults:
     # parent fields
     parent_type: "-default"
-    parent_data_aos: "fade-in"
+    sal: "fade"
 
     # required children collection
     items:
@@ -27,12 +27,12 @@ fields:
     default: "-default"
     maps_to: ".dd-filmstrip class token"
 
-  - id: parent_data_aos
+  - id: sal
     required: true
     type: enum
-    options: ["fade-in","fade-up","fade-right","fade-down","fade-left","zoom-in","zoom-in-up","zoom-in-down"]
-    default: "fade-in"
-    maps_to: ".dd-filmstrip[data-aos]"
+    options: ["fade","slide-up","slide-down","slide-left","slide-right","zoom-in","zoom-out","flip-up","flip-down","flip-left","flip-right"]
+    default: "fade"
+    maps_to: ".dd-filmstrip[data-sal]"
 
   # ---------------------------
   # child items[] fields
@@ -61,7 +61,7 @@ edit_ui:
   tab_order:
     # parent edit order
     - parent_type
-    - parent_data_aos
+    - sal
 
     # child edit order (used when editing an item row)
     - items[].child_image_url
@@ -87,7 +87,7 @@ edit_ui:
   modal_fields:
     parent_edit_modes:
       - parent_type
-      - parent_data_aos
+      - sal
     item_edit_modes:
       - items[].child_image_url
       - items[].child_image_alt
@@ -106,7 +106,7 @@ blueprint:
 ## HTML Template
 
 ```html
-<div class="dd-filmstrip [parent_type]" data-aos="[parent_data_aos]" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-center" data-aos-delay="100">
+<div class="dd-filmstrip [parent_type]" data-sal="[sal]">
   <ul class="dd-filmstrip__content">
     <!-- repeat: items -->
     <li>

@@ -53,7 +53,7 @@ mod tests {
                 .components
                 .push(SectionComponent::Banner(crate::model::DdBanner {
                     parent_class: crate::model::BannerClass::BgCenterCenter,
-                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    sal: crate::model::SalAnimation::Fade,
                     parent_image_url: "/assets/images/banner.jpg".to_string(),
                     parent_image_alt: "Banner A".to_string(),
                 }));
@@ -63,7 +63,7 @@ mod tests {
                 .push(SectionComponent::Accordion(crate::model::DdAccordion {
                     parent_type: crate::model::AccordionType::Default,
                     parent_class: crate::model::AccordionClass::Primary,
-                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    sal: crate::model::SalAnimation::Fade,
                     parent_group_name: "group1".to_string(),
                     items: vec![
                         crate::model::AccordionItem {
@@ -83,7 +83,7 @@ mod tests {
                 .push(SectionComponent::Alternating(crate::model::DdAlternating {
                     parent_type: crate::model::AlternatingType::Default,
                     parent_class: "-default".to_string(),
-                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    sal: crate::model::SalAnimation::Fade,
                     items: vec![crate::model::AlternatingItem {
                         child_image_url: "/assets/images/alternating.jpg".to_string(),
                         child_image_alt: "Alt".to_string(),
@@ -95,7 +95,7 @@ mod tests {
             section.columns[0]
                 .components
                 .push(SectionComponent::Blockquote(crate::model::DdBlockquote {
-                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    sal: crate::model::SalAnimation::Fade,
                     parent_image_url: "/assets/images/blockquote.jpg".to_string(),
                     parent_image_alt: "Person A".to_string(),
                     parent_name: "Person A".to_string(),
@@ -107,7 +107,7 @@ mod tests {
                 .components
                 .push(SectionComponent::Card(crate::model::DdCard {
                     parent_type: crate::model::CardType::Default,
-                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    sal: crate::model::SalAnimation::Fade,
                     parent_width: "dd-u-1-1 dd-u-md-12-24 dd-u-lg-8-24".to_string(),
                     items: vec![crate::model::CardItem {
                         child_image_url: "/assets/images/card.jpg".to_string(),
@@ -127,7 +127,7 @@ mod tests {
                     parent_class: crate::model::CtaClass::TopLeft,
                     parent_image_url: "/assets/images/cta.jpg".to_string(),
                     parent_image_alt: "CTA image".to_string(),
-                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    sal: crate::model::SalAnimation::Fade,
                     parent_title: "CTA A".to_string(),
                     parent_subtitle: "Sub CTA".to_string(),
                     parent_copy: "Copy CTA".to_string(),
@@ -140,7 +140,7 @@ mod tests {
                 .components
                 .push(SectionComponent::Filmstrip(crate::model::DdFilmstrip {
                     parent_type: crate::model::FilmstripType::Default,
-                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    sal: crate::model::SalAnimation::Fade,
                     items: vec![crate::model::FilmstripItem {
                         child_image_url: "/assets/images/filmstrip-1.jpg".to_string(),
                         child_image_alt: "Filmstrip 1".to_string(),
@@ -151,7 +151,7 @@ mod tests {
             section.columns[0]
                 .components
                 .push(SectionComponent::Milestones(crate::model::DdMilestones {
-                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    sal: crate::model::SalAnimation::Fade,
                     parent_width: "dd-u-1-1 dd-u-md-12-24".to_string(),
                     items: vec![crate::model::MilestonesItem {
                         child_percentage: "70".to_string(),
@@ -297,7 +297,7 @@ mod tests {
                 .push(SectionComponent::Accordion(crate::model::DdAccordion {
                     parent_type: crate::model::AccordionType::Default,
                     parent_class: crate::model::AccordionClass::Primary,
-                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    sal: crate::model::SalAnimation::Fade,
                     parent_group_name: "group1".to_string(),
                     items: vec![
                         crate::model::AccordionItem {
@@ -321,7 +321,7 @@ mod tests {
                 .push(SectionComponent::Alternating(crate::model::DdAlternating {
                     parent_type: crate::model::AlternatingType::Default,
                     parent_class: "-default".to_string(),
-                    parent_data_aos: crate::model::HeroAos::FadeIn,
+                    sal: crate::model::SalAnimation::Fade,
                     items: vec![
                         crate::model::AlternatingItem {
                             child_image_url: "/assets/images/a1.jpg".to_string(),

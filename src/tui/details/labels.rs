@@ -161,16 +161,19 @@ pub(in crate::tui) fn hero_image_class_to_str(v: crate::model::HeroImageClass) -
     }
 }
 
-pub(in crate::tui) fn parent_data_aos_to_str(v: crate::model::HeroAos) -> &'static str {
+pub(in crate::tui) fn sal_to_str(v: crate::model::SalAnimation) -> &'static str {
     match v {
-        crate::model::HeroAos::FadeIn => "fade-in",
-        crate::model::HeroAos::FadeUp => "fade-up",
-        crate::model::HeroAos::FadeRight => "fade-right",
-        crate::model::HeroAos::FadeDown => "fade-down",
-        crate::model::HeroAos::FadeLeft => "fade-left",
-        crate::model::HeroAos::ZoomIn => "zoom-in",
-        crate::model::HeroAos::ZoomInUp => "zoom-in-up",
-        crate::model::HeroAos::ZoomInDown => "zoom-in-down",
+        crate::model::SalAnimation::Fade => "fade",
+        crate::model::SalAnimation::SlideUp => "slide-up",
+        crate::model::SalAnimation::SlideDown => "slide-down",
+        crate::model::SalAnimation::SlideLeft => "slide-left",
+        crate::model::SalAnimation::SlideRight => "slide-right",
+        crate::model::SalAnimation::ZoomIn => "zoom-in",
+        crate::model::SalAnimation::ZoomOut => "zoom-out",
+        crate::model::SalAnimation::FlipUp => "flip-up",
+        crate::model::SalAnimation::FlipDown => "flip-down",
+        crate::model::SalAnimation::FlipLeft => "flip-left",
+        crate::model::SalAnimation::FlipRight => "flip-right",
     }
 }
 

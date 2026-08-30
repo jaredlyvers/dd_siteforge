@@ -33,9 +33,9 @@ pub static HERO_FORM: EditForm = EditForm {
             visible_when: None,
         },
         FormField {
-            id: "parent_data_aos",
+            id: "sal",
             label: "Animation",
-            kind: FieldKind::Enum { options: AOS_OPTIONS, default: "fade-in" },
+            kind: FieldKind::Enum { options: SAL_OPTIONS, default: "fade" },
             required: true,
             visible_when: None,
         },
@@ -406,9 +406,9 @@ pub static NAVIGATION_FORM: EditForm = EditForm {
             visible_when: None,
         },
         FormField {
-            id: "parent_data_aos",
+            id: "sal",
             label: "Animation",
-            kind: FieldKind::Enum { options: AOS_OPTIONS, default: "fade-in" },
+            kind: FieldKind::Enum { options: SAL_OPTIONS, default: "fade" },
             required: true,
             visible_when: None,
         },

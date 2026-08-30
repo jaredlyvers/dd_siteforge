@@ -5,7 +5,7 @@ node_scope: section_item   # one of: page_node | section_item
 
 insert:
   defaults:
-    parent_data_aos: "fade-in"
+    sal: "fade"
     parent_image_url: "https://dummyimage.com/512x512/000/fff"
     parent_image_alt: "blockquote Persons Name"
     parent_name: "blockquote Persons Name"
@@ -13,12 +13,12 @@ insert:
     parent_copy: "Copy"
 
 fields:
-  - id: parent_data_aos
+  - id: sal
     required: true
     type: enum
-    options: ["fade-in","fade-up","fade-right","fade-down","fade-left","zoom-in","zoom-in-up","zoom-in-down"]
-    default: "fade-in"
-    maps_to: ".dd-blockquote[data-aos]"
+    options: ["fade","slide-up","slide-down","slide-left","slide-right","zoom-in","zoom-out","flip-up","flip-down","flip-left","flip-right"]
+    default: "fade"
+    maps_to: ".dd-blockquote[data-sal]"
     
   - id: parent_image_url
     required: true
@@ -58,7 +58,7 @@ fields:
 
 edit_ui:
   tab_order:
-    - parent_data_aos
+    - sal
     - parent_image_url
     - parent_image_alt
     - parent_name
@@ -70,7 +70,7 @@ edit_ui:
 
   modal_fields:
     parent_edit_modes:
-      - parent_data_aos
+      - sal
       - parent_image_url
       - parent_image_alt
       - parent_name
@@ -91,7 +91,7 @@ blueprint:
 
 ```html
 <blockquote class="dd-blockquote">
-  <div class="dd-blockquote__content dd-g" data-aos="[blockquote_data_aos]" data-aos-duration="1000" data-aos-easing="linear" data-aos-anchor-placement="center-bottom" data-aos-delay="100">
+  <div class="dd-blockquote__content dd-g" data-sal="[sal]">
     <div class="dd-blockquote__icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-quote-icon lucide-quote"><path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/></svg></div>
     <div class="dd-blockquote__person dd-g l-box">
       <div class="dd-blockquote__image">
