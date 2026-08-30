@@ -8,12 +8,13 @@ Living product spec: `docs/SPEC.md`. Visual contract: `LDNDDEV_TUI_VISUAL_STANDA
 
 ```
 src/
-  main.rs          CLI entry: init-site / show-site / validate-site / export-html / tui
+  main.rs          CLI entry: init-site / init-templates / init-scaffold / show-site / validate-site / export-html / tui
   model.rs         Site → Page → PageNode → SectionComponent typed tree (serde)
   storage.rs       JSON load/save
   validate.rs      validate_site() + validate_site_with_root() (missing-image)
   renderer.rs      typed-model → HTML via handlebars templates
   templates.rs     load bundled + source/templates overrides; seed on init
+  scaffold.rs      embed Grunt/source/Lando/DDEV; seed on init; optional ~/.config overlay
   tui/mod.rs            App shell (struct, run loop, save/autosave)
   tui/draw.rs           header / sidebar / details / footer frame
   tui/events.rs         keyboard, mouse, Pages-panel dispatch

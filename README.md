@@ -57,13 +57,19 @@ BROWSERSYNC_PROXY=https://dd-siteforge.lndo.site npx grunt dev
 ## Usage
 
 ```bash
-# Create a starter site at site.json (also seeds source/templates/)
+# Create a starter site (prompts for project name; seeds build kit + templates)
 dd_siteforge init-site site.json
+dd_siteforge init-site site.json --name acme-site
 
 # Re-seed templates (skips existing; --force overwrites)
 dd_siteforge init-templates site.json
 dd_siteforge init-templates site.json --force
 dd_siteforge init-templates site.json --force --name dd-hero
+
+# Re-seed Grunt / source / Lando / DDEV (skips existing; --force overwrites)
+dd_siteforge init-scaffold site.json
+dd_siteforge init-scaffold site.json --force --name acme-site
+dd_siteforge init-scaffold --global
 
 # Edit interactively
 dd_siteforge tui site.json
@@ -118,7 +124,7 @@ dd_siteforge show-site site.json
 
 ## Authoring workflow
 
-1. `init-site` → starter `site.json`.
+1. `init-site` → starter `site.json`, Grunt/`source/` kit, Lando + DDEV, and `source/templates/`. Pass `--name` to skip the project-name prompt.
 2. Drop image source files in `./source/images/` next to the JSON.
 3. `tui` → edit pages, components, head metadata. Autosave writes every 2s; manual `s` makes a checkpoint backup.
 4. `npx grunt build` then `Shift+E` to export: validates, writes HTML, copies Grunt `web/assets` (css/js/webfonts/favicon) when dest is not already `web/`, copies `source/images/` to `web/assets/images/`, plus `sitemap.xml`, `robots.txt`, `404.html`.

@@ -12,6 +12,8 @@
 #   CONFIG_DIR=$HOME/.config/ldnddev          # theme lives here
 #
 # Re-run safe: existing themes are left alone on install; the binary is overwritten.
+# The Grunt/source/Lando/DDEV kit is embedded in the binary and seeded by
+# `dd_siteforge init-site`. Optional house overlay: `dd_siteforge init-scaffold --global`.
 
 set -euo pipefail
 

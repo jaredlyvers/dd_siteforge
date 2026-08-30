@@ -19,7 +19,7 @@ Target: small marketing sites (roughly 5–20 pages, one editor). No multi-user,
 
 Workflow:
 
-1. `init-site` → starter `site.json` and `source/templates/`
+1. `init-site` → starter `site.json`, build kit (`source/`, Grunt, Lando/DDEV), and `source/templates/`
 2. Images in `./source/images/` next to the JSON
 3. TUI edits pages/components/head. Autosave every 2s; `s` writes a `.backup`
 4. `npx grunt build` then export: HTML + Grunt `web/assets` + images + sitemap/robots/404
@@ -33,7 +33,7 @@ Current crate version: see `Cargo.toml`.
 
 ### CLI
 
-`init-site` · `init-templates` (`--force`, `--name`) · `tui` · `validate-site` · `export-html` · `serve` · `show-site`
+`init-site` (`--name`) · `init-templates` (`--force`, `--name`) · `init-scaffold` (`--force`, `--global`, `--name`) · `tui` · `validate-site` · `export-html` · `serve` · `show-site`
 
 ### Content model
 
@@ -60,6 +60,8 @@ Edit forms: Tab between fields, click-to-focus, mouse wheel, `Ctrl+P` image or p
 ### Export + assets
 
 - Handlebars from crate `templates/` plus `source/templates/` overrides. Seed on `init-site` only. Re-seed with `init-templates --force`. Export never writes templates.
+- Build kit (Gruntfile, package.json, `.lando.yml`, `.ddev/`, `source/` except author images and templates) is embedded in the binary. `init-site` copies it once (skip existing). Optional house overlay: `~/.config/ldnddev/dd_siteforge/` (dump with `init-scaffold --global`). Re-seed a site with `init-scaffold --force`.
+- `init-site` asks for a project name (or `--name` / folder default when stdin is not a TTY) and stamps that slug into Lando, DDEV, and `package.json`.
 - CSS/JS come from Grunt (`source/{js,scss}` → `web/assets`). Host `npm install && npx grunt build` is the contract. Lando and DDEV are optional wrappers.
 - Export copies Grunt `web/assets/{css,js,webfonts,favicon,vendors}` unless dest is already that tree (does not clobber a local grunt build). Fills missing webfonts/favicon from `source/`. Copies `source/images/` → `<out>/assets/images/`.
 

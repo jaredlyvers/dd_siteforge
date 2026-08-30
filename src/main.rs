@@ -1,6 +1,7 @@
 mod export;
 mod model;
 mod renderer;
+mod scaffold;
 mod serve;
 mod storage;
 mod templates;
@@ -11,7 +12,9 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use export::export_site;
 use model::Site;
-use std::path::PathBuf;
+use std::fs;
+use std::io::{self, IsTerminal, Write};
+use std::path::{Path, PathBuf};
 use storage::{load_site, save_site};
 use tui::run_tui;
 use validate::validate_site_with_root;
@@ -25,7 +28,13 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    InitSite { path: String },
+    /// Create a starter site.json and seed the build kit (source/, Grunt, Lando/DDEV).
+    InitSite {
+        path: String,
+        /// Project slug for Lando, DDEV, and package.json (skips the prompt).
+        #[arg(long)]
+        name: Option<String>,
+    },
     /// Write default Handlebars templates into source/templates (skips files that already exist).
     InitTemplates {
         /// Site JSON path; templates go next to it in source/templates/.
@@ -34,6 +43,20 @@ enum Command {
         #[arg(long)]
         force: bool,
         /// Seed only this template (e.g. dd-hero).
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Seed Grunt / source / Lando / DDEV (skips files that already exist).
+    InitScaffold {
+        /// Site JSON path; kit goes next to it. Required unless --global.
+        path: Option<String>,
+        /// Overwrite existing scaffold files.
+        #[arg(long)]
+        force: bool,
+        /// Write the bundled kit into ~/.config/ldnddev/dd_siteforge/ (no name stamp).
+        #[arg(long)]
+        global: bool,
+        /// Project slug for Lando, DDEV, and package.json (default: folder name).
         #[arg(long)]
         name: Option<String>,
     },
@@ -55,17 +78,27 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::InitSite { path } => {
+        Command::InitSite { path, name } => {
             let site = Site::starter();
             save_site(&path, &site)
                 .with_context(|| format!("could not write starter site to '{}'", path))?;
-            let root = PathBuf::from(&path)
-                .parent()
-                .filter(|p| !p.as_os_str().is_empty())
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("."));
+            let root = site_root(&path);
+            fs::create_dir_all(&root)
+                .with_context(|| format!("could not create '{}'", root.display()))?;
+            let slug = resolve_project_name(name.as_deref(), &root)?;
+            let overlay = scaffold::overlay_if_present();
+            let kit = scaffold::seed_scaffold(
+                &root,
+                scaffold::SeedOpts {
+                    force: false,
+                    project_name: Some(&slug),
+                    overlay: overlay.as_deref(),
+                },
+            )?;
             let seeded = templates::seed_templates(&root, false, None)?;
             println!("Created starter site at {}", path);
+            println!("Project name: {slug}");
+            print_seed_report(&kit);
             if !seeded.written.is_empty() {
                 println!(
                     "Wrote {} template(s) to {}/source/templates/",
@@ -73,13 +106,15 @@ fn main() -> anyhow::Result<()> {
                     root.display()
                 );
             }
+            if !seeded.skipped.is_empty() {
+                println!(
+                    "Skipped {} existing template(s) (use init-templates --force to overwrite)",
+                    seeded.skipped.len()
+                );
+            }
         }
         Command::InitTemplates { path, force, name } => {
-            let root = PathBuf::from(&path)
-                .parent()
-                .filter(|p| !p.as_os_str().is_empty())
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("."));
+            let root = site_root(&path);
             let report = templates::seed_templates(&root, force, name.as_deref())?;
             if !report.written.is_empty() {
                 println!("Wrote: {}", report.written.join(", "));
@@ -89,6 +124,48 @@ fn main() -> anyhow::Result<()> {
                     "Skipped existing (use --force to overwrite): {}",
                     report.skipped.join(", ")
                 );
+            }
+        }
+        Command::InitScaffold {
+            path,
+            force,
+            global,
+            name,
+        } => {
+            if global {
+                let dest = scaffold::config_scaffold_dir();
+                let report = scaffold::seed_scaffold(
+                    &dest,
+                    scaffold::SeedOpts {
+                        force,
+                        project_name: None,
+                        overlay: None,
+                    },
+                )?;
+                println!("Global scaffold: {}", dest.display());
+                print_seed_report(&report);
+            } else {
+                let path = path.ok_or_else(|| {
+                    anyhow::anyhow!("path is required unless --global is set")
+                })?;
+                let root = site_root(&path);
+                let slug = name
+                    .as_deref()
+                    .map(scaffold::slugify_project_name)
+                    .unwrap_or_else(|| {
+                        scaffold::slugify_project_name(&scaffold::dir_hint(&root))
+                    });
+                let overlay = scaffold::overlay_if_present();
+                let report = scaffold::seed_scaffold(
+                    &root,
+                    scaffold::SeedOpts {
+                        force,
+                        project_name: Some(&slug),
+                        overlay: overlay.as_deref(),
+                    },
+                )?;
+                println!("Project name: {slug}");
+                print_seed_report(&report);
             }
         }
         Command::ShowSite { path } => {
@@ -203,4 +280,49 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn site_root(path: &str) -> PathBuf {
+    PathBuf::from(path)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn resolve_project_name(flag: Option<&str>, root: &Path) -> anyhow::Result<String> {
+    if let Some(raw) = flag {
+        return Ok(scaffold::slugify_project_name(raw));
+    }
+    let default = scaffold::slugify_project_name(&scaffold::dir_hint(root));
+    let interactive = io::stdin().is_terminal() && io::stderr().is_terminal();
+    if !interactive {
+        return Ok(default);
+    }
+    eprint!("Project name [{default}]: ");
+    io::stderr().flush()?;
+    let mut line = String::new();
+    io::stdin().read_line(&mut line)?;
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        Ok(default)
+    } else {
+        Ok(scaffold::slugify_project_name(trimmed))
+    }
+}
+
+fn print_seed_counts(label: &str, report: &scaffold::SeedReport) {
+    if !report.written.is_empty() {
+        println!("Wrote {} {label}", report.written.len());
+    }
+}
+
+fn print_seed_report(report: &scaffold::SeedReport) {
+    print_seed_counts("scaffold file(s)", report);
+    if !report.skipped.is_empty() {
+        println!(
+            "Skipped {} existing (use --force to overwrite)",
+            report.skipped.len()
+        );
+    }
 }
