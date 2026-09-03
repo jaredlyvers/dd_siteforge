@@ -312,7 +312,6 @@ impl App {
                 self.selected_tree_row = idx;
                 self.apply_tree_row_selection(tree_rows[idx]);
                 self.selected_sidebar_section = SidebarSection::Layouts;
-                self.push_toast(ToastLevel::Info, format!("Selected {}", self.tree_row_label(&tree_rows[idx])));
             }
             return;
         }
@@ -351,12 +350,10 @@ impl App {
                     self.selected_header_component = 0;
                     self.selected_sidebar_section = SidebarSection::Regions;
                     self.sync_tree_row_with_selection();
-                    self.push_toast(ToastLevel::Info, "Selected Header region.");
                 } else if rel == 1 {
                     self.selected_region = SelectedRegion::Footer;
                     self.selected_sidebar_section = SidebarSection::Regions;
                     self.sync_tree_row_with_selection();
-                    self.push_toast(ToastLevel::Info, "Selected Footer region.");
                 }
             }
             return;

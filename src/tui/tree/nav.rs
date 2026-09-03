@@ -81,7 +81,6 @@ impl App {
             SidebarSection::Regions => {
                 self.selected_region = SelectedRegion::Header;
                 self.selected_tree_row = 0;
-                self.push_toast(ToastLevel::Info, "Selected Header region.");
             }
             SidebarSection::Pages => {
                 if self.site.pages.is_empty() {
@@ -111,7 +110,6 @@ impl App {
             SidebarSection::Regions => {
                 self.selected_region = SelectedRegion::Footer;
                 self.selected_tree_row = 0;
-                self.push_toast(ToastLevel::Info, "Selected Footer region.");
             }
             SidebarSection::Pages => {
                 if self.site.pages.is_empty() {
