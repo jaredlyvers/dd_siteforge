@@ -147,7 +147,7 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
         &mut lines,
         "Node navigation and edits",
         &[
-            ("Up/Down or wheel", "Select row in Nodes tree"),
+            ("Up/Down or wheel", "Select row in Layout tree"),
             ("PageUp/PageDown", "Scroll Details blueprint panel"),
             ("Enter", "Edit selected row"),
             ("Space", "Expand/collapse selected section or accordion/alternating/card/filmstrip/milestones/slider items"),
@@ -168,7 +168,7 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
     // Pages panel
     add_section(
         &mut lines,
-        "Pages panel ([2] Nodes)",
+        "Pages panel ([2] Pages)",
         &[
             ("Shift+A", "Add page (title prompt → template picker: Blank / Hero only / Hero + Section / Duplicate)"),
             ("Shift+X", "Delete current page (confirms; refuses if only 1 page)"),
@@ -210,7 +210,8 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
             ("Ctrl+P (image)", "Open image picker (./source/images/)"),
             ("Ctrl+P (link)", "Open page picker (lists site pages)"),
             ("←/→ (options)", "Cycle choices for type/option fields"),
-            ("Enter", "Confirm edit / save"),
+            ("Enter", "Newline in textarea / next field / drill into SubForm item"),
+            ("Ctrl+S", "Save"),
             ("Esc", "Cancel edit"),
             ("Backspace", "Delete character"),
             ("multiline ↑/↓/Enter", "Move/copy lines; Enter newline; Ctrl+S saves"),
@@ -230,8 +231,7 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
             ("Click panel/list", "Focus panel + select the row/item (Regions/Pages/Layout/Details)"),
             ("Double-click item", "Edit (unified modal; works on page-head, header/footer roots, sections, columns, components)"),
             ("Click modal field", "Focus that input (click-to-focus in all FormEdit + legacy)"),
-            ("Wheel / drag scroll", "Scroll lists, Details, help modal, long form content"),
-            ("Scrollbar track/thumb", "Jump/scroll via custom painted │/█ scrollbar"),
+            ("Wheel over pane", "Scroll the pane under the cursor; click row to select; double-click to edit"),
         ],
         "•",
         h_style,

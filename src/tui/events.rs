@@ -4,7 +4,6 @@ use super::*;
 impl App {
     /// Try to handle a key as a Pages-panel-scoped action.
     /// Returns `true` if the key was consumed — caller should short-circuit.
-    /// Future tasks populate this; today it always returns false.
     pub(super) fn try_handle_pages_panel_key(&mut self, key: &event::KeyEvent) -> bool {
         use crossterm::event::{KeyCode, KeyModifiers};
         match key.code {

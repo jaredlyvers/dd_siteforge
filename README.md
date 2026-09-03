@@ -7,7 +7,7 @@ A terminal-UI CMS for authoring framework-native static pages. Single Rust binar
 │  Header      │ │ class: -full-contained       │
 │  Footer      │ │ items:                       │
 └──────────────┘ │   +-----------+ +----------+ │
-┌─[2] Nodes────┐ │   | column-1  | | column-2 | │
+┌─[2] Pages────┐ │   | column-1  | | column-2 | │
 │ 01 Home      │ │   +-----------+ +----------+ │
 │ 02 Contact   │ │                              │
 └──────────────┘ │                              │
@@ -89,9 +89,9 @@ dd_siteforge show-site site.json
 
 ## TUI cheatsheet
 
-**Global:** `F1` help · `F3` validate · `Shift+E` export · `p` preview in browser · `s` save (+ writes `.backup`) · `/` insert component · `Tab`/`Shift+Tab` next/prev page · `Ctrl+Q` quit (confirms if unsaved).
+**Global:** `F1` help · `F2` theme · `F3` validate · `Shift+E` export · `p` preview in browser · `s` save (+ writes `.backup`) · `/` insert component · `Tab`/`Shift+Tab` next/prev page · `Ctrl+Q` quit (confirms if unsaved).
 
-**Pages panel (`[2] Nodes`):** `Shift+A` add · `Shift+X` delete · `u` undo delete · `Shift+J`/`Shift+K` reorder · `r` rename.
+**Pages panel (`[2] Pages`):** `Shift+A` add · `Shift+X` delete · `u` undo delete · `Shift+J`/`Shift+K` reorder · `r` rename.
 
 **Layout panel (`[3]`):** `j`/`k` or arrows move · `h`/`l` collapse/expand · `Space` toggle · `Enter` edit · `d` delete · `y` duplicate · `u` undo · `J`/`K` move selected grain · `C`/`V` add/remove column · `r`/`f` edit column id/width.
 
@@ -116,6 +116,7 @@ dd_siteforge show-site site.json
 ├── Gruntfile.js / package.json    CSS/JS build → web/assets
 ├── .lando.yml / .ddev/            optional local env (host npm is the contract)
 ├── docs/SPEC.md                   living product spec
+├── docs/TUI_ELEVATION_PLAN.md     TUI elevation plan
 ├── Architecture.md                module map, render/validation rules, key bindings
 ├── LDNDDEV_TUI_VISUAL_STANDARD.md portable TUI theme + shell contract
 ├── dd_siteforge_theme.yml         default theme
@@ -134,9 +135,8 @@ dd_siteforge show-site site.json
 
 Customize colors by writing one of these (first found wins):
 - `./dd_siteforge_theme.yml`
-- `./theme.yml` or `./.theme.yml`
 - `~/.config/ldnddev/dd_siteforge_theme.yml`
-- `~/.config/ldnddev/dd_siteforge/.theme.yml`
+- Built-in defaults
 
 Schema in `LDNDDEV_TUI_VISUAL_STANDARD.md`. Built-in default ships at `dd_siteforge_theme.yml`.
 

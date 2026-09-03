@@ -140,6 +140,7 @@ Every theme file must contain `version: 1` at the top level (validated on load; 
 The TUI now exposes `theme.app_shell` and `theme.active_border` (Style) for the standard header/footer.
 `theme.modal_header` colors inner section headers (e.g. cards in F1 help modal).
 F2 opens the Theme info modal (source, load status, sampled color tokens with hex) using identical chrome and scroll mechanics to the F1 help modal.
+Header title is the product name `dd_siteforge`; version is shown in F2 Theme.
 
 See `src/tui/draw.rs` and `src/tui/theme.rs` (AppTheme::load, choose_header_copy) for the concrete implementation.
 The Details panel title now includes current page context ("Details — 03: Home").
@@ -155,4 +156,4 @@ Former persistent status messages are delivered as toasts.
 
 ## Testing
 
-`cargo test -q` — 96 tests across model, storage, validate, and TUI integration paths. Integration tests drive the App via synthesized key events using the in-tree `send_key` helper.
+`cargo test -q` — 98 TUI tests (crate ~148 total) across model, storage, validate, and TUI integration paths. Integration tests drive the App via synthesized key events using the in-tree `send_key` helper.
