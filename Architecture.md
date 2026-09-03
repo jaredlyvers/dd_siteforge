@@ -156,4 +156,4 @@ Former persistent status messages are delivered as toasts.
 
 ## Testing
 
-`cargo test -q` — 98 TUI tests; 148 crate-wide across model, storage, validate, and TUI integration paths. Integration tests drive the App via synthesized key events using the in-tree `send_key` helper.
+`cargo test -q` — 102 TUI tests; 152 crate-wide across model, storage, validate, and TUI integration paths. Integration tests drive the App via synthesized key events using the in-tree `send_key` helper.

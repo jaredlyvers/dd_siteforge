@@ -6,13 +6,16 @@ fn is_footer_chrome(part: &str) -> bool {
     matches!(part, "F1:Help" | "F2:Theme" | "Esc:Close" | "Ctrl+Q:Quit")
 }
 
+const MOUSE_HINT: &str = "(mouse: click/scroll)";
+
 impl App {
     pub(in crate::tui) fn footer_hint(&self, width: u16) -> String {
         if width == 0 {
             return String::new();
         }
+        let overlay = self.modal.is_some() || self.show_help || self.show_theme;
         let mut parts: Vec<&str> = vec!["F1:Help", "F2:Theme"];
-        if self.modal.is_some() || self.show_help || self.show_theme {
+        if overlay {
             parts.push("Esc:Close");
             parts.push("Ctrl+Q:Quit");
         } else {
@@ -30,9 +33,6 @@ impl App {
                             "Shift+J/K:Move",
                             "Ctrl+Q:Quit",
                         ]);
-                        if width >= 110 {
-                            parts.push("(mouse: click/scroll)");
-                        }
                     }
                 }
                 SidebarSection::Regions => {
@@ -45,9 +45,6 @@ impl App {
                             "Enter:Edit",
                             "Ctrl+Q:Quit",
                         ]);
-                        if width >= 110 {
-                            parts.push("(mouse: click/scroll)");
-                        }
                     }
                 }
                 SidebarSection::Layouts => {
@@ -60,6 +57,7 @@ impl App {
                             "d:Del",
                             "y:Dup",
                             "u:Undo-tree",
+                            "r:Col-id",
                             "J/K:Move",
                             "Ctrl+Q:Quit",
                         ]);
@@ -70,10 +68,10 @@ impl App {
                             "d:Del",
                             "y:Dup",
                             "u:Undo-tree",
+                            "r:Col-id",
                             "J/K:Move",
                             "p:Preview",
                             "Ctrl+Q:Quit",
-                            "(mouse: click/scroll)",
                         ]);
                     }
                 }
@@ -81,18 +79,14 @@ impl App {
         }
         let prefix = if self.dirty { "*  " } else { "" };
         let max = width as usize;
-        // Drop whole tokens so a narrow terminal never clips mid-key. Prefer dropping
-        // scoped actions, then the mouse reminder, then chrome (F1/F2/Quit/Esc).
+        // Drop trailing scoped tokens until chrome+actions fit. Never clip mid-key.
+        // Mouse is appended only when that line already fits, so widening cannot hide a key.
         loop {
             let joined = format!("{prefix}{}", parts.join("  "));
             if joined.chars().count() <= max {
-                return joined;
+                break;
             }
-            if let Some(idx) = parts.iter().rposition(|p| {
-                !is_footer_chrome(p) && *p != "(mouse: click/scroll)"
-            }) {
-                parts.remove(idx);
-            } else if let Some(idx) = parts.iter().position(|p| *p == "(mouse: click/scroll)") {
+            if let Some(idx) = parts.iter().rposition(|p| !is_footer_chrome(p)) {
                 parts.remove(idx);
             } else if !parts.is_empty() {
                 parts.pop();
@@ -100,6 +94,13 @@ impl App {
                 return String::new();
             }
         }
+        if !overlay && width >= 110 {
+            let with_mouse = format!("{prefix}{}  {MOUSE_HINT}", parts.join("  "));
+            if with_mouse.chars().count() <= max {
+                parts.push(MOUSE_HINT);
+            }
+        }
+        format!("{prefix}{}", parts.join("  "))
     }
     pub(in crate::tui) fn details_text(&self, detail_width: usize) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
         match self.selected_region {

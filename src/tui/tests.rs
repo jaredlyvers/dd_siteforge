@@ -1919,14 +1919,42 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
         assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
     }
 
-    fn assert_footer_tokens_complete(hint: &str) {
+    const FOOTER_TOKEN_ALLOWLIST: &[&str] = &[
+        "*",
+        "F1:Help",
+        "F2:Theme",
+        "Esc:Close",
+        "Ctrl+Q:Quit",
+        "r:Rename",
+        "Shift+A:Add",
+        "Shift+X:Del",
+        "u:Undo-page",
+        "Shift+J/K:Move",
+        "Enter:Edit",
+        "j/k:Header/Footer",
+        "/:Insert",
+        "d:Del",
+        "y:Dup",
+        "u:Undo-tree",
+        "r:Col-id",
+        "J/K:Move",
+        "p:Preview",
+        "(mouse: click/scroll)",
+    ];
+
+    fn assert_footer_hint_shape(hint: &str, width: u16) {
+        assert!(
+            hint.starts_with("F1:Help  F2:Theme") || hint.starts_with("*  F1:Help  F2:Theme"),
+            "{hint}"
+        );
+        assert!(hint.chars().count() <= width as usize, "{hint}");
         for token in hint.split("  ") {
             if token.is_empty() {
                 continue;
             }
             assert!(
-                token == "*" || token.contains(':'),
-                "cut mid-key: {token:?} in {hint:?}"
+                FOOTER_TOKEN_ALLOWLIST.contains(&token),
+                "unexpected or clipped token: {token:?} in {hint:?}"
             );
         }
     }
@@ -1936,24 +1964,35 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
         app.selected_sidebar_section = SidebarSection::Pages;
         for width in [60_u16, 80, 110] {
-            let hint = app.footer_hint(width);
-            assert!(hint.contains("F2:Theme"), "{hint}");
-            assert!(hint.contains("F1:Help"), "{hint}");
-            assert!(hint.chars().count() <= width as usize, "{hint}");
-            assert_footer_tokens_complete(&hint);
+            assert_footer_hint_shape(&app.footer_hint(width), width);
         }
-        let at_60 = app.footer_hint(60);
-        assert_footer_tokens_complete(&at_60);
-        let wide = app.footer_hint(110);
-        assert!(wide.contains("(mouse: click/scroll)"), "{wide}");
+        let pages_medium = "F1:Help  F2:Theme  Shift+A:Add  Shift+X:Del  u:Undo-page  r:Rename  Shift+J/K:Move  Ctrl+Q:Quit";
+        let at_80 = app.footer_hint(80);
+        if pages_medium.chars().count() <= 80 {
+            assert!(at_80.contains("Shift+J/K:Move"), "{at_80}");
+        }
+        let at_110 = app.footer_hint(110);
+        assert!(at_110.contains("Shift+J/K:Move"), "{at_110}");
+        let pages_wide = format!("{pages_medium}  (mouse: click/scroll)");
+        if pages_wide.chars().count() <= 110 {
+            assert!(at_110.contains("(mouse: click/scroll)"), "{at_110}");
+        }
     }
 
     #[test]
     fn footer_hint_layouts_includes_f2() {
         let app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
         for width in [60_u16, 80, 110] {
-            let hint = app.footer_hint(width);
-            assert!(hint.contains("F2:Theme"), "{hint}");
+            assert_footer_hint_shape(&app.footer_hint(width), width);
+        }
+        let layouts_scoped = "F1:Help  F2:Theme  /:Insert  Enter:Edit  d:Del  y:Dup  u:Undo-tree  r:Col-id  J/K:Move  p:Preview  Ctrl+Q:Quit";
+        let at_110 = app.footer_hint(110);
+        if layouts_scoped.chars().count() <= 110 {
+            assert!(at_110.contains("p:Preview"), "{at_110}");
+        }
+        let layouts_wide = format!("{layouts_scoped}  (mouse: click/scroll)");
+        if layouts_wide.chars().count() <= 110 {
+            assert!(at_110.contains("(mouse: click/scroll)"), "{at_110}");
         }
     }
 
@@ -1962,8 +2001,9 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
         app.show_help = true;
         let hint = app.footer_hint(80);
-        assert!(hint.contains("F2:Theme"), "{hint}");
+        assert!(hint.starts_with("F1:Help  F2:Theme"), "{hint}");
         assert!(hint.contains("Esc:Close"), "{hint}");
+        assert_footer_hint_shape(&hint, 80);
     }
 
     #[test]
@@ -1971,6 +2011,5 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
         app.dirty = true;
         let dirty = app.footer_hint(120);
-        assert!(dirty.starts_with("*  "), "{dirty}");
-        assert!(dirty.contains("F2:Theme"), "{dirty}");
+        assert!(dirty.starts_with("*  F1:Help  F2:Theme"), "{dirty}");
     }
