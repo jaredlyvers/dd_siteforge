@@ -2,67 +2,104 @@
 use super::super::*;
 use super::*;
 
+fn is_footer_chrome(part: &str) -> bool {
+    matches!(part, "F1:Help" | "F2:Theme" | "Esc:Close" | "Ctrl+Q:Quit")
+}
+
 impl App {
     pub(in crate::tui) fn footer_hint(&self, width: u16) -> String {
-        let parts: &[&str] = if self.modal.is_some() || self.show_help || self.show_theme {
-            &["F1:Help", "Esc:Close", "Ctrl+Q:Quit"]
+        if width == 0 {
+            return String::new();
+        }
+        let mut parts: Vec<&str> = vec!["F1:Help", "F2:Theme"];
+        if self.modal.is_some() || self.show_help || self.show_theme {
+            parts.push("Esc:Close");
+            parts.push("Ctrl+Q:Quit");
         } else {
             match self.selected_sidebar_section {
                 SidebarSection::Pages => {
                     if width < 80 {
-                        &["F1:Help", "Shift+A:Add", "r:Rename", "Ctrl+Q:Quit"]
+                        parts.push("Ctrl+Q:Quit");
+                        parts.push("r:Rename");
                     } else {
-                        &[
-                            "F1:Help",
+                        parts.extend_from_slice(&[
                             "Shift+A:Add",
                             "Shift+X:Del",
-                            "u:Undo",
+                            "u:Undo-page",
                             "r:Rename",
                             "Shift+J/K:Move",
                             "Ctrl+Q:Quit",
-                        ]
+                        ]);
+                        if width >= 110 {
+                            parts.push("(mouse: click/scroll)");
+                        }
                     }
                 }
                 SidebarSection::Regions => {
-                    &["F1:Help", "j/k:Header/Footer", "Enter:Edit", "Ctrl+Q:Quit"]
+                    if width < 80 {
+                        parts.push("Ctrl+Q:Quit");
+                        parts.push("Enter:Edit");
+                    } else {
+                        parts.extend_from_slice(&[
+                            "j/k:Header/Footer",
+                            "Enter:Edit",
+                            "Ctrl+Q:Quit",
+                        ]);
+                        if width >= 110 {
+                            parts.push("(mouse: click/scroll)");
+                        }
+                    }
                 }
                 SidebarSection::Layouts => {
                     if width < 80 {
-                        &["F1:Help", "Enter:Edit", "d:Del", "y:Dup", "Ctrl+Q:Quit"]
+                        parts.push("Ctrl+Q:Quit");
+                        parts.push("Enter:Edit");
                     } else if width < 110 {
-                        &[
-                            "F1:Help",
+                        parts.extend_from_slice(&[
                             "/:Insert",
                             "d:Del",
                             "y:Dup",
-                            "u:Undo",
+                            "u:Undo-tree",
                             "J/K:Move",
                             "Ctrl+Q:Quit",
-                        ]
+                        ]);
                     } else {
-                        &[
-                            "F1:Help",
+                        parts.extend_from_slice(&[
                             "/:Insert",
                             "Enter:Edit",
                             "d:Del",
                             "y:Dup",
-                            "u:Undo",
+                            "u:Undo-tree",
                             "J/K:Move",
                             "p:Preview",
                             "Ctrl+Q:Quit",
-                        ]
+                            "(mouse: click/scroll)",
+                        ]);
                     }
                 }
             }
-        };
-        let mut joined = parts.join("  ");
-        if self.dirty {
-            joined = format!("*  {joined}");
         }
-        if width == 0 {
-            return String::new();
+        let prefix = if self.dirty { "*  " } else { "" };
+        let max = width as usize;
+        // Drop whole tokens so a narrow terminal never clips mid-key. Prefer dropping
+        // scoped actions, then the mouse reminder, then chrome (F1/F2/Quit/Esc).
+        loop {
+            let joined = format!("{prefix}{}", parts.join("  "));
+            if joined.chars().count() <= max {
+                return joined;
+            }
+            if let Some(idx) = parts.iter().rposition(|p| {
+                !is_footer_chrome(p) && *p != "(mouse: click/scroll)"
+            }) {
+                parts.remove(idx);
+            } else if let Some(idx) = parts.iter().position(|p| *p == "(mouse: click/scroll)") {
+                parts.remove(idx);
+            } else if !parts.is_empty() {
+                parts.pop();
+            } else {
+                return String::new();
+            }
         }
-        joined.chars().take(width as usize).collect()
     }
     pub(in crate::tui) fn details_text(&self, detail_width: usize) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
         match self.selected_region {

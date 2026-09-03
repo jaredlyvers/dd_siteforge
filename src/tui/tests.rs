@@ -1918,3 +1918,59 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
         assert!(app.show_help);
         assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
     }
+
+    fn assert_footer_tokens_complete(hint: &str) {
+        for token in hint.split("  ") {
+            if token.is_empty() {
+                continue;
+            }
+            assert!(
+                token == "*" || token.contains(':'),
+                "cut mid-key: {token:?} in {hint:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn footer_hint_pages_includes_f1_f2_and_keeps_whole_tokens() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.selected_sidebar_section = SidebarSection::Pages;
+        for width in [60_u16, 80, 110] {
+            let hint = app.footer_hint(width);
+            assert!(hint.contains("F2:Theme"), "{hint}");
+            assert!(hint.contains("F1:Help"), "{hint}");
+            assert!(hint.chars().count() <= width as usize, "{hint}");
+            assert_footer_tokens_complete(&hint);
+        }
+        let at_60 = app.footer_hint(60);
+        assert_footer_tokens_complete(&at_60);
+        let wide = app.footer_hint(110);
+        assert!(wide.contains("(mouse: click/scroll)"), "{wide}");
+    }
+
+    #[test]
+    fn footer_hint_layouts_includes_f2() {
+        let app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        for width in [60_u16, 80, 110] {
+            let hint = app.footer_hint(width);
+            assert!(hint.contains("F2:Theme"), "{hint}");
+        }
+    }
+
+    #[test]
+    fn footer_hint_overlay_includes_f2_and_esc_close() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.show_help = true;
+        let hint = app.footer_hint(80);
+        assert!(hint.contains("F2:Theme"), "{hint}");
+        assert!(hint.contains("Esc:Close"), "{hint}");
+    }
+
+    #[test]
+    fn footer_hint_dirty_prefix_at_120() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.dirty = true;
+        let dirty = app.footer_hint(120);
+        assert!(dirty.starts_with("*  "), "{dirty}");
+        assert!(dirty.contains("F2:Theme"), "{dirty}");
+    }

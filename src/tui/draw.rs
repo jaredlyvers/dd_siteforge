@@ -27,7 +27,7 @@ impl App {
 
         // === NEW 3-line header (bordered, title=project, content=header_copy) ===
         let header_block = Block::default()
-            .title(format!("dd_siteforge v{}", env!("CARGO_PKG_VERSION")))
+            .title("dd_siteforge")
             .borders(Borders::ALL)
             .border_style(self.theme.active_border)
             .style(self.theme.app_shell)
