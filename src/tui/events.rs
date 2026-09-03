@@ -382,7 +382,7 @@ impl App {
 
     pub(super) fn handle_double_click(&mut self, x: u16, y: u16) {
         self.handle_click(x, y);
-        // Special case for double-click on an item (not the title bar) in the Nodes / Pages list:
+        // Special case for double-click on an item (not the title bar) in the Pages list:
         // Switch to that page (already done in handle_click), then pin the Layout tree selection
         // to its [HEAD] row (by setting the flag + resync), and activate the Layouts sidebar section.
         // The handle_enter below will then see a PageHead row and open the unified page-head editor.

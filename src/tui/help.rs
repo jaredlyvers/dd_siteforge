@@ -228,10 +228,10 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
         &mut lines,
         "Mouse controls",
         &[
-            ("Click panel/list", "Focus panel + select the row/item (Regions/Pages/Layout/Details)"),
+            ("Click panel/list", "Select the row/item (Regions/Pages/Layout); Details click selects the matching tree grain"),
             ("Double-click item", "Edit (unified modal; works on page-head, header/footer roots, sections, columns, components)"),
             ("Click modal field", "Focus that input (click-to-focus in all FormEdit + legacy)"),
-            ("Wheel over pane", "Scroll the pane under the cursor; click row to select; double-click to edit"),
+            ("Wheel over pane", "Scroll Details when the cursor is over it; otherwise move the focused list selection"),
         ],
         "•",
         h_style,
