@@ -1,6 +1,47 @@
 //! Frame layout: header, sidebar, details, footer, overlays.
 use super::*;
 
+/// Sidebar block title. Compact when pane width (incl. borders) is under 22:
+/// 25% of an 80-col frame is 20, which still fits `[1]` / `[2]` / `[3]`.
+pub(super) fn sidebar_pane_title(
+    section: SidebarSection,
+    width: u16,
+    page_idx: usize,
+    page_count: usize,
+) -> String {
+    let compact = width < 22;
+    match section {
+        SidebarSection::Regions => {
+            if compact {
+                "[1]".to_string()
+            } else {
+                "[1] Regions".to_string()
+            }
+        }
+        SidebarSection::Pages => {
+            if page_count == 0 {
+                if compact {
+                    "[2]".to_string()
+                } else {
+                    "[2] Pages".to_string()
+                }
+            } else if compact {
+                format!("[2] {page_idx}/{page_count}")
+            } else {
+                format!("[2] Pages {page_idx}/{page_count}")
+            }
+        }
+        SidebarSection::Layouts => {
+            if compact {
+                "[3]".to_string()
+            } else {
+                "[3] Layout".to_string()
+            }
+        }
+        SidebarSection::Details => String::new(),
+    }
+}
+
 impl App {
     pub(super) fn draw(&mut self, frame: &mut ratatui::Frame) {
         self.prune_toasts();
@@ -121,7 +162,12 @@ impl App {
         let regions_list = List::new(regions_items)
             .block(
                 Block::default()
-                    .title("[1] Regions")
+                    .title(sidebar_pane_title(
+                        SidebarSection::Regions,
+                        sidebar[0].width,
+                        0,
+                        0,
+                    ))
                     .borders(Borders::ALL)
                     .style(
                         Style::default()
@@ -186,15 +232,12 @@ impl App {
                 ListItem::new(label).style(style)
             })
             .collect();
-        let pages_title = if self.site.pages.is_empty() {
-            "[2] Pages".to_string()
-        } else {
-            format!(
-                "[2] Pages {}/{}",
-                self.selected_page + 1,
-                self.site.pages.len()
-            )
-        };
+        let pages_title = sidebar_pane_title(
+            SidebarSection::Pages,
+            sidebar[1].width,
+            self.selected_page + 1,
+            self.site.pages.len(),
+        );
         let pages_list = List::new(page_items)
             .block(
                 Block::default()
@@ -256,7 +299,12 @@ impl App {
         let layouts_list = List::new(layout_items)
             .block(
                 Block::default()
-                    .title("[3] Layout")
+                    .title(sidebar_pane_title(
+                        SidebarSection::Layouts,
+                        sidebar[2].width,
+                        0,
+                        0,
+                    ))
                     .borders(Borders::ALL)
                     .style(
                         Style::default()

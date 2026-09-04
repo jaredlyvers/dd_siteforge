@@ -2391,6 +2391,66 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
         assert!(at_80.contains("Ctrl+Q:Quit"), "{at_80}");
     }
 
+    fn sidebar_percent_width(term_w: u16) -> u16 {
+        (u32::from(term_w) * 25 / 100) as u16
+    }
+
+    #[test]
+    fn sidebar_pane_title_elides_under_22_cols() {
+        assert_eq!(sidebar_percent_width(80), 20);
+        assert_eq!(sidebar_percent_width(60), 15);
+        for width in [sidebar_percent_width(60), sidebar_percent_width(80), 21] {
+            assert!(width < 22);
+            assert_eq!(
+                super::draw::sidebar_pane_title(SidebarSection::Regions, width, 1, 1),
+                "[1]"
+            );
+            assert_eq!(
+                super::draw::sidebar_pane_title(SidebarSection::Pages, width, 3, 12),
+                "[2] 3/12"
+            );
+            assert_eq!(
+                super::draw::sidebar_pane_title(SidebarSection::Pages, width, 1, 0),
+                "[2]"
+            );
+            assert_eq!(
+                super::draw::sidebar_pane_title(SidebarSection::Layouts, width, 1, 1),
+                "[3]"
+            );
+            for section in [
+                SidebarSection::Regions,
+                SidebarSection::Pages,
+                SidebarSection::Layouts,
+            ] {
+                let title = super::draw::sidebar_pane_title(section, width, 3, 12);
+                assert!(
+                    title.chars().count() + 2 <= width as usize,
+                    "{title:?} must fit {width}-col pane with borders"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn sidebar_pane_title_full_when_pane_at_least_22() {
+        assert_eq!(
+            super::draw::sidebar_pane_title(SidebarSection::Regions, 22, 1, 1),
+            "[1] Regions"
+        );
+        assert_eq!(
+            super::draw::sidebar_pane_title(SidebarSection::Pages, 22, 3, 12),
+            "[2] Pages 3/12"
+        );
+        assert_eq!(
+            super::draw::sidebar_pane_title(SidebarSection::Pages, 22, 1, 0),
+            "[2] Pages"
+        );
+        assert_eq!(
+            super::draw::sidebar_pane_title(SidebarSection::Layouts, 22, 1, 1),
+            "[3] Layout"
+        );
+    }
+
     #[test]
     fn page_down_on_layouts_moves_tree_not_details() {
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
