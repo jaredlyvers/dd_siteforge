@@ -79,6 +79,76 @@ pub(super) fn render_textarea_display(
     render_textarea_display_window(value, cursor_pos, focused, visible_rows).0
 }
 
+/// Glyph shown at column `col` of `line`. Space if that cell is empty
+/// (caret at end of the line, or the line is shorter than `col`).
+fn overlay_glyph_at(line: &str, col: usize) -> char {
+    line.chars().nth(col).filter(|c| *c != '\n').unwrap_or(' ')
+}
+
+/// Map a FormEdit text caret to a 1-cell overlay inside the bordered `box_rect`.
+/// Paragraph has no horizontal scroll, so a caret past the inner width overlays
+/// the last visible glyph rather than painting the logical (often space) char.
+pub(super) fn form_input_cursor_cell(
+    kind: &editform::FieldKind,
+    value: &str,
+    cursor_pos: usize,
+    box_rect: Rect,
+) -> Option<(u16, u16, char)> {
+    if box_rect.width < 3 || box_rect.height < 3 {
+        return None;
+    }
+    let inner_x = box_rect.x.saturating_add(1);
+    let inner_y = box_rect.y.saturating_add(1);
+    let inner_w = box_rect.width.saturating_sub(2);
+    let inner_h = box_rect.height.saturating_sub(2);
+    if inner_w == 0 || inner_h == 0 {
+        return None;
+    }
+
+    let pos = cursor_pos.min(value.chars().count());
+
+    match kind {
+        editform::FieldKind::Text { .. } | editform::FieldKind::Url { .. } => {
+            let col = (pos as u16).min(inner_w.saturating_sub(1));
+            let ch = overlay_glyph_at(value, col as usize);
+            Some((inner_x.saturating_add(col), inner_y, ch))
+        }
+        editform::FieldKind::Textarea { .. } => {
+            let visible_rows = inner_h as usize;
+            let (_display, first_visible_row, total_rows) =
+                render_textarea_display_window(value, pos, true, visible_rows);
+            let lines = input_lines_preserve(value);
+            let cursor_row =
+                textarea_cursor_row(value, pos).min(lines.len().saturating_sub(1));
+            if cursor_row < first_visible_row {
+                return None;
+            }
+            let row_in_view = (cursor_row - first_visible_row) as u16;
+            if row_in_view >= inner_h {
+                return None;
+            }
+            let text_w = if total_rows > visible_rows {
+                inner_w.saturating_sub(1)
+            } else {
+                inner_w
+            };
+            if text_w == 0 {
+                return None;
+            }
+            let cursor_col = textarea_cursor_col(value, pos);
+            let col = (cursor_col as u16).min(text_w.saturating_sub(1));
+            let line = lines.get(cursor_row).map(|s| s.as_str()).unwrap_or("");
+            let ch = overlay_glyph_at(line, col as usize);
+            Some((
+                inner_x.saturating_add(col),
+                inner_y.saturating_add(row_in_view),
+                ch,
+            ))
+        }
+        _ => None,
+    }
+}
+
 pub(super) fn render_textarea_display_window(
     value: &str,
     cursor_pos: usize,

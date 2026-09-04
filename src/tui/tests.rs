@@ -725,6 +725,85 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
     }
 
     #[test]
+    fn form_input_cursor_overlays_visible_glyph_when_caret_is_past_width() {
+        let text = editform::FieldKind::Text { default: "" };
+        // borders take 2 cols; inner width 5
+        let box_rect = Rect {
+            x: 0,
+            y: 0,
+            width: 7,
+            height: 3,
+        };
+        let (_, _, ch) = form_input_cursor_cell(&text, "hello", 5, box_rect)
+            .expect("caret at end of a full-width value");
+        assert_eq!(ch, 'o', "overlay the last visible glyph, not a space");
+
+        let (x, y, ch) = form_input_cursor_cell(&text, "hi", 2, box_rect)
+            .expect("on-screen end of value");
+        assert_eq!((x, y, ch), (3, 1, ' '));
+
+        let (x, y, ch) = form_input_cursor_cell(&text, "hello", 1, box_rect)
+            .expect("caret on a visible char");
+        assert_eq!((x, y, ch), (2, 1, 'e'));
+
+        let textarea = editform::FieldKind::Textarea {
+            rows: 3,
+            default: "",
+        };
+        let ta_box = Rect {
+            x: 0,
+            y: 0,
+            width: 7,
+            height: 5,
+        };
+        let (_, _, ch) = form_input_cursor_cell(&textarea, "abcdefghij", 10, ta_box)
+            .expect("textarea caret past inner width");
+        assert_eq!(ch, 'e');
+
+        let value = "one\ntwo\nhi";
+        let (x, y, ch) =
+            form_input_cursor_cell(&textarea, value, value.chars().count(), ta_box)
+                .expect("textarea caret on last window row");
+        assert_eq!((x, y, ch), (3, 3, ' '));
+    }
+
+    #[test]
+    fn form_edit_cursor_overlay_skips_help_and_display_has_no_block_glyph() {
+        let mut app = app_with_cta();
+        open_form_edit_on_selected_cta(&mut app);
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        let focused = match &app.modal {
+            Some(Modal::FormEdit { state, .. }) => state.focused_field,
+            _ => panic!("expected FormEdit"),
+        };
+        app.modal_field_areas.borrow_mut().push((
+            focused,
+            Rect {
+                x: 10,
+                y: 5,
+                width: 30,
+                height: 3,
+            },
+        ));
+        assert!(
+            app.active_input_cursor_cell().is_some(),
+            "FormEdit text field should return a caret cell"
+        );
+
+        app.overlay = Some(Overlay::Help { scroll: 0 });
+        assert!(
+            app.active_input_cursor_cell().is_none(),
+            "Help overlay must hide the FormEdit caret"
+        );
+
+        let rendered = render_textarea_display("one\ntwo\nthree\nfour\nfive", 5, true, 3);
+        assert!(
+            !rendered.contains('▋'),
+            "textarea display must not insert a block glyph, got {rendered:?}"
+        );
+    }
+
+    #[test]
     fn textarea_vertical_cursor_movement_keeps_column_when_possible() {
         let value = "abc\ndefgh\nij";
         let cursor = cursor_from_row_col(&input_lines_preserve(value), 1, 4);
