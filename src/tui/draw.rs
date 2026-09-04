@@ -59,33 +59,6 @@ impl App {
         };
         let details_title = format!("Details — {:02}: {}", page_idx, page_label);
 
-        // Split sidebar into three sections: Regions, Pages, Layouts
-        let sidebar = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(6), // Regions (Header, Footer)
-                Constraint::Length(8), // Pages (numbered list, scrollable)
-                Constraint::Min(1),    // Layouts (component tree)
-            ])
-            .split(main[0]);
-
-        // Determine border colors based on active section
-        let regions_border = if self.selected_sidebar_section == SidebarSection::Regions {
-            self.theme.border_active
-        } else {
-            self.theme.border
-        };
-        let pages_border = if self.selected_sidebar_section == SidebarSection::Pages {
-            self.theme.border_active
-        } else {
-            self.theme.border
-        };
-        let layouts_border = if self.selected_sidebar_section == SidebarSection::Layouts {
-            self.theme.border_active
-        } else {
-            self.theme.border
-        };
-
         // Regions section (Header, Footer)
         let regions_items: Vec<ListItem> = vec!["  Header", "  Footer"]
             .iter()
@@ -106,6 +79,40 @@ impl App {
                 ListItem::new(*label).style(style)
             })
             .collect();
+
+        // Length = 2 border rows + visible items. Pages cap shrinks so Layout keeps Min(1).
+        let page_count = self.site.pages.len();
+        let regions_height = 2 + regions_items.len();
+        let remaining = (main[0].height as usize).saturating_sub(regions_height);
+        let pages_cap = remaining.saturating_sub(1 + 2).clamp(1, 10);
+        let pages_height = 2 + page_count.clamp(1, pages_cap);
+
+        let sidebar = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(regions_height as u16),
+                Constraint::Length(pages_height as u16),
+                Constraint::Min(1),
+            ])
+            .split(main[0]);
+
+        // Determine border colors based on active section
+        let regions_border = if self.selected_sidebar_section == SidebarSection::Regions {
+            self.theme.border_active
+        } else {
+            self.theme.border
+        };
+        let pages_border = if self.selected_sidebar_section == SidebarSection::Pages {
+            self.theme.border_active
+        } else {
+            self.theme.border
+        };
+        let layouts_border = if self.selected_sidebar_section == SidebarSection::Layouts {
+            self.theme.border_active
+        } else {
+            self.theme.border
+        };
+
         let regions_list = List::new(regions_items)
             .block(
                 Block::default()
