@@ -27,6 +27,7 @@ mod theme;
 mod help;
 mod component_kind;
 mod form_textarea;
+mod scrollbar;
 mod util;
 mod details;
 mod tree;
@@ -40,6 +41,7 @@ use theme::*;
 use help::*;
 use component_kind::*;
 use form_textarea::*;
+use scrollbar::*;
 use util::*;
 use details::*;
 use tree::*;
@@ -128,6 +130,11 @@ pub(super) struct App {
     list_area: Rect,
     details_area: Rect,
     details_scroll_row: usize,
+    details_scrollbar_track: ScrollbarTrack,
+    help_scrollbar_track: ScrollbarTrack,
+    theme_scrollbar_track: ScrollbarTrack,
+    form_scrollbar_track: std::cell::RefCell<ScrollbarTrack>,
+    scrollbar_drag: Option<ScrollbarDrag>,
     regions_area: Rect,
     pages_area: Rect,
     pages_list_state: ListState,
@@ -205,6 +212,11 @@ impl App {
             list_area: Rect::default(),
             details_area: Rect::default(),
             details_scroll_row: 0,
+            details_scrollbar_track: ScrollbarTrack::default(),
+            help_scrollbar_track: ScrollbarTrack::default(),
+            theme_scrollbar_track: ScrollbarTrack::default(),
+            form_scrollbar_track: std::cell::RefCell::new(ScrollbarTrack::default()),
+            scrollbar_drag: None,
             regions_area: Rect::default(),
             pages_area: Rect::default(),
             pages_list_state: ListState::default(),

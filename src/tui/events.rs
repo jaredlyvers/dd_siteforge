@@ -156,6 +156,22 @@ impl App {
                             .saturating_add(3)
                             .min(self.help_scroll_max);
                     }
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        if contains(self.help_scrollbar_track.rect, m.column, m.row) {
+                            self.help_scroll = (self.help_scrollbar_track.offset_at(m.row) as u16)
+                                .min(self.help_scroll_max);
+                            self.scrollbar_drag = Some(ScrollbarDrag::Help);
+                        }
+                    }
+                    MouseEventKind::Drag(MouseButton::Left) => {
+                        if self.scrollbar_drag == Some(ScrollbarDrag::Help) {
+                            self.help_scroll = (self.help_scrollbar_track.offset_at(m.row) as u16)
+                                .min(self.help_scroll_max);
+                        }
+                    }
+                    MouseEventKind::Up(_) => {
+                        self.scrollbar_drag = None;
+                    }
                     _ => {}
                 },
                 _ => {}
@@ -205,6 +221,22 @@ impl App {
                             .theme_scroll
                             .saturating_add(3)
                             .min(self.theme_scroll_max);
+                    }
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        if contains(self.theme_scrollbar_track.rect, m.column, m.row) {
+                            self.theme_scroll = (self.theme_scrollbar_track.offset_at(m.row) as u16)
+                                .min(self.theme_scroll_max);
+                            self.scrollbar_drag = Some(ScrollbarDrag::Theme);
+                        }
+                    }
+                    MouseEventKind::Drag(MouseButton::Left) => {
+                        if self.scrollbar_drag == Some(ScrollbarDrag::Theme) {
+                            self.theme_scroll = (self.theme_scrollbar_track.offset_at(m.row) as u16)
+                                .min(self.theme_scroll_max);
+                        }
+                    }
+                    MouseEventKind::Up(_) => {
+                        self.scrollbar_drag = None;
                     }
                     _ => {}
                 },
@@ -313,18 +345,34 @@ impl App {
                 MouseEventKind::Down(MouseButton::Left) => {
                     let col = m.column;
                     let row = m.row;
-                    let now = std::time::Instant::now();
-                    let is_double = if let Some((last_col, last_row, last_time)) = self.last_mouse_click {
-                        last_col == col && last_row == row && now.duration_since(last_time).as_millis() < DOUBLE_CLICK_THRESHOLD_MS
+                    // Hit-test the Details scrollbar before pane click-to-select so a
+                    // click on the bar jumps scroll instead of selecting a grain.
+                    if contains(self.details_scrollbar_track.rect, col, row) {
+                        self.details_scroll_row = self.details_scrollbar_track.offset_at(row);
+                        self.scrollbar_drag = Some(ScrollbarDrag::Details);
                     } else {
-                        false
-                    };
-                    self.last_mouse_click = Some((col, row, now));
-                    if is_double {
-                        self.handle_double_click(col, row);
-                    } else {
-                        self.handle_click(col, row);
+                        self.scrollbar_drag = None;
+                        let now = std::time::Instant::now();
+                        let is_double = if let Some((last_col, last_row, last_time)) = self.last_mouse_click {
+                            last_col == col && last_row == row && now.duration_since(last_time).as_millis() < DOUBLE_CLICK_THRESHOLD_MS
+                        } else {
+                            false
+                        };
+                        self.last_mouse_click = Some((col, row, now));
+                        if is_double {
+                            self.handle_double_click(col, row);
+                        } else {
+                            self.handle_click(col, row);
+                        }
                     }
+                }
+                MouseEventKind::Drag(MouseButton::Left) => {
+                    if self.scrollbar_drag == Some(ScrollbarDrag::Details) {
+                        self.details_scroll_row = self.details_scrollbar_track.offset_at(m.row);
+                    }
+                }
+                MouseEventKind::Up(_) => {
+                    self.scrollbar_drag = None;
                 }
                 _ => {}
             },

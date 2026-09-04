@@ -123,45 +123,16 @@ pub(super) fn render_textarea_scrollbar(
     scrollbar_color: Color,
     background: Color,
 ) {
-    if area.height == 0 || total_rows <= visible_rows {
-        return;
-    }
-
-    for y in 0..area.height {
-        frame.render_widget(
-            Paragraph::new(" ").style(Style::default().bg(background)),
-            Rect {
-                x: area.x,
-                y: area.y + y,
-                width: 1,
-                height: 1,
-            },
-        );
-    }
-
-    let track_height = area.height as usize;
-    let thumb_height = ((visible_rows.max(1) * track_height) / total_rows.max(1))
-        .max(1)
-        .min(track_height);
-    let max_scroll = total_rows.saturating_sub(visible_rows.max(1));
-    let travel = track_height.saturating_sub(thumb_height);
-    let thumb_top = if max_scroll == 0 {
-        0
-    } else {
-        (first_visible_row.min(max_scroll) * travel) / max_scroll
-    };
-
-    for y in thumb_top..thumb_top + thumb_height {
-        frame.render_widget(
-            Paragraph::new("█").style(Style::default().fg(scrollbar_color).bg(background)),
-            Rect {
-                x: area.x,
-                y: area.y + y as u16,
-                width: 1,
-                height: 1,
-            },
-        );
-    }
+    paint_scrollbar(
+        frame,
+        area,
+        first_visible_row,
+        total_rows,
+        visible_rows,
+        scrollbar_color,
+        scrollbar_color,
+        background,
+    );
 }
 
 pub(super) fn textarea_cursor_row(value: &str, cursor_pos: usize) -> usize {

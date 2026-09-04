@@ -9,6 +9,7 @@ impl App {
     }
 
     pub(in crate::tui) fn render_modal(&self, frame: &mut ratatui::Frame) {
+        *self.form_scrollbar_track.borrow_mut() = ScrollbarTrack::default();
         if let Some(modal) = &self.modal {
             self.render_unified_modal(frame, modal);
         }
@@ -242,25 +243,21 @@ impl App {
 
         // Scrollbar on the right column when content exceeds window.
         if total_height > content_height {
-            let track_bg = Block::default().style(Style::default().bg(self.theme.popup_background));
-            frame.render_widget(
-                track_bg,
-                Rect::new(scrollbar_col, content_top, 1, content_height),
-            );
-            let thumb_height = ((content_height as u32 * content_height as u32
-                / total_height.max(1) as u32) as u16)
-                .max(1);
-            let travel = content_height.saturating_sub(thumb_height);
-            let thumb_y = if max_scroll == 0 {
-                0
-            } else {
-                ((scroll as u32 * travel as u32) / max_scroll.max(1) as u32) as u16
+            let track = Rect::new(scrollbar_col, content_top, 1, content_height);
+            *self.form_scrollbar_track.borrow_mut() = ScrollbarTrack {
+                rect: track,
+                total: total_height as usize,
+                visible: content_height as usize,
             };
-            let thumb = Paragraph::new(vec!["█".to_string(); thumb_height as usize].join("\n"))
-                .style(Style::default().fg(self.theme.scrollbar).bg(self.theme.popup_background));
-            frame.render_widget(
-                thumb,
-                Rect::new(scrollbar_col, content_top + thumb_y, 1, thumb_height),
+            paint_scrollbar(
+                frame,
+                track,
+                scroll as usize,
+                total_height as usize,
+                content_height as usize,
+                self.theme.scrollbar,
+                self.theme.scrollbar_hover,
+                self.theme.popup_background,
             );
         }
     }

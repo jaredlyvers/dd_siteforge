@@ -75,10 +75,34 @@ impl App {
 
         if let Event::Mouse(m) = &evt {
             let kind = m.kind;
-            // Click-to-focus inside multi-field modals: pick the input box
-            // whose cached rect contains the click.
+            let (col, row) = (m.column, m.row);
+
+            if matches!(kind, MouseEventKind::Up(_)) {
+                self.scrollbar_drag = None;
+                return Some(ModalResult::Continue);
+            }
+
+            if matches!(kind, MouseEventKind::Drag(MouseButton::Left))
+                && self.scrollbar_drag == Some(ScrollbarDrag::FormEdit)
+            {
+                let sb = *self.form_scrollbar_track.borrow();
+                if let Some(Modal::FormEdit { scroll_offset, .. }) = self.modal.as_mut() {
+                    *scroll_offset = sb.offset_at(row).min(u16::MAX as usize) as u16;
+                }
+                return Some(ModalResult::Continue);
+            }
+
+            // FormEdit scrollbar before field click-to-focus so a track click
+            // jumps instead of focusing the adjacent input.
             if matches!(kind, MouseEventKind::Down(MouseButton::Left)) {
-                let (col, row) = (m.column, m.row);
+                let sb = *self.form_scrollbar_track.borrow();
+                if contains(sb.rect, col, row) {
+                    if let Some(Modal::FormEdit { scroll_offset, .. }) = self.modal.as_mut() {
+                        *scroll_offset = sb.offset_at(row).min(u16::MAX as usize) as u16;
+                    }
+                    self.scrollbar_drag = Some(ScrollbarDrag::FormEdit);
+                    return Some(ModalResult::Continue);
+                }
                 let hit = self
                     .modal_field_areas
                     .borrow()

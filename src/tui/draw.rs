@@ -309,52 +309,32 @@ impl App {
         // when the content exceeds the visible window. Track lives on the
         // last column inside the border; thumb height is proportional to
         // visible/total rows.
+        self.details_scrollbar_track = ScrollbarTrack::default();
         if details_total_rows > details_visible_rows
             && main[1].width >= 3
             && main[1].height >= 4
         {
-            let track_x = main[1].x + main[1].width.saturating_sub(2);
-            let track_y0 = main[1].y + 1;
-            let track_h = main[1].height.saturating_sub(2);
-            for row in 0..track_h {
-                let cell = Paragraph::new("│").style(
-                    Style::default()
-                        .fg(self.theme.scrollbar)
-                        .bg(self.theme.panel_background),
-                );
-                frame.render_widget(
-                    cell,
-                    Rect {
-                        x: track_x,
-                        y: track_y0 + row,
-                        width: 1,
-                        height: 1,
-                    },
-                );
-            }
-            let total = details_total_rows;
-            let visible = details_visible_rows.max(1);
-            let track_h_usize = track_h as usize;
-            let thumb_h = ((track_h_usize * visible) / total.max(1)).max(1);
-            let scroll_range = total.saturating_sub(visible).max(1);
-            let thumb_top = (self.details_scroll_row * track_h_usize.saturating_sub(thumb_h))
-                / scroll_range;
-            for i in 0..thumb_h {
-                let cell = Paragraph::new("█").style(
-                    Style::default()
-                        .fg(self.theme.scrollbar_hover)
-                        .bg(self.theme.panel_background),
-                );
-                frame.render_widget(
-                    cell,
-                    Rect {
-                        x: track_x,
-                        y: track_y0 + (thumb_top + i) as u16,
-                        width: 1,
-                        height: 1,
-                    },
-                );
-            }
+            let track = Rect {
+                x: main[1].x + main[1].width.saturating_sub(2),
+                y: main[1].y + 1,
+                width: 1,
+                height: main[1].height.saturating_sub(2),
+            };
+            self.details_scrollbar_track = ScrollbarTrack {
+                rect: track,
+                total: details_total_rows,
+                visible: details_visible_rows,
+            };
+            paint_scrollbar(
+                frame,
+                track,
+                self.details_scroll_row,
+                details_total_rows,
+                details_visible_rows,
+                self.theme.scrollbar,
+                self.theme.scrollbar_hover,
+                self.theme.panel_background,
+            );
         }
 
         let footer_text = self.footer_hint(root[2].width);
@@ -417,48 +397,32 @@ impl App {
                 .scroll((scroll, 0));
             frame.render_widget(body, body_area);
 
-            // Scrollbar: track + thumb at the right edge of `inner`.
-            if (wrapped_total as u16) > inner.height {
-                let track_x = inner.x + inner.width.saturating_sub(1);
-                for row in 0..inner.height {
-                    let cell = Paragraph::new("│").style(
-                        Style::default()
-                            .fg(self.theme.scrollbar)
-                            .bg(self.theme.popup_background),
-                    );
-                    frame.render_widget(
-                        cell,
-                        Rect {
-                            x: track_x,
-                            y: inner.y + row,
-                            width: 1,
-                            height: 1,
-                        },
-                    );
-                }
-                // Thumb size proportional to visible/total.
-                let total_h = inner.height as usize;
-                let thumb_h = ((total_h * total_h) / wrapped_total.max(1)).max(1);
-                let scroll_range = wrapped_total.saturating_sub(total_h).max(1);
-                let thumb_top = ((scroll as usize) * total_h.saturating_sub(thumb_h))
-                    / scroll_range;
-                for i in 0..thumb_h {
-                    let cell = Paragraph::new("█").style(
-                        Style::default()
-                            .fg(self.theme.scrollbar_hover)
-                            .bg(self.theme.popup_background),
-                    );
-                    frame.render_widget(
-                        cell,
-                        Rect {
-                            x: track_x,
-                            y: inner.y + (thumb_top + i) as u16,
-                            width: 1,
-                            height: 1,
-                        },
-                    );
-                }
+            self.help_scrollbar_track = ScrollbarTrack::default();
+            if wrapped_total > visible && inner.height > 0 {
+                let track = Rect {
+                    x: inner.x + inner.width.saturating_sub(1),
+                    y: inner.y,
+                    width: 1,
+                    height: inner.height,
+                };
+                self.help_scrollbar_track = ScrollbarTrack {
+                    rect: track,
+                    total: wrapped_total,
+                    visible,
+                };
+                paint_scrollbar(
+                    frame,
+                    track,
+                    scroll as usize,
+                    wrapped_total,
+                    visible,
+                    self.theme.scrollbar,
+                    self.theme.scrollbar_hover,
+                    self.theme.popup_background,
+                );
             }
+        } else {
+            self.help_scrollbar_track = ScrollbarTrack::default();
         }
 
         if self.show_theme {
@@ -510,46 +474,32 @@ impl App {
                 .scroll((scroll, 0));
             frame.render_widget(body, body_area);
 
-            if (wrapped_total as u16) > inner.height {
-                let track_x = inner.x + inner.width.saturating_sub(1);
-                for row in 0..inner.height {
-                    let cell = Paragraph::new("│").style(
-                        Style::default()
-                            .fg(self.theme.scrollbar)
-                            .bg(self.theme.popup_background),
-                    );
-                    frame.render_widget(
-                        cell,
-                        Rect {
-                            x: track_x,
-                            y: inner.y + row,
-                            width: 1,
-                            height: 1,
-                        },
-                    );
-                }
-                let total_h = inner.height as usize;
-                let thumb_h = ((total_h * total_h) / wrapped_total.max(1)).max(1);
-                let scroll_range = wrapped_total.saturating_sub(total_h).max(1);
-                let thumb_top = ((scroll as usize) * total_h.saturating_sub(thumb_h))
-                    / scroll_range;
-                for i in 0..thumb_h {
-                    let cell = Paragraph::new("█").style(
-                        Style::default()
-                            .fg(self.theme.scrollbar_hover)
-                            .bg(self.theme.popup_background),
-                    );
-                    frame.render_widget(
-                        cell,
-                        Rect {
-                            x: track_x,
-                            y: inner.y + (thumb_top + i) as u16,
-                            width: 1,
-                            height: 1,
-                        },
-                    );
-                }
+            self.theme_scrollbar_track = ScrollbarTrack::default();
+            if wrapped_total > visible && inner.height > 0 {
+                let track = Rect {
+                    x: inner.x + inner.width.saturating_sub(1),
+                    y: inner.y,
+                    width: 1,
+                    height: inner.height,
+                };
+                self.theme_scrollbar_track = ScrollbarTrack {
+                    rect: track,
+                    total: wrapped_total,
+                    visible,
+                };
+                paint_scrollbar(
+                    frame,
+                    track,
+                    scroll as usize,
+                    wrapped_total,
+                    visible,
+                    self.theme.scrollbar,
+                    self.theme.scrollbar_hover,
+                    self.theme.popup_background,
+                );
             }
+        } else {
+            self.theme_scrollbar_track = ScrollbarTrack::default();
         }
 
         // Render unified modal if open (handles all modal types)

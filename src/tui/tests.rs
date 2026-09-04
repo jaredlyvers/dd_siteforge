@@ -1,5 +1,5 @@
 use super::*;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
 
     fn app_with_card() -> App {
@@ -2118,6 +2118,44 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, Mouse
         send_mouse(&mut app, MouseEventKind::ScrollDown, 10, 3);
         assert!(matches!(app.selected_region, SelectedRegion::Footer));
         assert_eq!(app.selected_tree_row, 0);
+    }
+
+    #[test]
+    fn mouse_down_on_details_scrollbar_jumps_scroll_row() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.details_scrollbar_track = ScrollbarTrack {
+            rect: Rect {
+                x: 78,
+                y: 4,
+                width: 1,
+                height: 20,
+            },
+            total: 100,
+            visible: 20,
+        };
+        app.details_area = Rect {
+            x: 20,
+            y: 1,
+            width: 60,
+            height: 30,
+        };
+        app.list_area = Rect::default();
+        app.pages_area = Rect::default();
+        app.regions_area = Rect::default();
+        app.details_scroll_row = 0;
+        app.sync_tree_row_with_selection();
+        let tree_before = app.selected_tree_row;
+        // Bottom of a 20-tall track at y=4 is y=23; max offset = 100-20 = 80.
+        send_mouse(&mut app, MouseEventKind::Down(MouseButton::Left), 78, 23);
+        assert_eq!(app.details_scroll_row, 80);
+        assert_eq!(app.scrollbar_drag, Some(ScrollbarDrag::Details));
+        assert_eq!(app.selected_tree_row, tree_before);
+
+        send_mouse(&mut app, MouseEventKind::Drag(MouseButton::Left), 78, 4);
+        assert_eq!(app.details_scroll_row, 0);
+
+        send_mouse(&mut app, MouseEventKind::Up(MouseButton::Left), 78, 4);
+        assert_eq!(app.scrollbar_drag, None);
     }
 
     #[test]
