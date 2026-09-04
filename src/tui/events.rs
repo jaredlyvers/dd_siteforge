@@ -425,8 +425,8 @@ impl App {
     }
 
     /// PageUp/PageDown follow the focused sidebar pane. Layouts jump the tree
-    /// selection; Pages jump the page list; Regions (and any other pane)
-    /// still scroll the Details blueprint.
+    /// selection; Pages jump the page list (clamped, no wrap); Regions (and
+    /// any other pane) still scroll the Details blueprint.
     fn page_focused_pane(&mut self, delta: isize) {
         let steps = delta.unsigned_abs();
         match self.selected_sidebar_section {
@@ -439,17 +439,30 @@ impl App {
                     }
                 }
             }
-            SidebarSection::Pages => {
-                for _ in 0..steps {
-                    if delta > 0 {
-                        self.select_next_page();
-                    } else {
-                        self.select_prev_page();
-                    }
-                }
-            }
+            SidebarSection::Pages => self.jump_selected_page_by(delta),
             SidebarSection::Regions => self.scroll_details_by(delta),
         }
+    }
+
+    /// Move `selected_page` by `delta`, clamped to `[0, n-1]`. No-op at the
+    /// ends (unlike Tab / wheel, which wrap via `select_next_page`).
+    fn jump_selected_page_by(&mut self, delta: isize) {
+        if self.site.pages.is_empty() {
+            return;
+        }
+        let last = (self.site.pages.len() - 1) as isize;
+        let next = (self.selected_page as isize + delta).clamp(0, last) as usize;
+        if next == self.selected_page {
+            return;
+        }
+        self.selected_page = next;
+        self.selected_node = 0;
+        self.selected_tree_row = 0;
+        self.selected_column = 0;
+        self.selected_component = 0;
+        self.selected_nested_item = 0;
+        self.details_scroll_row = 0;
+        self.sync_tree_row_with_selection();
     }
 
     /// Jump `selected_tree_row` to the first row of the window under `y` on

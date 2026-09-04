@@ -148,7 +148,7 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
         "Node navigation and edits",
         &[
             ("Up/Down or wheel", "Select row in Layout tree"),
-            ("PageUp/PageDown", "Scroll Details blueprint panel"),
+            ("PageUp/PageDown", "Page the focused pane (Layout tree / Pages list / Details from Regions)"),
             ("Enter", "Edit selected row"),
             ("Space", "Expand/collapse selected section or accordion/alternating/card/filmstrip/milestones/slider items"),
             ("/", "Open insert fuzzy finder (hero/section/cta/.../slider); inserts after the selected row"),
@@ -174,6 +174,7 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
             ("Shift+X", "Delete current page (confirms; refuses if only 1 page)"),
             ("u", "Undo last page deletion (session trash)"),
             ("Shift+J / Shift+K", "Move current page down / up (also = sitemap order)"),
+            ("PageUp/PageDown", "Jump ±5 pages (clamped, no wrap)"),
             ("r", "Rename page (auto-slug until first disk save; locked pages expose a Slug field in [HEAD])"),
         ],
         "•",

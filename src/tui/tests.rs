@@ -2323,22 +2323,23 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
     fn page_down_on_pages_moves_selected_page() {
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
         app.selected_sidebar_section = SidebarSection::Pages;
-        app.site.pages.push(crate::model::Page::from_template(
-            "About",
-            crate::model::PageTemplate::Blank,
-        ));
+        for title in ["About", "Work", "Blog", "Team", "Contact"] {
+            app.site.pages.push(crate::model::Page::from_template(
+                title,
+                crate::model::PageTemplate::Blank,
+            ));
+        }
+        assert_eq!(app.site.pages.len(), 6);
         app.selected_page = 0;
-        app.details_area = Rect {
-            x: 40,
-            y: 1,
-            width: 40,
-            height: 5,
-            ..Default::default()
-        };
-        app.details_scroll_row = 0;
         send_key(&mut app, KeyCode::PageDown, KeyModifiers::NONE);
-        assert_ne!(app.selected_page, 0);
-        assert_eq!(app.details_scroll_row, 0);
+        assert_eq!(app.selected_page, 5);
+
+        send_key(&mut app, KeyCode::PageDown, KeyModifiers::NONE);
+        assert_eq!(app.selected_page, 5);
+
+        app.selected_page = 0;
+        send_key(&mut app, KeyCode::PageUp, KeyModifiers::NONE);
+        assert_eq!(app.selected_page, 0);
     }
 
     #[test]
