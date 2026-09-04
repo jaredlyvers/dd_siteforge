@@ -47,6 +47,7 @@ impl App {
                 ToastLevel::Success => ("✓", self.theme.success),
                 ToastLevel::Info => ("ℹ", self.theme.info),
                 ToastLevel::Warning => ("⚠", self.theme.warning),
+                ToastLevel::Error => ("✗", self.theme.error),
             };
             frame.render_widget(Clear, rect);
             let block = Block::default()

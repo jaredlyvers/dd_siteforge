@@ -96,7 +96,7 @@ impl App {
 
         if let Err(e) = crate::export::export_site(&self.site, &out, Some(&base)) {
             let msg = format!("Preview failed: {}", e);
-            self.push_toast(ToastLevel::Warning, msg);
+            self.push_toast(ToastLevel::Error, msg);
             return;
         }
         self.site.export_dir = Some(normalized.clone());
@@ -117,14 +117,14 @@ impl App {
                 }
                 Err(e) => {
                     self.push_toast(
-                        ToastLevel::Warning,
+                        ToastLevel::Error,
                         format!("Browser open failed: {}", e),
                     );
                 }
             },
             Err(e) => {
                 self.push_toast(
-                    ToastLevel::Warning,
+                    ToastLevel::Error,
                     format!("Preview server failed: {}", e),
                 );
             }
@@ -231,7 +231,7 @@ impl App {
             }
             Err(e) => {
                 let msg = format!("Export failed: {}", e);
-                self.push_toast(ToastLevel::Warning, msg);
+                self.push_toast(ToastLevel::Error, msg);
             }
         }
     }

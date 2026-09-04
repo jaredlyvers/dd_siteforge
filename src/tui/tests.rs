@@ -2119,3 +2119,12 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, Mouse
         assert!(matches!(app.selected_region, SelectedRegion::Footer));
         assert_eq!(app.selected_tree_row, 0);
     }
+
+    #[test]
+    fn push_toast_error_stores_error_level() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.push_toast(ToastLevel::Error, "Failed to save: permission denied");
+        let last = app.toasts.last().expect("expected an error toast");
+        assert_eq!(last.level, ToastLevel::Error);
+        assert!(last.message.starts_with("Failed to"));
+    }

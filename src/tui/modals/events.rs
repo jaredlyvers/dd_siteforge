@@ -151,7 +151,7 @@ impl App {
                 } else {
                     let path_buf = std::path::PathBuf::from(raw);
                     if let Err(e) = self.commit_save_with_backup(&path_buf) {
-                        self.push_toast(ToastLevel::Warning, format!("Failed to save: {}", e));
+                        self.push_toast(ToastLevel::Error, format!("Failed to save: {}", e));
                         self.modal = Some(Modal::SavePrompt { path });
                         Some(ModalResult::Continue)
                     } else {

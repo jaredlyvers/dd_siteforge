@@ -294,7 +294,7 @@ impl App {
                     );
                 }
                 Err(e) => {
-                    self.push_toast(ToastLevel::Warning, format!("Failed to save: {}", e));
+                    self.push_toast(ToastLevel::Error, format!("Failed to save: {}", e));
                 }
             }
             return;
@@ -353,7 +353,7 @@ impl App {
 
     /// If the site is dirty, has a path, and the debounce window has elapsed,
     /// write `self.site` to the active path and refresh the saved snapshot.
-    /// Errors are surfaced as a warning toast and leave `dirty` set so the
+    /// Errors are surfaced as an error toast and leave `dirty` set so the
     /// next tick can retry.
     pub(super) fn tick_autosave(&mut self, now: std::time::Instant) {
         if !self.dirty {
@@ -380,7 +380,7 @@ impl App {
             }
             Err(e) => {
                 let msg = format!("Autosave failed: {}", e);
-                self.push_toast(ToastLevel::Warning, msg);
+                self.push_toast(ToastLevel::Error, msg);
             }
         }
     }

@@ -146,6 +146,7 @@ pub(in crate::tui) enum ToastLevel {
     Success,
     Info,
     Warning,
+    Error,
 }
 
 /// A transient bottom-right notification. Expires ~5s after `shown_at`.

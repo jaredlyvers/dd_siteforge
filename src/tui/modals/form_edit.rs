@@ -123,7 +123,7 @@ impl App {
                         return Some(ModalResult::CloseSuccess);
                     }
                     Err(e) => {
-                        self.push_toast(ToastLevel::Warning, format!("Save failed: {e}"));
+                        self.push_toast(ToastLevel::Error, format!("Save failed: {e}"));
                         self.modal = Some(Modal::FormEdit {
                             state,
                             cursor,
