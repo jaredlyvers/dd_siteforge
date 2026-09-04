@@ -87,6 +87,14 @@ pub(super) enum SelectedRegion {
     Footer,
 }
 
+/// F1 Help / F2 Theme. Lives beside `modal`, never inside it, so Esc
+/// cannot drop ImagePicker or a paused FormEdit.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Overlay {
+    Help { scroll: u16 },
+    Theme { scroll: u16 },
+}
+
 pub(super) struct App {
     site: Site,
     theme: AppTheme,
@@ -145,20 +153,10 @@ pub(super) struct App {
     should_quit: bool,
     modal: Option<Modal>,
     component_kind: ComponentKind,
-    show_help: bool,
-    /// Vertical scroll offset (in rows) for the F1 help modal.
-    help_scroll: u16,
-    /// Maximum legal `help_scroll` value, recomputed every render based on
-    /// the current modal area + wrapped row count. Read by event handlers
-    /// to clamp scroll keystrokes without needing the frame.
-    help_scroll_max: u16,
-    show_theme: bool,
-    /// Vertical scroll offset (in rows) for the F2:Theme modal.
-    theme_scroll: u16,
-    /// Maximum legal `theme_scroll` value, recomputed every render based on
-    /// the current modal area + wrapped row count. Read by event handlers
-    /// to clamp scroll keystrokes without needing the frame.
-    theme_scroll_max: u16,
+    overlay: Option<Overlay>,
+    /// Maximum legal overlay scroll, recomputed every render from the
+    /// current overlay area + line count so key/wheel handlers can clamp.
+    overlay_scroll_max: u16,
     theme_status: Option<String>,
     /// Per-frame cache of (field_idx, input_area_rect) for whichever
     /// multi-field modal is currently rendered. Click-to-focus lookups
@@ -227,12 +225,8 @@ impl App {
             should_quit: false,
             modal: None,
             component_kind: ComponentKind::Banner,
-            show_help: false,
-            help_scroll: 0,
-            help_scroll_max: 0,
-            show_theme: false,
-            theme_scroll: 0,
-            theme_scroll_max: 0,
+            overlay: None,
+            overlay_scroll_max: 0,
             theme_status,
             modal_field_areas: std::cell::RefCell::new(Vec::new()),
             paused_form_edit_modal: None,

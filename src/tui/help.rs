@@ -319,6 +319,6 @@ pub(crate) fn build_theme_text(theme: &AppTheme, source: &str, status: &Option<S
     Text::from(lines)
 }
 
-pub(crate) fn count_wrapped_lines(text: &Text, _width: usize) -> usize {
+pub(crate) fn count_lines(text: &Text, _width: usize) -> usize {
     text.lines.len()
 }

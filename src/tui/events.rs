@@ -102,147 +102,81 @@ impl App {
     }
 
     pub(super) fn handle_event(&mut self, evt: Event) -> anyhow::Result<()> {
-        // Help/theme overlays sit above modals so F1 works from FormEdit.
-        if !(self.show_help || self.show_theme) {
-            if let Some(modal_result) = self.handle_modal_event(evt.clone()) {
-                match modal_result {
-                    ModalResult::Continue => return Ok(()),
-                    ModalResult::CloseSuccess => return Ok(()),
-                    ModalResult::CloseCancel => return Ok(()),
+        // Overlay sits above modal + paused FormEdit. Esc/F1/F2 close only
+        // the overlay; they must not drop ImagePicker or the paused form.
+        if self.overlay.is_some() {
+            if matches!(
+                &evt,
+                Event::Key(k) if matches!(k.code, KeyCode::F(1) | KeyCode::F(2) | KeyCode::Esc)
+            ) {
+                self.overlay = None;
+                return Ok(());
+            }
+
+            let (track, drag_kind) = match &self.overlay {
+                Some(Overlay::Help { .. }) => (self.help_scrollbar_track, ScrollbarDrag::Help),
+                Some(Overlay::Theme { .. }) => (self.theme_scrollbar_track, ScrollbarDrag::Theme),
+                None => unreachable!(),
+            };
+            let max = self.overlay_scroll_max;
+            if let Some(Overlay::Help { scroll } | Overlay::Theme { scroll }) = &mut self.overlay {
+                match evt {
+                    Event::Key(k) => match k.code {
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            *scroll = scroll.saturating_add(1).min(max);
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            *scroll = scroll.saturating_sub(1);
+                        }
+                        KeyCode::PageDown => {
+                            *scroll = scroll.saturating_add(10).min(max);
+                        }
+                        KeyCode::PageUp => {
+                            *scroll = scroll.saturating_sub(10);
+                        }
+                        KeyCode::Home | KeyCode::Char('g') => {
+                            *scroll = 0;
+                        }
+                        KeyCode::End | KeyCode::Char('G') => {
+                            *scroll = max;
+                        }
+                        _ => {}
+                    },
+                    Event::Mouse(m) => match m.kind {
+                        MouseEventKind::ScrollUp => {
+                            *scroll = scroll.saturating_sub(3);
+                        }
+                        MouseEventKind::ScrollDown => {
+                            *scroll = scroll.saturating_add(3).min(max);
+                        }
+                        MouseEventKind::Down(MouseButton::Left) => {
+                            if contains(track.rect, m.column, m.row) {
+                                *scroll = (track.offset_at(m.row) as u16).min(max);
+                                self.scrollbar_drag = Some(drag_kind);
+                            }
+                        }
+                        MouseEventKind::Drag(MouseButton::Left) => {
+                            if self.scrollbar_drag == Some(drag_kind) {
+                                *scroll = (track.offset_at(m.row) as u16).min(max);
+                            }
+                        }
+                        MouseEventKind::Up(_) => {
+                            self.scrollbar_drag = None;
+                        }
+                        _ => {}
+                    },
+                    _ => {}
                 }
             }
-        }
-
-        if self.show_help {
-            match evt {
-                Event::Key(k) => match k.code {
-                    KeyCode::F(1) | KeyCode::Esc => {
-                        self.show_help = false;
-                        self.help_scroll = 0;
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        self.help_scroll = self
-                            .help_scroll
-                            .saturating_add(1)
-                            .min(self.help_scroll_max);
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.help_scroll = self.help_scroll.saturating_sub(1);
-                    }
-                    KeyCode::PageDown => {
-                        self.help_scroll = self
-                            .help_scroll
-                            .saturating_add(10)
-                            .min(self.help_scroll_max);
-                    }
-                    KeyCode::PageUp => {
-                        self.help_scroll = self.help_scroll.saturating_sub(10);
-                    }
-                    KeyCode::Home | KeyCode::Char('g') => {
-                        self.help_scroll = 0;
-                    }
-                    KeyCode::End | KeyCode::Char('G') => {
-                        self.help_scroll = self.help_scroll_max;
-                    }
-                    _ => {}
-                },
-                Event::Mouse(m) => match m.kind {
-                    MouseEventKind::ScrollUp => {
-                        self.help_scroll = self.help_scroll.saturating_sub(3);
-                    }
-                    MouseEventKind::ScrollDown => {
-                        self.help_scroll = self
-                            .help_scroll
-                            .saturating_add(3)
-                            .min(self.help_scroll_max);
-                    }
-                    MouseEventKind::Down(MouseButton::Left) => {
-                        if contains(self.help_scrollbar_track.rect, m.column, m.row) {
-                            self.help_scroll = (self.help_scrollbar_track.offset_at(m.row) as u16)
-                                .min(self.help_scroll_max);
-                            self.scrollbar_drag = Some(ScrollbarDrag::Help);
-                        }
-                    }
-                    MouseEventKind::Drag(MouseButton::Left) => {
-                        if self.scrollbar_drag == Some(ScrollbarDrag::Help) {
-                            self.help_scroll = (self.help_scrollbar_track.offset_at(m.row) as u16)
-                                .min(self.help_scroll_max);
-                        }
-                    }
-                    MouseEventKind::Up(_) => {
-                        self.scrollbar_drag = None;
-                    }
-                    _ => {}
-                },
-                _ => {}
-            }
             return Ok(());
         }
 
-        if self.show_theme {
-            match evt {
-                Event::Key(k) => match k.code {
-                    KeyCode::F(2) | KeyCode::Esc => {
-                        self.show_theme = false;
-                        self.theme_scroll = 0;
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        self.theme_scroll = self
-                            .theme_scroll
-                            .saturating_add(1)
-                            .min(self.theme_scroll_max);
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.theme_scroll = self.theme_scroll.saturating_sub(1);
-                    }
-                    KeyCode::PageDown => {
-                        self.theme_scroll = self
-                            .theme_scroll
-                            .saturating_add(10)
-                            .min(self.theme_scroll_max);
-                    }
-                    KeyCode::PageUp => {
-                        self.theme_scroll = self.theme_scroll.saturating_sub(10);
-                    }
-                    KeyCode::Home | KeyCode::Char('g') => {
-                        self.theme_scroll = 0;
-                    }
-                    KeyCode::End | KeyCode::Char('G') => {
-                        self.theme_scroll = self.theme_scroll_max;
-                    }
-                    _ => {}
-                },
-                Event::Mouse(m) => match m.kind {
-                    MouseEventKind::ScrollUp => {
-                        self.theme_scroll = self.theme_scroll.saturating_sub(3);
-                    }
-                    MouseEventKind::ScrollDown => {
-                        self.theme_scroll = self
-                            .theme_scroll
-                            .saturating_add(3)
-                            .min(self.theme_scroll_max);
-                    }
-                    MouseEventKind::Down(MouseButton::Left) => {
-                        if contains(self.theme_scrollbar_track.rect, m.column, m.row) {
-                            self.theme_scroll = (self.theme_scrollbar_track.offset_at(m.row) as u16)
-                                .min(self.theme_scroll_max);
-                            self.scrollbar_drag = Some(ScrollbarDrag::Theme);
-                        }
-                    }
-                    MouseEventKind::Drag(MouseButton::Left) => {
-                        if self.scrollbar_drag == Some(ScrollbarDrag::Theme) {
-                            self.theme_scroll = (self.theme_scrollbar_track.offset_at(m.row) as u16)
-                                .min(self.theme_scroll_max);
-                        }
-                    }
-                    MouseEventKind::Up(_) => {
-                        self.scrollbar_drag = None;
-                    }
-                    _ => {}
-                },
-                _ => {}
+        if let Some(modal_result) = self.handle_modal_event(evt.clone()) {
+            match modal_result {
+                ModalResult::Continue => return Ok(()),
+                ModalResult::CloseSuccess => return Ok(()),
+                ModalResult::CloseCancel => return Ok(()),
             }
-            return Ok(());
         }
 
         match evt {
@@ -254,8 +188,8 @@ impl App {
                     return Ok(());
                 }
                 match k.code {
-                KeyCode::F(1) => self.show_help = true,
-                KeyCode::F(2) => self.show_theme = true,
+                KeyCode::F(1) => self.overlay = Some(Overlay::Help { scroll: 0 }),
+                KeyCode::F(2) => self.overlay = Some(Overlay::Theme { scroll: 0 }),
                 KeyCode::F(3) => self.open_validation_modal(),
                 KeyCode::Char('E') if k.modifiers.contains(KeyModifiers::SHIFT) => {
                     self.begin_export_flow();

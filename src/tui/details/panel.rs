@@ -13,7 +13,7 @@ impl App {
         if width == 0 {
             return String::new();
         }
-        let overlay = self.modal.is_some() || self.show_help || self.show_theme;
+        let overlay = self.overlay.is_some() || self.modal.is_some();
         let mut parts: Vec<&str> = vec!["F1:Help", "F2:Theme"];
         if overlay {
             parts.push("Esc:Close");

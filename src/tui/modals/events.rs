@@ -50,8 +50,11 @@ impl App {
 
         if let Event::Key(key) = &evt {
             if key.code == KeyCode::F(1) {
-                self.show_help = true;
-                self.help_scroll = 0;
+                self.overlay = Some(Overlay::Help { scroll: 0 });
+                return Some(ModalResult::Continue);
+            }
+            if key.code == KeyCode::F(2) {
+                self.overlay = Some(Overlay::Theme { scroll: 0 });
                 return Some(ModalResult::Continue);
             }
             let key = *key;

@@ -341,169 +341,171 @@ impl App {
         let footer = Paragraph::new(footer_text).style(self.theme.app_shell);
         frame.render_widget(footer, root[2]);
 
-        if self.show_help {
-            let area = centered_rect(80, 80, frame.area());
-            frame.render_widget(Clear, area);
-            let block = Block::default()
-                .title("Key & Mouse bindings (F1 / Esc to close, j/k or arrows to scroll)")
-                .borders(Borders::ALL)
-                .style(
-                    Style::default()
-                        .fg(self.theme.foreground)
-                        .bg(self.theme.popup_background),
-                )
-                .border_style(Style::default().fg(self.theme.border_active))
-                .title_style(
-                    Style::default()
-                        .fg(self.theme.modal_header)
-                        .add_modifier(Modifier::BOLD),
-                );
-            let inner = block.inner(area);
-            frame.render_widget(block, area);
-
-            // Reserve a 1-col gutter on the right for the scrollbar so the
-            // body wraps before reaching the modal border.
-            let scrollbar_width: u16 = 1;
-            let body_w = inner.width.saturating_sub(scrollbar_width + 1);
-            let body_area = Rect {
-                x: inner.x,
-                y: inner.y,
-                width: body_w,
-                height: inner.height,
-            };
-
-            // Build rich help (section headers in modal_header, 2-col key/action with
-            // wrapping that preserves columns, icons, internal padding + dividers).
-            let help = build_help_text(&self.theme, body_w as usize);
-            let wrapped_total = count_wrapped_lines(&help, body_w as usize);
-            let visible = inner.height as usize;
-            let max_scroll = wrapped_total.saturating_sub(visible) as u16;
-            // Publish the max so event handlers can clamp on key/wheel events.
-            self.help_scroll_max = max_scroll;
-            // Clamp on render too so an inflated stored value (e.g. from
-            // pressing G/End before wrapping was known) snaps back into range.
-            if self.help_scroll > max_scroll {
-                self.help_scroll = max_scroll;
-            }
-            let scroll = self.help_scroll;
-
-            let body = Paragraph::new(help)
-                .style(
-                    Style::default()
-                        .fg(self.theme.foreground)
-                        .bg(self.theme.popup_background),
-                )
-                .wrap(Wrap { trim: false })
-                .scroll((scroll, 0));
-            frame.render_widget(body, body_area);
-
-            self.help_scrollbar_track = ScrollbarTrack::default();
-            if wrapped_total > visible && inner.height > 0 {
-                let track = Rect {
-                    x: inner.x + inner.width.saturating_sub(1),
-                    y: inner.y,
-                    width: 1,
-                    height: inner.height,
-                };
-                self.help_scrollbar_track = ScrollbarTrack {
-                    rect: track,
-                    total: wrapped_total,
-                    visible,
-                };
-                paint_scrollbar(
-                    frame,
-                    track,
-                    scroll as usize,
-                    wrapped_total,
-                    visible,
-                    self.theme.scrollbar,
-                    self.theme.scrollbar_hover,
-                    self.theme.popup_background,
-                );
-            }
-        } else {
-            self.help_scrollbar_track = ScrollbarTrack::default();
-        }
-
-        if self.show_theme {
-            let area = centered_rect(80, 80, frame.area());
-            frame.render_widget(Clear, area);
-            let block = Block::default()
-                .title("Theme (F2 / Esc to close, j/k or arrows to scroll)")
-                .borders(Borders::ALL)
-                .style(
-                    Style::default()
-                        .fg(self.theme.foreground)
-                        .bg(self.theme.popup_background),
-                )
-                .border_style(Style::default().fg(self.theme.border_active))
-                .title_style(
-                    Style::default()
-                        .fg(self.theme.modal_header)
-                        .add_modifier(Modifier::BOLD),
-                );
-            let inner = block.inner(area);
-            frame.render_widget(block, area);
-
-            let scrollbar_width: u16 = 1;
-            let body_w = inner.width.saturating_sub(scrollbar_width + 1);
-            let body_area = Rect {
-                x: inner.x,
-                y: inner.y,
-                width: body_w,
-                height: inner.height,
-            };
-
-            let help = build_theme_text(&self.theme, &self.theme_source, &self.theme_status, body_w as usize);
-            let wrapped_total = count_wrapped_lines(&help, body_w as usize);
-            let visible = inner.height as usize;
-            let max_scroll = wrapped_total.saturating_sub(visible) as u16;
-            self.theme_scroll_max = max_scroll;
-            if self.theme_scroll > max_scroll {
-                self.theme_scroll = max_scroll;
-            }
-            let scroll = self.theme_scroll;
-
-            let body = Paragraph::new(help)
-                .style(
-                    Style::default()
-                        .fg(self.theme.foreground)
-                        .bg(self.theme.popup_background),
-                )
-                .wrap(Wrap { trim: false })
-                .scroll((scroll, 0));
-            frame.render_widget(body, body_area);
-
-            self.theme_scrollbar_track = ScrollbarTrack::default();
-            if wrapped_total > visible && inner.height > 0 {
-                let track = Rect {
-                    x: inner.x + inner.width.saturating_sub(1),
-                    y: inner.y,
-                    width: 1,
-                    height: inner.height,
-                };
-                self.theme_scrollbar_track = ScrollbarTrack {
-                    rect: track,
-                    total: wrapped_total,
-                    visible,
-                };
-                paint_scrollbar(
-                    frame,
-                    track,
-                    scroll as usize,
-                    wrapped_total,
-                    visible,
-                    self.theme.scrollbar,
-                    self.theme.scrollbar_hover,
-                    self.theme.popup_background,
-                );
-            }
-        } else {
-            self.theme_scrollbar_track = ScrollbarTrack::default();
-        }
-
         // Render unified modal if open (handles all modal types)
         self.render_modal(frame);
+
+        // Overlay paints after modal so Help/Theme sit above FormEdit /
+        // ImagePicker. Tracks stay on App so drag can key off overlay.
+        match &mut self.overlay {
+            Some(Overlay::Help { scroll }) => {
+                let area = centered_rect(80, 80, frame.area());
+                frame.render_widget(Clear, area);
+                let block = Block::default()
+                    .title("Key & Mouse bindings (F1 / Esc to close, j/k or arrows to scroll)")
+                    .borders(Borders::ALL)
+                    .style(
+                        Style::default()
+                            .fg(self.theme.foreground)
+                            .bg(self.theme.popup_background),
+                    )
+                    .border_style(Style::default().fg(self.theme.border_active))
+                    .title_style(
+                        Style::default()
+                            .fg(self.theme.modal_header)
+                            .add_modifier(Modifier::BOLD),
+                    );
+                let inner = block.inner(area);
+                frame.render_widget(block, area);
+
+                // Reserve a 1-col gutter on the right for the scrollbar so the
+                // body wraps before reaching the modal border.
+                let scrollbar_width: u16 = 1;
+                let body_w = inner.width.saturating_sub(scrollbar_width + 1);
+                let body_area = Rect {
+                    x: inner.x,
+                    y: inner.y,
+                    width: body_w,
+                    height: inner.height,
+                };
+
+                // Build rich help (section headers in modal_header, 2-col key/action with
+                // wrapping that preserves columns, icons, internal padding + dividers).
+                let help = build_help_text(&self.theme, body_w as usize);
+                let wrapped_total = count_lines(&help, body_w as usize);
+                let visible = inner.height as usize;
+                let max_scroll = wrapped_total.saturating_sub(visible) as u16;
+                self.overlay_scroll_max = max_scroll;
+                if *scroll > max_scroll {
+                    *scroll = max_scroll;
+                }
+                let scroll = *scroll;
+
+                let body = Paragraph::new(help)
+                    .style(
+                        Style::default()
+                            .fg(self.theme.foreground)
+                            .bg(self.theme.popup_background),
+                    )
+                    .wrap(Wrap { trim: false })
+                    .scroll((scroll, 0));
+                frame.render_widget(body, body_area);
+
+                self.help_scrollbar_track = ScrollbarTrack::default();
+                self.theme_scrollbar_track = ScrollbarTrack::default();
+                if wrapped_total > visible && inner.height > 0 {
+                    let track = Rect {
+                        x: inner.x + inner.width.saturating_sub(1),
+                        y: inner.y,
+                        width: 1,
+                        height: inner.height,
+                    };
+                    self.help_scrollbar_track = ScrollbarTrack {
+                        rect: track,
+                        total: wrapped_total,
+                        visible,
+                    };
+                    paint_scrollbar(
+                        frame,
+                        track,
+                        scroll as usize,
+                        wrapped_total,
+                        visible,
+                        self.theme.scrollbar,
+                        self.theme.scrollbar_hover,
+                        self.theme.popup_background,
+                    );
+                }
+            }
+            Some(Overlay::Theme { scroll }) => {
+                let area = centered_rect(80, 80, frame.area());
+                frame.render_widget(Clear, area);
+                let block = Block::default()
+                    .title("Theme (F2 / Esc to close, j/k or arrows to scroll)")
+                    .borders(Borders::ALL)
+                    .style(
+                        Style::default()
+                            .fg(self.theme.foreground)
+                            .bg(self.theme.popup_background),
+                    )
+                    .border_style(Style::default().fg(self.theme.border_active))
+                    .title_style(
+                        Style::default()
+                            .fg(self.theme.modal_header)
+                            .add_modifier(Modifier::BOLD),
+                    );
+                let inner = block.inner(area);
+                frame.render_widget(block, area);
+
+                let scrollbar_width: u16 = 1;
+                let body_w = inner.width.saturating_sub(scrollbar_width + 1);
+                let body_area = Rect {
+                    x: inner.x,
+                    y: inner.y,
+                    width: body_w,
+                    height: inner.height,
+                };
+
+                let help = build_theme_text(&self.theme, &self.theme_source, &self.theme_status, body_w as usize);
+                let wrapped_total = count_lines(&help, body_w as usize);
+                let visible = inner.height as usize;
+                let max_scroll = wrapped_total.saturating_sub(visible) as u16;
+                self.overlay_scroll_max = max_scroll;
+                if *scroll > max_scroll {
+                    *scroll = max_scroll;
+                }
+                let scroll = *scroll;
+
+                let body = Paragraph::new(help)
+                    .style(
+                        Style::default()
+                            .fg(self.theme.foreground)
+                            .bg(self.theme.popup_background),
+                    )
+                    .wrap(Wrap { trim: false })
+                    .scroll((scroll, 0));
+                frame.render_widget(body, body_area);
+
+                self.help_scrollbar_track = ScrollbarTrack::default();
+                self.theme_scrollbar_track = ScrollbarTrack::default();
+                if wrapped_total > visible && inner.height > 0 {
+                    let track = Rect {
+                        x: inner.x + inner.width.saturating_sub(1),
+                        y: inner.y,
+                        width: 1,
+                        height: inner.height,
+                    };
+                    self.theme_scrollbar_track = ScrollbarTrack {
+                        rect: track,
+                        total: wrapped_total,
+                        visible,
+                    };
+                    paint_scrollbar(
+                        frame,
+                        track,
+                        scroll as usize,
+                        wrapped_total,
+                        visible,
+                        self.theme.scrollbar,
+                        self.theme.scrollbar_hover,
+                        self.theme.popup_background,
+                    );
+                }
+            }
+            None => {
+                self.help_scrollbar_track = ScrollbarTrack::default();
+                self.theme_scrollbar_track = ScrollbarTrack::default();
+            }
+        }
 
         // Toasts paint last so they float above everything except the
         // active-input cursor overlay.

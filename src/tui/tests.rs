@@ -1255,10 +1255,9 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
     fn f2_opens_and_closes_with_f2_and_esc() {
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
         send_key(&mut app, KeyCode::F(2), KeyModifiers::NONE);
-        assert!(app.show_theme);
-        assert_eq!(app.theme_scroll, 0);
+        assert!(matches!(app.overlay, Some(Overlay::Theme { scroll: 0 })));
         send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
-        assert!(!app.show_theme);
+        assert!(app.overlay.is_none());
     }
 
     #[test]
@@ -1266,13 +1265,16 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
         send_key(&mut app, KeyCode::F(2), KeyModifiers::NONE);
         // simulate render to set max (draw not called, so manually exercise clamp logic path)
-        app.theme_scroll_max = 5; // pretend content
+        app.overlay_scroll_max = 5; // pretend content
         send_key(&mut app, KeyCode::Down, KeyModifiers::NONE);
-        assert_eq!(app.theme_scroll, 1);
+        assert!(matches!(app.overlay, Some(Overlay::Theme { scroll: 1 })));
         send_key(&mut app, KeyCode::PageDown, KeyModifiers::NONE);
-        assert!(app.theme_scroll >= 1);
+        match app.overlay {
+            Some(Overlay::Theme { scroll }) => assert!(scroll >= 1),
+            other => panic!("expected Theme overlay, got {other:?}"),
+        }
         send_key(&mut app, KeyCode::Char('g'), KeyModifiers::NONE); // home alias
-        assert_eq!(app.theme_scroll, 0);
+        assert!(matches!(app.overlay, Some(Overlay::Theme { scroll: 0 })));
     }
 
     #[test]
@@ -1285,7 +1287,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
             Some("theme 'foo.yml' declares version 99 (expected 1); using built-in defaults".to_string()),
         );
         send_key(&mut app, KeyCode::F(2), KeyModifiers::NONE);
-        assert!(app.show_theme);
+        assert!(matches!(app.overlay, Some(Overlay::Theme { .. })));
         // status is stored; render would show it (no crash)
     }
 
@@ -1925,8 +1927,68 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
             scroll_offset: 0,
         });
         send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
-        assert!(app.show_help);
+        assert!(matches!(app.overlay, Some(Overlay::Help { scroll: 0 })));
         assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+        assert!(app.paused_form_edit_modal.is_none());
+    }
+
+    #[test]
+    fn f2_from_form_edit_opens_theme_overlay_esc_returns_to_form() {
+        let mut app = app_with_cta();
+        open_form_edit_on_selected_cta(&mut app);
+        send_key(&mut app, KeyCode::F(2), KeyModifiers::NONE);
+        assert!(matches!(app.overlay, Some(Overlay::Theme { scroll: 0 })));
+        assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+        assert!(app.paused_form_edit_modal.is_none());
+        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(app.overlay.is_none());
+        assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+    }
+
+    #[test]
+    fn form_edit_image_picker_f1_esc_esc_restores_same_field() {
+        let tmp = std::env::temp_dir().join(format!(
+            "dd_overlay_picker_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(tmp.join("source").join("images")).unwrap();
+        let mut app = app_with_cta();
+        app.path = Some(tmp.join("site.json"));
+        open_form_edit_on_selected_cta(&mut app);
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(form_focused_field_id(&app), Some("parent_image_url"));
+
+        send_key(&mut app, KeyCode::Char('p'), KeyModifiers::CONTROL);
+        assert!(matches!(app.modal, Some(Modal::ImagePicker { .. })));
+        match &app.paused_form_edit_modal {
+            Some(Modal::FormEdit { state, .. }) => {
+                assert_eq!(state.focused().map(|f| f.id), Some("parent_image_url"));
+            }
+            other => panic!(
+                "paused_form_edit_modal should hold FormEdit, got {}",
+                other.as_ref().map(Modal::variant_name).unwrap_or("None")
+            ),
+        }
+
+        send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
+        assert!(matches!(app.overlay, Some(Overlay::Help { scroll: 0 })));
+        assert!(matches!(app.modal, Some(Modal::ImagePicker { .. })));
+        assert!(matches!(app.paused_form_edit_modal, Some(Modal::FormEdit { .. })));
+
+        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(app.overlay.is_none());
+        assert!(matches!(app.modal, Some(Modal::ImagePicker { .. })));
+        assert!(matches!(app.paused_form_edit_modal, Some(Modal::FormEdit { .. })));
+
+        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(app.overlay.is_none());
+        assert!(app.paused_form_edit_modal.is_none());
+        assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+        assert_eq!(form_focused_field_id(&app), Some("parent_image_url"));
+        std::fs::remove_dir_all(&tmp).ok();
     }
 
     const FOOTER_TOKEN_ALLOWLIST: &[&str] = &[
@@ -2009,7 +2071,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
     #[test]
     fn footer_hint_overlay_includes_f2_and_esc_close() {
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
-        app.show_help = true;
+        app.overlay = Some(Overlay::Help { scroll: 0 });
         let hint = app.footer_hint(80);
         assert!(hint.starts_with("F1:Help  F2:Theme"), "{hint}");
         assert!(hint.contains("Esc:Close"), "{hint}");
