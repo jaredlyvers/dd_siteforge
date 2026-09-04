@@ -233,12 +233,14 @@ pub(in crate::tui) fn header_ascii_map(
         ),
         fit_ascii_cell("sections:", inner_width),
     ];
+    let mut line_hits: Vec<Vec<(usize, usize, usize, usize)>> = vec![vec![]; lines.len()];
 
     if header.sections.is_empty() {
         lines.push(fit_ascii_cell(
             "(no sections - press '/' to add)",
             inner_width,
         ));
+        line_hits.push(vec![]);
     } else {
         let active_section = selected_section.min(header.sections.len().saturating_sub(1));
         for (s_idx, section) in header.sections.iter().enumerate() {
@@ -247,9 +249,11 @@ pub(in crate::tui) fn header_ascii_map(
                 &format!("{s_marker} section: {}", section.id),
                 inner_width,
             ));
+            line_hits.push(vec![]);
 
             if section.columns.is_empty() {
                 lines.push(fit_ascii_cell("  (no columns)", inner_width));
+                line_hits.push(vec![]);
             } else {
                 let active_col = if s_idx == active_section {
                     selected_column.min(section.columns.len().saturating_sub(1))
@@ -266,14 +270,17 @@ pub(in crate::tui) fn header_ascii_map(
                         &format!("  {c_marker} column: {} [{}]", col.id, col.width_class),
                         inner_width,
                     ));
+                    line_hits.push(vec![]);
                     if col.components.is_empty() {
                         lines.push(fit_ascii_cell("    (empty)", inner_width));
+                        line_hits.push(vec![]);
                     } else {
-                        for comp in col.components.iter() {
+                        for (comp_i, comp) in col.components.iter().enumerate() {
                             lines.push(fit_ascii_cell(
                                 &format!("    - {}", component_label(comp)),
                                 inner_width,
                             ));
+                            line_hits.push(vec![(0, inner_width, c_idx, comp_i)]);
                         }
                     }
                 }
@@ -281,16 +288,7 @@ pub(in crate::tui) fn header_ascii_map(
         }
     }
 
-    let border = format!("+{}+", "-".repeat(inner_width + 2));
-    let mut out = Vec::new();
-    out.push(border.clone());
-    for line in lines {
-        out.push(format!("| {} |", line));
-    }
-    out.push(border);
-    let s = out.join("\n");
-    let hits = vec![vec![]; out.len()];
-    (s, hits)
+    wrap_ascii_block(lines, line_hits, inner_width)
 }
 
 pub(in crate::tui) fn footer_ascii_map(
@@ -312,11 +310,13 @@ pub(in crate::tui) fn footer_ascii_map(
         ),
         fit_ascii_cell("sections:", inner_width),
     ];
+    let mut line_hits: Vec<Vec<(usize, usize, usize, usize)>> = vec![vec![]; lines.len()];
     if footer.sections.is_empty() {
         lines.push(fit_ascii_cell(
             "(no sections - press '/' to add)",
             inner_width,
         ));
+        line_hits.push(vec![]);
     } else {
         let active_section = selected_section.min(footer.sections.len().saturating_sub(1));
         for (s_idx, section) in footer.sections.iter().enumerate() {
@@ -325,8 +325,10 @@ pub(in crate::tui) fn footer_ascii_map(
                 &format!("{s_marker} section: {}", section.id),
                 inner_width,
             ));
+            line_hits.push(vec![]);
             if section.columns.is_empty() {
                 lines.push(fit_ascii_cell("  (no columns)", inner_width));
+                line_hits.push(vec![]);
             } else {
                 let active_col = if s_idx == active_section {
                     selected_column.min(section.columns.len().saturating_sub(1))
@@ -343,30 +345,51 @@ pub(in crate::tui) fn footer_ascii_map(
                         &format!("  {c_marker} column: {} [{}]", col.id, col.width_class),
                         inner_width,
                     ));
+                    line_hits.push(vec![]);
                     if col.components.is_empty() {
                         lines.push(fit_ascii_cell("    (empty)", inner_width));
+                        line_hits.push(vec![]);
                     } else {
-                        for comp in col.components.iter() {
+                        for (comp_i, comp) in col.components.iter().enumerate() {
                             lines.push(fit_ascii_cell(
                                 &format!("    - {}", component_label(comp)),
                                 inner_width,
                             ));
+                            line_hits.push(vec![(0, inner_width, c_idx, comp_i)]);
                         }
                     }
                 }
             }
         }
     }
+    wrap_ascii_block(lines, line_hits, inner_width)
+}
+
+fn wrap_ascii_block(
+    lines: Vec<String>,
+    line_hits: Vec<Vec<(usize, usize, usize, usize)>>,
+    inner_width: usize,
+) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
     let border = format!("+{}+", "-".repeat(inner_width + 2));
     let mut out = Vec::new();
+    let mut out_hits: Vec<Vec<(usize, usize, usize, usize)>> = vec![];
     out.push(border.clone());
-    for line in lines {
+    out_hits.push(vec![]);
+    for (i, line) in lines.into_iter().enumerate() {
         out.push(format!("| {} |", line));
+        let adjusted = line_hits
+            .get(i)
+            .map(|segs| {
+                segs.iter()
+                    .map(|(x0, x1, c, cp)| (x0 + 2, x1 + 2, *c, *cp))
+                    .collect()
+            })
+            .unwrap_or_default();
+        out_hits.push(adjusted);
     }
     out.push(border);
-    let s = out.join("\n");
-    let hits = vec![vec![]; out.len()];
-    (s, hits)
+    out_hits.push(vec![]);
+    (out.join("\n"), out_hits)
 }
 
 pub(in crate::tui) fn card_items_ascii_lines(

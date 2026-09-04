@@ -326,7 +326,8 @@ impl App {
 
         self.details_area = main[1];
         let details_width = main[1].width.saturating_sub(2) as usize;
-        let (details_content, _details_hits) = self.details_text(details_width);
+        let (details_content, details_hits) = self.details_text(details_width);
+        self.details_hits = details_hits;
         let details_total_rows = details_content.lines().count().max(1);
         let details_visible_rows = main[1].height.saturating_sub(2) as usize;
         let details_max_scroll = details_total_rows.saturating_sub(details_visible_rows);

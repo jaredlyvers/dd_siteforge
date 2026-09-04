@@ -139,6 +139,9 @@ pub(super) struct App {
     list_area: Rect,
     details_area: Rect,
     details_scroll_row: usize,
+    /// Draw-time hit segments for the Details pane, one row per painted line.
+    /// Each segment is `(x0, x1, col, comp)` in content-cell coordinates.
+    details_hits: Vec<Vec<(usize, usize, usize, usize)>>,
     details_scrollbar_track: ScrollbarTrack,
     layout_scrollbar_track: ScrollbarTrack,
     help_scrollbar_track: ScrollbarTrack,
@@ -212,6 +215,7 @@ impl App {
             list_area: Rect::default(),
             details_area: Rect::default(),
             details_scroll_row: 0,
+            details_hits: Vec::new(),
             details_scrollbar_track: ScrollbarTrack::default(),
             layout_scrollbar_track: ScrollbarTrack::default(),
             help_scrollbar_track: ScrollbarTrack::default(),

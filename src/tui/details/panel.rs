@@ -116,54 +116,70 @@ impl App {
     }
     pub(in crate::tui) fn details_text(&self, detail_width: usize) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
         match self.selected_region {
-            SelectedRegion::Header => (self.header_details_text(detail_width), vec![]),
-            SelectedRegion::Footer => (self.footer_details_text(detail_width), vec![]),
+            SelectedRegion::Header => self.header_details_text(detail_width),
+            SelectedRegion::Footer => self.footer_details_text(detail_width),
             SelectedRegion::Page => self.page_details_text(detail_width),
         }
     }
-    pub(in crate::tui) fn header_details_text(&self, detail_width: usize) -> String {
+    pub(in crate::tui) fn header_details_text(&self, detail_width: usize) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
         let mut out = Vec::new();
+        let mut out_hits: Vec<Vec<(usize, usize, usize, usize)>> = vec![];
         out.push("Site header".to_string());
+        out_hits.push(vec![]);
         out.push(String::new());
+        out_hits.push(vec![]);
         let marker = if matches!(self.selected_region, SelectedRegion::Header) {
             "*"
         } else {
             " "
         };
         out.push(format!("{}[01] dd-header {}", marker, self.site.header.id));
-        let (hmap, _h_hits) = header_ascii_map(
+        out_hits.push(vec![]);
+        let (hmap, h_hits) = header_ascii_map(
             &self.site.header,
             self.selected_header_section,
             self.selected_header_column,
             detail_width,
         );
-        out.push(hmap);
+        for (i, l) in hmap.lines().enumerate() {
+            out.push(l.to_string());
+            out_hits.push(h_hits.get(i).cloned().unwrap_or_default());
+        }
         out.push(String::new());
+        out_hits.push(vec![]);
         out.push(format!(
             "Selected: {} | Insert mode: {}",
             self.header_selection_summary(),
             self.component_kind.label()
         ));
-        out.join("\n")
+        out_hits.push(vec![]);
+        (out.join("\n"), out_hits)
     }
-    pub(in crate::tui) fn footer_details_text(&self, detail_width: usize) -> String {
+    pub(in crate::tui) fn footer_details_text(&self, detail_width: usize) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
         let mut out = Vec::new();
+        let mut out_hits: Vec<Vec<(usize, usize, usize, usize)>> = vec![];
         out.push("Site footer".to_string());
+        out_hits.push(vec![]);
         out.push(String::new());
+        out_hits.push(vec![]);
         let marker = if matches!(self.selected_region, SelectedRegion::Footer) {
             "*"
         } else {
             " "
         };
         out.push(format!("{}[01] dd-footer {}", marker, self.site.footer.id));
-        let (fmap, _f_hits) = footer_ascii_map(
+        out_hits.push(vec![]);
+        let (fmap, f_hits) = footer_ascii_map(
             &self.site.footer,
             self.selected_header_section,
             self.selected_header_column,
             detail_width,
         );
-        out.push(fmap);
-        out.join("\n")
+        for (i, l) in fmap.lines().enumerate() {
+            out.push(l.to_string());
+            out_hits.push(f_hits.get(i).cloned().unwrap_or_default());
+        }
+        (out.join("\n"), out_hits)
     }
     pub(in crate::tui) fn page_details_text(&self, detail_width: usize) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
         let page = self.current_page();
@@ -241,15 +257,26 @@ impl App {
         if detail_w == 0 {
             return;
         }
-        let (content, _content_hits_for_render) = self.details_text(detail_w);
+        let (content, generated_hits) = self.details_text(detail_w);
         let lines: Vec<&str> = content.lines().collect();
         if text_line >= lines.len() {
             return;
         }
+        // Prefer draw-time hits; regenerate only when the stored map is missing this line.
+        let line_segs = self
+            .details_hits
+            .get(text_line)
+            .or_else(|| generated_hits.get(text_line))
+            .cloned()
+            .unwrap_or_default();
         match self.selected_region {
-            SelectedRegion::Header => self.select_header_from_details_lines(&lines, text_line),
-            SelectedRegion::Page => self.select_page_from_details_lines(&lines, text_line, char_x, detail_w),
-            _ => return,
+            SelectedRegion::Header | SelectedRegion::Footer => {
+                self.select_header_from_details_lines(&lines, text_line);
+                self.apply_header_details_hits(&line_segs, char_x);
+            }
+            SelectedRegion::Page => {
+                self.select_page_from_details_lines(&lines, text_line, char_x, &line_segs);
+            }
         }
         // Set tree row to the most specific (deepest) matching row for the selection level.
         // This makes tree highlight follow the clicked item, and double-click edit the right thing.
@@ -261,27 +288,41 @@ impl App {
         // For decl lines, use MAX for lower levels so only the decl row matches predicate (ancestors do but we pick specific).
         let mut tcol = self.selected_column;
         let mut tcomp = self.selected_component;
+        let mut hcol = self.selected_header_column;
+        let mut hcomp = self.selected_header_component;
         if clicked_line.contains('[')
             && (clicked_line.contains("dd-hero")
                 || clicked_line.contains("dd-section")
-                || clicked_line.contains("dd-header"))
+                || clicked_line.contains("dd-header")
+                || clicked_line.contains("dd-footer"))
         {
             tcol = usize::MAX;
             tcomp = usize::MAX;
+            hcol = usize::MAX;
+            hcomp = usize::MAX;
         } else if clicked_line.contains("column: ") || clicked_line.contains("item: ") {
             tcomp = usize::MAX;
+            hcomp = usize::MAX;
+        } else if clicked_line.contains("section: ") {
+            hcol = usize::MAX;
+            hcomp = usize::MAX;
         }
         let matches = |r: &TreeRow| -> bool {
             match r.kind {
-                TreeRowKind::HeaderRoot { .. } => true,
-                TreeRowKind::HeaderSection { section_idx } => section_idx == self.selected_header_section,
-                TreeRowKind::HeaderColumn { section_idx, column_idx } => {
-                    section_idx == self.selected_header_section && column_idx == self.selected_header_column
-                }
-                TreeRowKind::HeaderComponent { section_idx, column_idx, component_idx } => {
+                TreeRowKind::HeaderRoot { .. } | TreeRowKind::FooterRoot => true,
+                TreeRowKind::HeaderSection { section_idx }
+                | TreeRowKind::FooterSection { section_idx } => {
                     section_idx == self.selected_header_section
-                        && column_idx == self.selected_header_column
-                        && component_idx == self.selected_header_component
+                }
+                TreeRowKind::HeaderColumn { section_idx, column_idx }
+                | TreeRowKind::FooterColumn { section_idx, column_idx } => {
+                    section_idx == self.selected_header_section && column_idx == hcol
+                }
+                TreeRowKind::HeaderComponent { section_idx, column_idx, component_idx }
+                | TreeRowKind::FooterComponent { section_idx, column_idx, component_idx } => {
+                    section_idx == self.selected_header_section
+                        && column_idx == hcol
+                        && component_idx == hcomp
                 }
                 TreeRowKind::Hero { node_idx } | TreeRowKind::Section { node_idx } => node_idx == self.selected_node,
                 TreeRowKind::Column { node_idx, column_idx } => {
@@ -298,7 +339,13 @@ impl App {
         }
     }
 
-    pub(in crate::tui) fn select_page_from_details_lines(&mut self, lines: &[&str], up_to: usize, char_x: usize, detail_w: usize) {
+    pub(in crate::tui) fn select_page_from_details_lines(
+        &mut self,
+        lines: &[&str],
+        up_to: usize,
+        char_x: usize,
+        line_segs: &[(usize, usize, usize, usize)],
+    ) {
         let mut node_idx = None;
         let mut col_idx = 0usize;
         let mut comp_idx = 0usize;
@@ -341,21 +388,28 @@ impl App {
                 self.selected_component = comp_idx;
             }
         }
-        // Use precise component hit segments from generation (handles side-by-side column boxes correctly)
-        let (_ , hits) = self.details_text(detail_w);  // re-get with same w; hits only for page
-        if let Some(line_segs) = hits.get(up_to) {
-            for &(x0, x1, c, cp) in line_segs {
-                if char_x >= x0 && char_x < x1 {
-                    if let Some(n) = node_idx.or(Some(self.selected_node)) {
-                        let page = self.current_page();
-                        if n < page.nodes.len() {
-                            self.selected_node = n;
-                            self.selected_column = c;
-                            self.selected_component = cp;
-                        }
+        // Stored (or generated) component segments win over string-contains when the row has hits.
+        for &(x0, x1, c, cp) in line_segs {
+            if char_x >= x0 && char_x < x1 {
+                if let Some(n) = node_idx.or(Some(self.selected_node)) {
+                    let page = self.current_page();
+                    if n < page.nodes.len() {
+                        self.selected_node = n;
+                        self.selected_column = c;
+                        self.selected_component = cp;
                     }
-                    break;
                 }
+                break;
+            }
+        }
+    }
+
+    fn apply_header_details_hits(&mut self, line_segs: &[(usize, usize, usize, usize)], char_x: usize) {
+        for &(x0, x1, c, cp) in line_segs {
+            if char_x >= x0 && char_x < x1 {
+                self.selected_header_column = c;
+                self.selected_header_component = cp;
+                break;
             }
         }
     }

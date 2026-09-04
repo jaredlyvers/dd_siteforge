@@ -1989,9 +1989,10 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
         let app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
         let (text, _) = app.details_text(40);
         // default region is Page; switch check via footer helper
-        let footer = app.footer_details_text(40);
+        let (footer, footer_hits) = app.footer_details_text(40);
         assert!(footer.contains("dd-footer"), "{footer}");
         assert!(!footer.to_lowercase().contains("not yet implemented"));
+        assert_eq!(footer.lines().count(), footer_hits.len());
         let _ = text;
     }
 
@@ -2470,6 +2471,183 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
 
         send_mouse(&mut app, MouseEventKind::Up(MouseButton::Left), 28, 4);
         assert_eq!(app.scrollbar_drag, None);
+    }
+
+    #[test]
+    fn header_and_footer_details_hits_align_with_lines() {
+        let app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        let (header, header_hits) = app.header_details_text(40);
+        assert_eq!(header.lines().count(), header_hits.len());
+        let header_lines: Vec<&str> = header.lines().collect();
+        let search_line = header_lines
+            .iter()
+            .position(|l| l.contains("dd-header-search"))
+            .expect("starter header has dd-header-search");
+        assert!(
+            !header_hits[search_line].is_empty(),
+            "component line should carry hit segments"
+        );
+        let decl = header_lines
+            .iter()
+            .position(|l| l.contains("[01] dd-header"))
+            .expect("header decl");
+        assert!(header_hits[decl].is_empty(), "decl lines keep empty hit rows");
+
+        let (footer, footer_hits) = app.footer_details_text(40);
+        assert_eq!(footer.lines().count(), footer_hits.len());
+        let footer_lines: Vec<&str> = footer.lines().collect();
+        let col = footer_lines
+            .iter()
+            .position(|l| l.contains("column: "))
+            .expect("footer column decl");
+        assert!(footer_hits[col].is_empty(), "column decl uses string fallback");
+    }
+
+    #[test]
+    fn footer_details_click_selects_component() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.selected_region = SelectedRegion::Footer;
+        app.site.footer.sections[0].columns.push(SectionColumn {
+            id: "column-2".to_string(),
+            width_class: "dd-u-1-1".to_string(),
+            components: vec![ComponentKind::Cta.default_component()],
+        });
+        app.selected_header_section = 0;
+        app.selected_header_column = 0;
+        app.selected_header_component = 0;
+        app.sync_tree_row_with_selection();
+        app.details_area = Rect {
+            x: 20,
+            y: 1,
+            width: 60,
+            height: 30,
+            ..Default::default()
+        };
+        let detail_w = app.details_area.width.saturating_sub(2) as usize;
+        let (content, hits) = app.details_text(detail_w);
+        app.details_hits = hits;
+        let lines: Vec<&str> = content.lines().collect();
+        let line = lines
+            .iter()
+            .position(|l| l.contains("dd-cta"))
+            .expect("footer CTA line");
+        let char_x = app.details_hits[line]
+            .first()
+            .map(|&(x0, x1, _, _)| x0 + (x1 - x0) / 2)
+            .unwrap_or(4);
+        app.select_item_from_details_click(line, char_x);
+        assert_eq!(app.selected_header_section, 0);
+        assert_eq!(app.selected_header_column, 1);
+        assert_eq!(app.selected_header_component, 0);
+        let rows = app.build_tree_rows();
+        assert!(
+            matches!(
+                rows[app.selected_tree_row].kind,
+                TreeRowKind::FooterComponent {
+                    section_idx: 0,
+                    column_idx: 1,
+                    component_idx: 0,
+                }
+            ),
+            "expected FooterComponent tree row after footer details click"
+        );
+    }
+
+    #[test]
+    fn mouse_down_on_details_cell_selects_and_footer_does_not_early_return() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.details_area = Rect {
+            x: 20,
+            y: 1,
+            width: 60,
+            height: 30,
+            ..Default::default()
+        };
+        app.list_area = Rect::default();
+        app.pages_area = Rect::default();
+        app.regions_area = Rect::default();
+        app.details_scroll_row = 0;
+        app.selected_node = 0;
+        let detail_w = app.details_area.width.saturating_sub(2) as usize;
+        let (content, hits) = app.details_text(detail_w);
+        app.details_hits = hits;
+        let lines: Vec<&str> = content.lines().collect();
+        let line = lines
+            .iter()
+            .position(|l| l.contains("[02] dd-section"))
+            .expect("page section decl");
+        let y = app.details_area.y + 1 + line as u16;
+        let x = app.details_area.x + 1 + 4;
+        send_mouse(&mut app, MouseEventKind::Down(MouseButton::Left), x, y);
+        assert_eq!(app.selected_node, 1);
+        assert_eq!(app.selected_sidebar_section, SidebarSection::Details);
+
+        app.selected_region = SelectedRegion::Footer;
+        app.site.footer.sections[0].columns[0]
+            .components
+            .push(ComponentKind::Cta.default_component());
+        app.selected_header_column = 0;
+        app.selected_header_component = 0;
+        let (footer_content, footer_hits) = app.details_text(detail_w);
+        app.details_hits = footer_hits;
+        let footer_lines: Vec<&str> = footer_content.lines().collect();
+        let f_line = footer_lines
+            .iter()
+            .position(|l| l.contains("dd-cta"))
+            .expect("footer CTA line");
+        let (x0, x1) = app.details_hits[f_line]
+            .first()
+            .map(|&(a, b, _, _)| (a, b))
+            .unwrap_or((2, 8));
+        let fy = app.details_area.y + 1 + f_line as u16;
+        let fx = app.details_area.x + 1 + (x0 + (x1 - x0) / 2) as u16;
+        send_mouse(&mut app, MouseEventKind::Down(MouseButton::Left), fx, fy);
+        assert_eq!(app.selected_header_component, 0);
+        assert_eq!(app.selected_sidebar_section, SidebarSection::Details);
+        let rows = app.build_tree_rows();
+        assert!(
+            matches!(
+                rows[app.selected_tree_row].kind,
+                TreeRowKind::FooterComponent { .. }
+            ),
+            "footer details click must select, not early-return"
+        );
+    }
+
+    #[test]
+    fn details_click_prefers_stored_hit_map() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.details_area = Rect {
+            x: 20,
+            y: 1,
+            width: 60,
+            height: 30,
+            ..Default::default()
+        };
+        if let PageNode::Section(section) = &mut app.site.pages[0].nodes[1] {
+            section.columns.push(SectionColumn {
+                id: "column-2".to_string(),
+                width_class: "dd-u-1-1".to_string(),
+                components: vec![ComponentKind::Cta.default_component()],
+            });
+        }
+        let detail_w = app.details_area.width.saturating_sub(2) as usize;
+        let (content, mut hits) = app.details_text(detail_w);
+        let lines: Vec<&str> = content.lines().collect();
+        let line = lines
+            .iter()
+            .position(|l| l.contains("dd-cta"))
+            .expect("cta component line");
+        // Overwrite the stored segment so a click must be reading details_hits, not a regenerated map.
+        hits[line] = vec![(0, 80, 7, 3)];
+        app.details_hits = hits;
+        app.selected_node = 0;
+        app.selected_column = 0;
+        app.selected_component = 0;
+        app.select_item_from_details_click(line, 10);
+        assert_eq!(app.selected_node, 1);
+        assert_eq!(app.selected_column, 7);
+        assert_eq!(app.selected_component, 3);
     }
 
     #[test]
