@@ -2078,12 +2078,44 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, Mouse
         app.regions_area = Rect::default();
         app.sync_tree_row_with_selection();
         app.details_scroll_row = 0;
+        assert!(app.details_max_scroll() > 0);
         let tree_before = app.selected_tree_row;
         let page_before = app.selected_page;
         send_mouse(&mut app, MouseEventKind::ScrollDown, 45, 3);
         assert_eq!(app.selected_tree_row, tree_before);
         assert_eq!(app.selected_page, page_before);
-        if app.details_max_scroll() > 0 {
-            assert!(app.details_scroll_row > 0);
-        }
+        assert!(app.details_scroll_row > 0);
+    }
+
+    #[test]
+    fn wheel_down_over_empty_chrome_is_noop() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.list_area = Rect::default();
+        app.pages_area = Rect::default();
+        app.regions_area = Rect::default();
+        app.details_area = Rect::default();
+        app.sync_tree_row_with_selection();
+        let tree_before = app.selected_tree_row;
+        let page_before = app.selected_page;
+        send_mouse(&mut app, MouseEventKind::ScrollDown, 10, 3);
+        assert_eq!(app.selected_tree_row, tree_before);
+        assert_eq!(app.selected_page, page_before);
+    }
+
+    #[test]
+    fn wheel_down_over_regions_selects_footer() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.regions_area = Rect {
+            x: 0,
+            y: 1,
+            width: 30,
+            height: 10,
+            ..Default::default()
+        };
+        app.list_area = Rect::default();
+        app.pages_area = Rect::default();
+        app.details_area = Rect::default();
+        send_mouse(&mut app, MouseEventKind::ScrollDown, 10, 3);
+        assert!(matches!(app.selected_region, SelectedRegion::Footer));
+        assert_eq!(app.selected_tree_row, 0);
     }
