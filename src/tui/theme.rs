@@ -353,7 +353,7 @@ impl Default for AppTheme {
             modal_text: Color::Rgb(245, 246, 247),
             modal_header: border_focus,
             title: border_focus,
-            active: Color::Rgb(110, 200, 255),
+            active: border_focus,
             border: border_def,
             border_active: border_focus,
             input_border_default: border_def,
@@ -478,5 +478,7 @@ mod tests {
         assert_eq!(color_to_hex(theme.border_active), "#64b4f5");
         assert_eq!(color_to_hex(theme.text_inverse), "#f9fafb");
         assert_eq!(color_to_hex(theme.disabled), "#a0a4a8");
+        assert_eq!(color_to_hex(theme.active), "#64b4f5");
+        assert_eq!(color_to_hex(AppTheme::default().active), "#64b4f5");
     }
 }
