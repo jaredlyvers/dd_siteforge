@@ -208,8 +208,8 @@ impl App {
                 KeyCode::Char('l') => self.vim_expand_selected_row(),
                 KeyCode::Char('g') => self.vim_jump_to_first_row(),
                 KeyCode::Char('G') => self.vim_jump_to_last_row(),
-                KeyCode::PageUp => self.scroll_details_by(-5),
-                KeyCode::PageDown => self.scroll_details_by(5),
+                KeyCode::PageUp => self.page_focused_pane(-5),
+                KeyCode::PageDown => self.page_focused_pane(5),
                 KeyCode::Char(' ') => self.toggle_selected_tree_expanded(),
                 KeyCode::Enter => self.handle_enter_on_selected_row(),
                 KeyCode::Tab => self.select_next_page(),
@@ -279,11 +279,14 @@ impl App {
                 MouseEventKind::Down(MouseButton::Left) => {
                     let col = m.column;
                     let row = m.row;
-                    // Hit-test the Details scrollbar before pane click-to-select so a
-                    // click on the bar jumps scroll instead of selecting a grain.
+                    // Hit-test scrollbars before pane click-to-select so a click on
+                    // the bar jumps scroll instead of selecting a grain / tree row.
                     if contains(self.details_scrollbar_track.rect, col, row) {
                         self.details_scroll_row = self.details_scrollbar_track.offset_at(row);
                         self.scrollbar_drag = Some(ScrollbarDrag::Details);
+                    } else if contains(self.layout_scrollbar_track.rect, col, row) {
+                        self.jump_layout_to_scrollbar_y(row);
+                        self.scrollbar_drag = Some(ScrollbarDrag::Layout);
                     } else {
                         self.scrollbar_drag = None;
                         let now = std::time::Instant::now();
@@ -303,6 +306,8 @@ impl App {
                 MouseEventKind::Drag(MouseButton::Left) => {
                     if self.scrollbar_drag == Some(ScrollbarDrag::Details) {
                         self.details_scroll_row = self.details_scrollbar_track.offset_at(m.row);
+                    } else if self.scrollbar_drag == Some(ScrollbarDrag::Layout) {
+                        self.jump_layout_to_scrollbar_y(m.row);
                     }
                 }
                 MouseEventKind::Up(_) => {
@@ -329,6 +334,9 @@ impl App {
                 .y
                 .saturating_add(self.list_area.height.saturating_sub(1));
             if y < body_top || y >= body_bottom {
+                return;
+            }
+            if contains(self.layout_scrollbar_track.rect, x, y) {
                 return;
             }
             let idx = (y - body_top) as usize + self.layout_list_state.offset();
@@ -414,5 +422,49 @@ impl App {
             self.sync_tree_row_with_selection();
         }
         self.handle_enter_on_selected_row();
+    }
+
+    /// PageUp/PageDown follow the focused sidebar pane. Layouts jump the tree
+    /// selection; Pages jump the page list; Regions (and any other pane)
+    /// still scroll the Details blueprint.
+    fn page_focused_pane(&mut self, delta: isize) {
+        let steps = delta.unsigned_abs();
+        match self.selected_sidebar_section {
+            SidebarSection::Layouts => {
+                for _ in 0..steps {
+                    if delta > 0 {
+                        self.select_next();
+                    } else {
+                        self.select_prev();
+                    }
+                }
+            }
+            SidebarSection::Pages => {
+                for _ in 0..steps {
+                    if delta > 0 {
+                        self.select_next_page();
+                    } else {
+                        self.select_prev_page();
+                    }
+                }
+            }
+            SidebarSection::Regions => self.scroll_details_by(delta),
+        }
+    }
+
+    /// Jump `selected_tree_row` to the first row of the window under `y` on
+    /// the Layout scrollbar (proportional, same mapping as Details).
+    fn jump_layout_to_scrollbar_y(&mut self, y: u16) {
+        let offset = self.layout_scrollbar_track.offset_at(y);
+        let rows = self.build_tree_rows();
+        if rows.is_empty() {
+            return;
+        }
+        let idx = offset.min(rows.len() - 1);
+        self.selected_tree_row = idx;
+        self.apply_tree_row_selection(rows[idx]);
+        *self.layout_list_state.offset_mut() = offset.min(rows.len().saturating_sub(1));
+        self.layout_list_state.select(Some(idx));
+        self.selected_sidebar_section = SidebarSection::Layouts;
     }
 }

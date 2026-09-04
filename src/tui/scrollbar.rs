@@ -15,6 +15,7 @@ pub(super) struct ScrollbarTrack {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ScrollbarDrag {
     Details,
+    Layout,
     Help,
     Theme,
     FormEdit,

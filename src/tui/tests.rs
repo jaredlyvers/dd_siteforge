@@ -2300,6 +2300,87 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
     }
 
     #[test]
+    fn page_down_on_layouts_moves_tree_not_details() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.selected_sidebar_section = SidebarSection::Layouts;
+        app.details_area = Rect {
+            x: 40,
+            y: 1,
+            width: 40,
+            height: 5,
+            ..Default::default()
+        };
+        app.sync_tree_row_with_selection();
+        app.details_scroll_row = 0;
+        assert!(app.details_max_scroll() > 0);
+        let tree_before = app.selected_tree_row;
+        send_key(&mut app, KeyCode::PageDown, KeyModifiers::NONE);
+        assert_ne!(app.selected_tree_row, tree_before);
+        assert_eq!(app.details_scroll_row, 0);
+    }
+
+    #[test]
+    fn page_down_on_pages_moves_selected_page() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.selected_sidebar_section = SidebarSection::Pages;
+        app.site.pages.push(crate::model::Page::from_template(
+            "About",
+            crate::model::PageTemplate::Blank,
+        ));
+        app.selected_page = 0;
+        app.details_area = Rect {
+            x: 40,
+            y: 1,
+            width: 40,
+            height: 5,
+            ..Default::default()
+        };
+        app.details_scroll_row = 0;
+        send_key(&mut app, KeyCode::PageDown, KeyModifiers::NONE);
+        assert_ne!(app.selected_page, 0);
+        assert_eq!(app.details_scroll_row, 0);
+    }
+
+    #[test]
+    fn mouse_down_on_layout_scrollbar_jumps_tree_row() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.sync_tree_row_with_selection();
+        let total = app.build_tree_rows().len();
+        assert!(total > 1, "starter tree should have more than one row");
+        app.layout_scrollbar_track = ScrollbarTrack {
+            rect: Rect {
+                x: 28,
+                y: 4,
+                width: 1,
+                height: 10,
+            },
+            total,
+            visible: 1,
+        };
+        app.list_area = Rect {
+            x: 0,
+            y: 1,
+            width: 30,
+            height: 20,
+        };
+        app.details_area = Rect::default();
+        app.pages_area = Rect::default();
+        app.regions_area = Rect::default();
+        let tree_before = app.selected_tree_row;
+        // Bottom of a 10-tall track at y=4 is y=13; max offset = total - 1.
+        send_mouse(&mut app, MouseEventKind::Down(MouseButton::Left), 28, 13);
+        assert_eq!(app.selected_tree_row, total - 1);
+        assert_ne!(app.selected_tree_row, tree_before);
+        assert_eq!(app.scrollbar_drag, Some(ScrollbarDrag::Layout));
+
+        send_mouse(&mut app, MouseEventKind::Drag(MouseButton::Left), 28, 4);
+        assert_eq!(app.selected_tree_row, 0);
+
+        send_mouse(&mut app, MouseEventKind::Up(MouseButton::Left), 28, 4);
+        assert_eq!(app.scrollbar_drag, None);
+    }
+
+    #[test]
     fn push_toast_error_stores_error_level() {
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
         app.push_toast(ToastLevel::Error, "Failed to save: permission denied");

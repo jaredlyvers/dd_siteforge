@@ -290,6 +290,35 @@ impl App {
         frame.render_stateful_widget(layouts_list, sidebar[2], &mut self.layout_list_state);
         self.list_area = sidebar[2];
 
+        // Scrollbar on the right edge of the Layout list when the tree
+        // overflows the inner height. Track lives on the last column inside
+        // the border; thumb uses ListState offset as the first visible row.
+        self.layout_scrollbar_track = ScrollbarTrack::default();
+        let layout_inner_h = sidebar[2].height.saturating_sub(2) as usize;
+        if tree_rows.len() > layout_inner_h && sidebar[2].width >= 3 && sidebar[2].height >= 4 {
+            let track = Rect {
+                x: sidebar[2].x + sidebar[2].width.saturating_sub(2),
+                y: sidebar[2].y + 1,
+                width: 1,
+                height: sidebar[2].height.saturating_sub(2),
+            };
+            self.layout_scrollbar_track = ScrollbarTrack {
+                rect: track,
+                total: tree_rows.len(),
+                visible: layout_inner_h,
+            };
+            paint_scrollbar(
+                frame,
+                track,
+                self.layout_list_state.offset(),
+                tree_rows.len(),
+                layout_inner_h,
+                self.theme.scrollbar,
+                self.theme.scrollbar_hover,
+                self.theme.body_background,
+            );
+        }
+
         self.details_area = main[1];
         let details_width = main[1].width.saturating_sub(2) as usize;
         let (details_content, _details_hits) = self.details_text(details_width);
