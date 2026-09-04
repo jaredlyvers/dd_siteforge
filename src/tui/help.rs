@@ -120,6 +120,7 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
             ("Ctrl+Q", "Quit"),
             ("s", "Open save modal and enter file path (also writes a .backup checkpoint)"),
             ("Tab / Shift+Tab", "Next/previous page"),
+            ("1 / 2 / 3 / 4", "Focus Regions / Pages / Layout / Details"),
         ],
         "•",
         h_style,
@@ -148,7 +149,7 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
         "Node navigation and edits",
         &[
             ("Up/Down or wheel", "Select row in Layout tree"),
-            ("PageUp/PageDown", "Page the focused pane (Layout tree / Pages list / Details from Regions)"),
+            ("PageUp/PageDown", "Page the focused pane (Layout tree / Pages list / Details)"),
             ("Enter", "Edit selected row"),
             ("Space", "Expand/collapse selected section or accordion/alternating/card/filmstrip/milestones/slider items"),
             ("/", "Open insert fuzzy finder (hero/section/cta/.../slider); inserts after the selected row"),
@@ -193,7 +194,24 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
             ("c / v", "Select previous/next column"),
             ("J / K", "Move selected grain down/up (column when a column row is selected)"),
             ("r / f", "Edit selected column id / width class"),
-            ("Details pane", "Shows ASCII blueprint (click selects, double-click edits)"),
+        ],
+        "•",
+        h_style,
+        k_style,
+        div_style,
+        width,
+    );
+
+    // Details pane
+    add_section(
+        &mut lines,
+        "Details pane ([4] Details)",
+        &[
+            ("j / k", "Scroll the blueprint one row"),
+            ("PageUp/PageDown", "Scroll the blueprint five rows"),
+            ("g / G", "Jump to top / bottom of the blueprint"),
+            ("Click", "Focus Details and select the matching tree grain"),
+            ("Double-click", "Edit the current selection"),
         ],
         "•",
         h_style,
@@ -229,7 +247,7 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
         &mut lines,
         "Mouse controls",
         &[
-            ("Click panel/list", "Select the row/item (Regions/Pages/Layout); Details click selects the matching tree grain"),
+            ("Click panel/list", "Select the row/item (Regions/Pages/Layout/Details); Details click focuses and selects the matching tree grain"),
             ("Double-click item", "Edit (unified modal; works on page-head, header/footer roots, sections, columns, components)"),
             ("Click modal field", "Focus that input (click-to-focus in all FormEdit + legacy)"),
             ("Wheel over pane", "Scroll the pane under the cursor (Regions/Pages/Layout/Details)"),

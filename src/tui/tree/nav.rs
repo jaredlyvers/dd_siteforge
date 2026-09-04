@@ -102,6 +102,9 @@ impl App {
             SidebarSection::Layouts => {
                 self.select_prev();
             }
+            SidebarSection::Details => {
+                self.scroll_details_by(-1);
+            }
         }
     }
 
@@ -126,6 +129,9 @@ impl App {
             }
             SidebarSection::Layouts => {
                 self.select_next();
+            }
+            SidebarSection::Details => {
+                self.scroll_details_by(1);
             }
         }
     }

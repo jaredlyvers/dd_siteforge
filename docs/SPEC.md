@@ -47,7 +47,7 @@ Animation attribute is SAL (`data-sal`). JSON still accepts the old `parent_data
 
 Fixed 3-line header + body + 1-line adaptive footer per the visual standard.
 
-Sidebar: `[1]` Regions · `[2]` Pages · `[3]` Layout. Right pane: Details (click-to-select, ascii maps).
+Panes: `[1]` Regions · `[2]` Pages · `[3]` Layout · `[4]` Details (focusable; click-to-select, ascii maps).
 
 Toasts for success / info / warning. Modals for errors and forms.
 

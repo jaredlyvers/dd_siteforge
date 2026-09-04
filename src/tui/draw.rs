@@ -112,6 +112,11 @@ impl App {
         } else {
             self.theme.border
         };
+        let details_border = if self.selected_sidebar_section == SidebarSection::Details {
+            self.theme.border_active
+        } else {
+            self.theme.border
+        };
 
         let regions_list = List::new(regions_items)
             .block(
@@ -342,10 +347,14 @@ impl App {
                             .fg(self.theme.text_primary)
                             .bg(self.theme.body_background),
                     )
-                    .border_style(Style::default().fg(self.theme.border))
+                    .border_style(Style::default().fg(details_border))
                     .title_style(
                         Style::default()
-                            .fg(self.theme.text_labels)
+                            .fg(if self.selected_sidebar_section == SidebarSection::Details {
+                                self.theme.text_active_focus
+                            } else {
+                                self.theme.text_labels
+                            })
                             .add_modifier(Modifier::BOLD),
                     ),
             )

@@ -2083,6 +2083,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
         "Shift+J/K:Move",
         "Enter:Edit",
         "j/k:Header/Footer",
+        "j/k:Scroll",
         "/:Insert",
         "d:Del",
         "y:Dup",
@@ -2297,6 +2298,96 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
 
         send_mouse(&mut app, MouseEventKind::Up(MouseButton::Left), 78, 4);
         assert_eq!(app.scrollbar_drag, None);
+    }
+
+    #[test]
+    fn key_4_then_j_scrolls_details() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.details_area = Rect {
+            x: 40,
+            y: 1,
+            width: 40,
+            height: 5,
+            ..Default::default()
+        };
+        app.sync_tree_row_with_selection();
+        app.details_scroll_row = 0;
+        assert!(app.details_max_scroll() > 0);
+        let tree_before = app.selected_tree_row;
+        let page_before = app.selected_page;
+        send_key(&mut app, KeyCode::Char('4'), KeyModifiers::NONE);
+        assert_eq!(app.selected_sidebar_section, SidebarSection::Details);
+        send_key(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        assert!(app.details_scroll_row > 0);
+        assert_eq!(app.selected_tree_row, tree_before);
+        assert_eq!(app.selected_page, page_before);
+    }
+
+    #[test]
+    fn key_4_then_k_page_g_scroll_details_and_tab_stays_next_page() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        let clone = app.site.pages[0].clone();
+        app.site.pages.push(clone);
+        app.selected_page = 0;
+        app.details_area = Rect {
+            x: 40,
+            y: 1,
+            width: 40,
+            height: 5,
+            ..Default::default()
+        };
+        app.sync_tree_row_with_selection();
+        app.details_scroll_row = 0;
+        let max = app.details_max_scroll();
+        assert!(max > 0);
+        send_key(&mut app, KeyCode::Char('4'), KeyModifiers::NONE);
+
+        send_key(&mut app, KeyCode::PageDown, KeyModifiers::NONE);
+        assert_eq!(app.details_scroll_row, 5.min(max));
+
+        send_key(&mut app, KeyCode::Char('G'), KeyModifiers::SHIFT);
+        assert_eq!(app.details_scroll_row, max);
+
+        send_key(&mut app, KeyCode::Char('k'), KeyModifiers::NONE);
+        assert_eq!(app.details_scroll_row, max.saturating_sub(1));
+
+        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::NONE);
+        assert_eq!(app.details_scroll_row, 0);
+
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(app.selected_page, 1);
+        assert_eq!(app.selected_sidebar_section, SidebarSection::Details);
+    }
+
+    #[test]
+    fn click_details_pane_focuses_and_still_hit_tests() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.details_area = Rect {
+            x: 20,
+            y: 1,
+            width: 60,
+            height: 30,
+            ..Default::default()
+        };
+        app.list_area = Rect::default();
+        app.pages_area = Rect::default();
+        app.regions_area = Rect::default();
+        app.details_scroll_row = 0;
+        app.selected_sidebar_section = SidebarSection::Layouts;
+        send_mouse(&mut app, MouseEventKind::Down(MouseButton::Left), 25, 4);
+        assert_eq!(app.selected_sidebar_section, SidebarSection::Details);
+    }
+
+    #[test]
+    fn footer_hint_details_includes_scroll() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.selected_sidebar_section = SidebarSection::Details;
+        for width in [60_u16, 80, 110] {
+            assert_footer_hint_shape(&app.footer_hint(width), width);
+        }
+        let at_80 = app.footer_hint(80);
+        assert!(at_80.contains("j/k:Scroll"), "{at_80}");
+        assert!(at_80.contains("Ctrl+Q:Quit"), "{at_80}");
     }
 
     #[test]

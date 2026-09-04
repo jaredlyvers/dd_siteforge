@@ -202,12 +202,36 @@ impl App {
                 }
                 KeyCode::Up => self.handle_up(),
                 KeyCode::Down => self.handle_down(),
-                KeyCode::Char('k') => self.handle_up(),
-                KeyCode::Char('j') => self.handle_down(),
+                KeyCode::Char('k') => {
+                    if self.selected_sidebar_section == SidebarSection::Details {
+                        self.scroll_details_by(-1);
+                    } else {
+                        self.handle_up();
+                    }
+                }
+                KeyCode::Char('j') => {
+                    if self.selected_sidebar_section == SidebarSection::Details {
+                        self.scroll_details_by(1);
+                    } else {
+                        self.handle_down();
+                    }
+                }
                 KeyCode::Char('h') => self.vim_collapse_selected_row(),
                 KeyCode::Char('l') => self.vim_expand_selected_row(),
-                KeyCode::Char('g') => self.vim_jump_to_first_row(),
-                KeyCode::Char('G') => self.vim_jump_to_last_row(),
+                KeyCode::Char('g') => {
+                    if self.selected_sidebar_section == SidebarSection::Details {
+                        self.details_scroll_row = 0;
+                    } else {
+                        self.vim_jump_to_first_row();
+                    }
+                }
+                KeyCode::Char('G') => {
+                    if self.selected_sidebar_section == SidebarSection::Details {
+                        self.details_scroll_row = self.details_max_scroll();
+                    } else {
+                        self.vim_jump_to_last_row();
+                    }
+                }
                 KeyCode::PageUp => self.page_focused_pane(-5),
                 KeyCode::PageDown => self.page_focused_pane(5),
                 KeyCode::Char(' ') => self.toggle_selected_tree_expanded(),
@@ -240,6 +264,9 @@ impl App {
                 }
                 KeyCode::Char('3') => {
                     self.selected_sidebar_section = SidebarSection::Layouts;
+                }
+                KeyCode::Char('4') => {
+                    self.selected_sidebar_section = SidebarSection::Details;
                 }
                 _ => {}
                 }
@@ -391,8 +418,12 @@ impl App {
             return;
         }
 
-        // Details panel
+        // Details panel — click focuses (except the scrollbar) and still hit-tests.
         if contains(self.details_area, x, y) {
+            if contains(self.details_scrollbar_track.rect, x, y) {
+                return;
+            }
+            self.selected_sidebar_section = SidebarSection::Details;
             let area = self.details_area;
             let content_top = area.y.saturating_add(1);
             let content_left = area.x.saturating_add(1);
@@ -424,9 +455,9 @@ impl App {
         self.handle_enter_on_selected_row();
     }
 
-    /// PageUp/PageDown follow the focused sidebar pane. Layouts jump the tree
-    /// selection; Pages jump the page list (clamped, no wrap); Regions (and
-    /// any other pane) still scroll the Details blueprint.
+    /// PageUp/PageDown follow the focused pane. Layouts jump the tree
+    /// selection; Pages jump the page list (clamped, no wrap); Details
+    /// and Regions scroll the blueprint.
     fn page_focused_pane(&mut self, delta: isize) {
         let steps = delta.unsigned_abs();
         match self.selected_sidebar_section {
@@ -440,7 +471,7 @@ impl App {
                 }
             }
             SidebarSection::Pages => self.jump_selected_page_by(delta),
-            SidebarSection::Regions => self.scroll_details_by(delta),
+            SidebarSection::Regions | SidebarSection::Details => self.scroll_details_by(delta),
         }
     }
 

@@ -78,6 +78,7 @@ pub(super) enum SidebarSection {
     Regions,
     Pages,
     Layouts,
+    Details,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

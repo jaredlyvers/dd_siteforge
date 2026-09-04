@@ -75,6 +75,18 @@ impl App {
                         ]);
                     }
                 }
+                SidebarSection::Details => {
+                    if width < 80 {
+                        parts.push("Ctrl+Q:Quit");
+                        parts.push("j/k:Scroll");
+                    } else {
+                        parts.extend_from_slice(&[
+                            "j/k:Scroll",
+                            "Enter:Edit",
+                            "Ctrl+Q:Quit",
+                        ]);
+                    }
+                }
             }
         }
         let prefix = if self.dirty { "*  " } else { "" };
