@@ -382,6 +382,8 @@ Do not copy another app's `Node` / `NodeKind` / checkbox / LINK-COPY columns unl
 - Title may include context (`Details — current item`)
 - Clickable regions inside the pane should hit-test against stored rects
 
+An inspector MAY be a focusable pane. When focused it uses `border_active`; `j`/`k` and PageUp/PageDown scroll; a click focuses it. Hit-test stored rects are already specified above. Do not mandate Details as a fourth sidebar stack.
+
 ---
 
 ## 8. Implementation rules
