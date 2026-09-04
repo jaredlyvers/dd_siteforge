@@ -456,6 +456,15 @@ impl App {
     }
 
     pub(in crate::tui) fn insert_selected_component_kind(&mut self) {
+        if matches!(self.component_kind, ComponentKind::Hero)
+            && self.selected_region != SelectedRegion::Page
+        {
+            self.push_toast(
+                ToastLevel::Warning,
+                "dd-hero can only be inserted on a page.",
+            );
+            return;
+        }
         self.push_undo();
         match self.component_kind {
             ComponentKind::Hero => self.add_hero(),
@@ -606,13 +615,15 @@ impl App {
 
     pub(in crate::tui) fn filtered_component_kinds(&self, query: &str) -> Vec<ComponentKind> {
         let all = ComponentKind::all();
-        let in_header = self.selected_region == SelectedRegion::Header;
-        // Gate header-only components: only show dd-header-search/dd-header-menu when in header region.
+        // Hero is page-only; HeaderSearch/HeaderMenu are header-only. Details uses selected_region.
         let allowed: Vec<ComponentKind> = all
             .iter()
             .copied()
             .filter(|k| match k {
-                ComponentKind::HeaderSearch | ComponentKind::HeaderMenu => in_header,
+                ComponentKind::Hero => self.selected_region == SelectedRegion::Page,
+                ComponentKind::HeaderSearch | ComponentKind::HeaderMenu => {
+                    self.selected_region == SelectedRegion::Header
+                }
                 _ => true,
             })
             .collect();

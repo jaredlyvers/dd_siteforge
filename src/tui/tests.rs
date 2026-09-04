@@ -2790,3 +2790,55 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
         assert_eq!(last.level, ToastLevel::Error);
         assert!(last.message.starts_with("Failed to"));
     }
+
+    #[test]
+    fn insert_picker_allowed_kinds_match_focused_region() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+
+        app.selected_region = SelectedRegion::Page;
+        let page = app.filtered_component_kinds("");
+        assert!(page.contains(&ComponentKind::Hero));
+        assert!(page.contains(&ComponentKind::Section));
+        assert!(!page.contains(&ComponentKind::HeaderSearch));
+        assert!(!page.contains(&ComponentKind::HeaderMenu));
+
+        app.selected_region = SelectedRegion::Header;
+        let header = app.filtered_component_kinds("");
+        assert!(!header.contains(&ComponentKind::Hero));
+        assert!(header.contains(&ComponentKind::Section));
+        assert!(header.contains(&ComponentKind::HeaderSearch));
+        assert!(header.contains(&ComponentKind::HeaderMenu));
+
+        app.selected_region = SelectedRegion::Footer;
+        let footer = app.filtered_component_kinds("");
+        assert!(!footer.contains(&ComponentKind::Hero));
+        assert!(footer.contains(&ComponentKind::Section));
+        assert!(!footer.contains(&ComponentKind::HeaderSearch));
+        assert!(!footer.contains(&ComponentKind::HeaderMenu));
+
+        // Details focus is not a new insert target; kinds follow selected_region.
+        app.selected_sidebar_section = SidebarSection::Details;
+        app.selected_region = SelectedRegion::Header;
+        assert!(!app.filtered_component_kinds("").contains(&ComponentKind::Hero));
+        app.selected_region = SelectedRegion::Page;
+        assert!(app.filtered_component_kinds("").contains(&ComponentKind::Hero));
+        assert!(!app.filtered_component_kinds("").contains(&ComponentKind::HeaderSearch));
+    }
+
+    #[test]
+    fn hero_insert_from_header_or_footer_does_not_mutate_page() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        let nodes_before = app.site.pages[0].nodes.len();
+        app.component_kind = ComponentKind::Hero;
+
+        app.selected_region = SelectedRegion::Header;
+        app.insert_selected_component_kind();
+        assert_eq!(app.site.pages[0].nodes.len(), nodes_before);
+        let last = app.toasts.last().expect("expected warning toast");
+        assert_eq!(last.level, ToastLevel::Warning);
+        assert!(last.message.contains("dd-hero"));
+
+        app.selected_region = SelectedRegion::Footer;
+        app.insert_selected_component_kind();
+        assert_eq!(app.site.pages[0].nodes.len(), nodes_before);
+    }
