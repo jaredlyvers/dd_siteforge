@@ -2957,3 +2957,41 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
         assert_eq!(last.level, ToastLevel::Warning);
         assert_eq!(last.message, "Not available on Site settings.");
     }
+
+    #[test]
+    fn site_form_bad_hex_does_not_write_lang() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        let orig_lang = app.site.lang.clone();
+        let orig_name = app.site.name.clone();
+        let orig_primary = app.site.theme.primary_color.clone();
+        app.selected_region = SelectedRegion::Site;
+        app.sync_tree_row_with_selection();
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        if let Some(Modal::FormEdit { state, cursor_pos, .. }) = &mut app.modal {
+            state.set("lang", "de");
+            state.set("primary_color", "not-a-color");
+            *cursor_pos = 2;
+        } else {
+            panic!("expected Site settings FormEdit");
+        }
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert_eq!(app.site.lang, orig_lang);
+        assert_eq!(app.site.name, orig_name);
+        assert_eq!(app.site.theme.primary_color, orig_primary);
+        assert!(
+            matches!(app.modal, Some(Modal::FormEdit { .. })),
+            "bad hex must keep FormEdit open"
+        );
+    }
+
+    #[test]
+    fn site_shift_a_does_not_add_collection_items() {
+        let mut app = app_with_card();
+        let items_before = selected_card(&app).items.len();
+        app.selected_region = SelectedRegion::Site;
+        send_key(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT);
+        assert_eq!(selected_card(&app).items.len(), items_before);
+        let last = app.toasts.last().expect("expected warning toast");
+        assert_eq!(last.level, ToastLevel::Warning);
+        assert_eq!(last.message, "Not available on Site settings.");
+    }

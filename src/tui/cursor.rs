@@ -1038,16 +1038,21 @@ fn require_css_hex(raw: &str, field: &str) -> Result<String> {
 }
 
 fn apply_site_values(site: &mut Site, state: &EditFormState) -> Result<()> {
+    // Validate fallible fields first so a bad hex cannot leave name/lang/urls written.
+    let primary = require_css_hex(state.get("primary_color"), "primary_color")?;
+    let secondary = require_css_hex(state.get("secondary_color"), "secondary_color")?;
+    let tertiary = require_css_hex(state.get("tertiary_color"), "tertiary_color")?;
+    let support = require_css_hex(state.get("support_color"), "support_color")?;
     site.name = state.get("name").to_string();
     site.lang = state.get("lang").trim().to_string();
     let base = state.get("base_url").trim().to_string();
     site.base_url = if base.is_empty() { None } else { Some(base) };
     let export = state.get("export_dir").trim().to_string();
     site.export_dir = if export.is_empty() { None } else { Some(export) };
-    site.theme.primary_color = require_css_hex(state.get("primary_color"), "primary_color")?;
-    site.theme.secondary_color = require_css_hex(state.get("secondary_color"), "secondary_color")?;
-    site.theme.tertiary_color = require_css_hex(state.get("tertiary_color"), "tertiary_color")?;
-    site.theme.support_color = require_css_hex(state.get("support_color"), "support_color")?;
+    site.theme.primary_color = primary;
+    site.theme.secondary_color = secondary;
+    site.theme.tertiary_color = tertiary;
+    site.theme.support_color = support;
     Ok(())
 }
 

@@ -3,6 +3,9 @@ use super::super::*;
 
 impl App {
     pub(in crate::tui) fn add_selected_collection_item(&mut self) {
+        if self.warn_site_settings_unavailable() {
+            return;
+        }
         let component = self.selected_component_owned();
         match component {
             Some(crate::model::SectionComponent::Accordion(_)) => {
@@ -29,6 +32,9 @@ impl App {
     }
 
     pub(in crate::tui) fn remove_selected_collection_item(&mut self) {
+        if self.warn_site_settings_unavailable() {
+            return;
+        }
         let component = self.selected_component_owned();
         match component {
             Some(crate::model::SectionComponent::Accordion(_)) => {
