@@ -214,8 +214,8 @@ impl AppTheme {
         // Text colors
         let foreground = parse_hex_color(p.text_primary.as_str())?;
         let muted = parse_hex_color(p.text_secondary.as_deref().unwrap_or("#9ea3aa"))?;
-        let disabled = parse_hex_color(p.text_disabled.as_deref().unwrap_or("#a0a4a8"))?;
-        let text_inverse = parse_hex_color(p.text_inverse.as_deref().unwrap_or("#f9fafb"))?;
+        let disabled = parse_hex_color(p.text_disabled.as_deref().unwrap_or("#A0A4A8"))?;
+        let text_inverse = parse_hex_color(p.text_inverse.as_deref().unwrap_or("#F9FAFB"))?;
         let text_labels = parse_hex_color(p.text_labels.as_deref().unwrap_or("#ffaf46"))?;
         let text_active_focus =
             parse_hex_color(p.text_active_focus.as_deref().unwrap_or("#64b4f5"))?;
@@ -228,7 +228,7 @@ impl AppTheme {
 
         // Borders
         let border = parse_hex_color(p.border_default.as_str())?;
-        let border_active = parse_hex_color(p.border_active.as_deref().unwrap_or("#6ec8ff"))?;
+        let border_active = parse_hex_color(p.border_active.as_deref().unwrap_or("#64B4F5"))?;
 
         // Scrollbar
         let scrollbar = parse_hex_color(p.scrollbar.as_deref().unwrap_or("#ffa087"))?;
@@ -275,13 +275,13 @@ impl AppTheme {
             .or(p.input_focus.as_deref())
             .unwrap_or(p.text_primary.as_str());
         let title = parse_hex_color(title_seed)?;
-        let active = parse_hex_color(p.active.as_deref().unwrap_or("#6ec8ff"))?;
+        let active = parse_hex_color(p.active.as_deref().unwrap_or("#64B4F5"))?;
 
         // Semantic
-        let success = parse_hex_color(p.success.as_deref().unwrap_or("#1e8449"))?;
-        let warning = parse_hex_color(p.warning.as_deref().unwrap_or("#b9770e"))?;
-        let error = parse_hex_color(p.error.as_deref().unwrap_or("#a93226"))?;
-        let info = parse_hex_color(p.info.as_deref().unwrap_or("#21618c"))?;
+        let success = parse_hex_color(p.success.as_deref().unwrap_or("#82e0aa"))?;
+        let warning = parse_hex_color(p.warning.as_deref().unwrap_or("#f5c469"))?;
+        let error = parse_hex_color(p.error.as_deref().unwrap_or("#e57373"))?;
+        let info = parse_hex_color(p.info.as_deref().unwrap_or("#5dade2"))?;
 
         // File roles (LDNDDEV_TUI_VISUAL_STANDARD.md)
         let folders = parse_hex_color(p.folders.as_deref().unwrap_or("#64b4f5"))?;
@@ -345,8 +345,8 @@ impl Default for AppTheme {
             popup_background: Color::Rgb(28, 30, 33),
             foreground: Color::Rgb(245, 246, 247),
             muted: Color::Rgb(158, 163, 170),
-            disabled: Color::Rgb(90, 95, 102),
-            text_inverse: Color::Rgb(15, 17, 20),
+            disabled: Color::Rgb(160, 164, 168),
+            text_inverse: Color::Rgb(249, 250, 251),
             text_labels: Color::Rgb(255, 175, 70),
             text_active_focus: border_focus,
             modal_labels: border_focus,
@@ -424,5 +424,59 @@ pub(crate) fn color_to_hex(c: Color) -> String {
         format!("#{:02x}{:02x}{:02x}", r, g, b)
     } else {
         "?".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn required_only_palette() -> PaletteFile {
+        PaletteFile {
+            base_background: "#0F1114".into(),
+            body_background: None,
+            modal_background: None,
+            text_primary: "#F5F6F7".into(),
+            text_secondary: None,
+            text_disabled: None,
+            text_inverse: None,
+            text_labels: None,
+            text_active_focus: None,
+            modal_labels: None,
+            modal_text: None,
+            modal_header: None,
+            selected_background: "#0F1114".into(),
+            border_default: "#F5F6F7".into(),
+            border_active: None,
+            scrollbar: None,
+            scrollbar_hover: None,
+            input_border_default: None,
+            input_border_focus: None,
+            input_text_default: None,
+            input_text_focus: None,
+            cursor: None,
+            input_default: None,
+            input_focus: None,
+            active: None,
+            success: None,
+            warning: None,
+            error: None,
+            info: None,
+            folders: None,
+            files: None,
+            links: None,
+        }
+    }
+
+    #[test]
+    fn from_palette_omitted_keys_use_family_hex() {
+        let theme = AppTheme::from_palette(required_only_palette(), vec![]).unwrap();
+        assert_eq!(color_to_hex(theme.success), "#82e0aa");
+        assert_eq!(color_to_hex(theme.warning), "#f5c469");
+        assert_eq!(color_to_hex(theme.error), "#e57373");
+        assert_eq!(color_to_hex(theme.info), "#5dade2");
+        assert_eq!(color_to_hex(theme.border_active), "#64b4f5");
+        assert_eq!(color_to_hex(theme.text_inverse), "#f9fafb");
+        assert_eq!(color_to_hex(theme.disabled), "#a0a4a8");
     }
 }

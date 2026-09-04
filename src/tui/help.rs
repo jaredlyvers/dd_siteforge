@@ -281,13 +281,15 @@ pub(crate) fn build_theme_text(theme: &AppTheme, source: &str, status: &Option<S
     lines.push(Line::from(""));
 
     let tokens: Vec<(&str, Color, &str)> = vec![
-        ("background", theme.background, "app_shell base"),
-        ("popup_background", theme.popup_background, "modals & popups"),
-        ("foreground", theme.foreground, "primary text"),
+        ("base_background", theme.background, "app_shell base"),
+        ("body_background", theme.panel_background, "content panes"),
+        ("modal_background", theme.popup_background, "modals & popups"),
+        ("text_primary", theme.foreground, "primary text"),
         ("modal_header", theme.modal_header, "section titles bold"),
         ("text_labels", theme.text_labels, "labels default"),
         ("text_active_focus", theme.text_active_focus, "focus + keys"),
         ("input_border_focus", theme.input_border_focus, "focused inputs"),
+        ("cursor", theme.cursor, "caret overlay"),
         ("success", theme.success, "success toasts"),
         ("warning", theme.warning, "warning toasts"),
         ("error", theme.error, "error toasts"),
