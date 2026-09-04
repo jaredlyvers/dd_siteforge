@@ -51,6 +51,8 @@ pub enum Cursor {
         comp: usize,
         items: Vec<usize>,
     },
+    // --- Site settings ---
+    Site,
     // --- Page region ---
     PageHead {
         page: usize,
@@ -86,6 +88,7 @@ pub enum CursorRef<'a> {
 /// Resolve a cursor to a mutable typed reference inside the site.
 pub fn resolve_mut<'a>(site: &'a mut Site, cursor: &Cursor) -> Result<CursorRef<'a>> {
     match cursor {
+        Cursor::Site => Err(anyhow!("site settings are applied via dedicated path")),
         Cursor::HeaderRoot => Ok(CursorRef::HeaderRoot(&mut site.header)),
         Cursor::HeaderSection { sec } => {
             let s = site
@@ -227,6 +230,10 @@ pub fn apply_edit_form_to_component(
                     p.slug = derived;
                 }
             }
+            return Ok(());
+        }
+        Cursor::Site => {
+            apply_site_values(site, state)?;
             return Ok(());
         }
         Cursor::HeaderRoot => {
@@ -1022,6 +1029,28 @@ fn apply_head_values(head: &mut crate::model::DdHead, state: &EditFormState) -> 
     Ok(())
 }
 
+fn require_css_hex(raw: &str, field: &str) -> Result<String> {
+    let trimmed = raw.trim().to_string();
+    super::theme::parse_hex_color(&trimmed).with_context(|| {
+        format!("invalid {field}: expected hex color like '#RRGGBB'")
+    })?;
+    Ok(trimmed)
+}
+
+fn apply_site_values(site: &mut Site, state: &EditFormState) -> Result<()> {
+    site.name = state.get("name").to_string();
+    site.lang = state.get("lang").trim().to_string();
+    let base = state.get("base_url").trim().to_string();
+    site.base_url = if base.is_empty() { None } else { Some(base) };
+    let export = state.get("export_dir").trim().to_string();
+    site.export_dir = if export.is_empty() { None } else { Some(export) };
+    site.theme.primary_color = require_css_hex(state.get("primary_color"), "primary_color")?;
+    site.theme.secondary_color = require_css_hex(state.get("secondary_color"), "secondary_color")?;
+    site.theme.tertiary_color = require_css_hex(state.get("tertiary_color"), "tertiary_color")?;
+    site.theme.support_color = require_css_hex(state.get("support_color"), "support_color")?;
+    Ok(())
+}
+
 fn apply_header_root_values(header: &mut crate::model::DdHeader, state: &EditFormState) -> Result<()> {
     header.id = state.get("id").to_string();
     let css = state.get("custom_css").trim().to_string();
@@ -1066,6 +1095,19 @@ pub fn page_head_to_form_state(page: &crate::model::Page) -> EditFormState {
     s.set("og_title", head.og_title.clone().unwrap_or_else(|| head.title.clone()));
     s.set("og_description", head.og_description.clone().unwrap_or_default());
     s.set("og_image", head.og_image.clone().unwrap_or_default());
+    s
+}
+
+pub fn site_to_form_state(site: &Site) -> EditFormState {
+    let mut s = EditFormState::new(&editform::SITE_FORM);
+    s.set("name", site.name.clone());
+    s.set("lang", site.lang.clone());
+    s.set("base_url", site.base_url.clone().unwrap_or_default());
+    s.set("export_dir", site.export_dir.clone().unwrap_or_default());
+    s.set("primary_color", site.theme.primary_color.clone());
+    s.set("secondary_color", site.theme.secondary_color.clone());
+    s.set("tertiary_color", site.theme.tertiary_color.clone());
+    s.set("support_color", site.theme.support_color.clone());
     s
 }
 

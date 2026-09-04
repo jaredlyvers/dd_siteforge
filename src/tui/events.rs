@@ -276,12 +276,7 @@ impl App {
                     let up = matches!(m.kind, MouseEventKind::ScrollUp);
                     match self.pane_at(m.column, m.row) {
                         Some(Pane::Regions) => {
-                            self.selected_region = if up {
-                                SelectedRegion::Header
-                            } else {
-                                SelectedRegion::Footer
-                            };
-                            self.selected_tree_row = 0;
+                            self.cycle_selected_region(if up { -1 } else { 1 });
                         }
                         Some(Pane::Pages) => {
                             if up {
@@ -402,17 +397,27 @@ impl App {
             let body_top = self.regions_area.y.saturating_add(1);
             if y >= body_top {
                 let rel = (y - body_top) as usize;
-                if rel == 0 {
-                    self.selected_region = SelectedRegion::Header;
-                    self.selected_header_section = 0;
-                    self.selected_header_column = 0;
-                    self.selected_header_component = 0;
-                    self.selected_sidebar_section = SidebarSection::Regions;
-                    self.sync_tree_row_with_selection();
-                } else if rel == 1 {
-                    self.selected_region = SelectedRegion::Footer;
-                    self.selected_sidebar_section = SidebarSection::Regions;
-                    self.sync_tree_row_with_selection();
+                match rel {
+                    0 => {
+                        self.selected_region = SelectedRegion::Site;
+                        self.selected_tree_row = 0;
+                        self.selected_sidebar_section = SidebarSection::Regions;
+                        self.sync_tree_row_with_selection();
+                    }
+                    1 => {
+                        self.selected_region = SelectedRegion::Header;
+                        self.selected_header_section = 0;
+                        self.selected_header_column = 0;
+                        self.selected_header_component = 0;
+                        self.selected_sidebar_section = SidebarSection::Regions;
+                        self.sync_tree_row_with_selection();
+                    }
+                    2 => {
+                        self.selected_region = SelectedRegion::Footer;
+                        self.selected_sidebar_section = SidebarSection::Regions;
+                        self.sync_tree_row_with_selection();
+                    }
+                    _ => {}
                 }
             }
             return;

@@ -76,11 +76,45 @@ impl App {
         }
     }
 
+    pub(in crate::tui) fn cycle_selected_region(&mut self, delta: isize) {
+        let idx = match self.selected_region {
+            SelectedRegion::Site => 0,
+            SelectedRegion::Header => 1,
+            SelectedRegion::Footer => 2,
+            // Page is not a Regions row; j starts at Site, k at Footer.
+            SelectedRegion::Page => {
+                if delta > 0 {
+                    -1
+                } else {
+                    3
+                }
+            }
+        };
+        let next = (idx + delta).rem_euclid(3) as usize;
+        self.selected_region = match next {
+            0 => SelectedRegion::Site,
+            1 => SelectedRegion::Header,
+            _ => SelectedRegion::Footer,
+        };
+        self.selected_tree_row = 0;
+    }
+
+    pub(in crate::tui) fn warn_site_settings_unavailable(&mut self) -> bool {
+        if self.selected_region == SelectedRegion::Site {
+            self.push_toast(
+                ToastLevel::Warning,
+                "Not available on Site settings.",
+            );
+            true
+        } else {
+            false
+        }
+    }
+
     pub(in crate::tui) fn handle_up(&mut self) {
         match self.selected_sidebar_section {
             SidebarSection::Regions => {
-                self.selected_region = SelectedRegion::Header;
-                self.selected_tree_row = 0;
+                self.cycle_selected_region(-1);
             }
             SidebarSection::Pages => {
                 if self.site.pages.is_empty() {
@@ -111,8 +145,7 @@ impl App {
     pub(in crate::tui) fn handle_down(&mut self) {
         match self.selected_sidebar_section {
             SidebarSection::Regions => {
-                self.selected_region = SelectedRegion::Footer;
-                self.selected_tree_row = 0;
+                self.cycle_selected_region(1);
             }
             SidebarSection::Pages => {
                 if self.site.pages.is_empty() {

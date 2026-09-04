@@ -313,6 +313,68 @@ pub static FOOTER_FORM: EditForm = EditForm {
     ],
 };
 
+pub static SITE_FORM: EditForm = EditForm {
+    title: "Site settings",
+    fields: &[
+        FormField {
+            id: "name",
+            label: "Name",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "lang",
+            label: "Lang",
+            kind: FieldKind::Text { default: "en" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "base_url",
+            label: "Base URL",
+            kind: FieldKind::Url { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "export_dir",
+            label: "Export Dir",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
+            id: "primary_color",
+            label: "Primary Color",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "secondary_color",
+            label: "Secondary Color",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "tertiary_color",
+            label: "Tertiary Color",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "support_color",
+            label: "Support Color",
+            kind: FieldKind::Text { default: "" },
+            required: true,
+            visible_when: None,
+        },
+    ],
+};
+
 /// NAV_ITEM_FORM is self-referential — its `items` field is a SubForm whose
 /// template is `&NAV_ITEM_FORM`. Rust permits this because the address of a
 /// `static` is known at compile time.

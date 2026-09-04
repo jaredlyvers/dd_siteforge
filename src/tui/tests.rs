@@ -2083,7 +2083,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
         "u:Undo-page",
         "Shift+J/K:Move",
         "Enter:Edit",
-        "j/k:Header/Footer",
+        "j/k:Site/Header/Footer",
         "j/k:Scroll",
         "/:Insert",
         "d:Del",
@@ -2246,7 +2246,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
     }
 
     #[test]
-    fn wheel_down_over_regions_selects_footer() {
+    fn wheel_down_over_regions_selects_site() {
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
         app.regions_area = Rect {
             x: 0,
@@ -2259,7 +2259,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
         app.pages_area = Rect::default();
         app.details_area = Rect::default();
         send_mouse(&mut app, MouseEventKind::ScrollDown, 10, 3);
-        assert!(matches!(app.selected_region, SelectedRegion::Footer));
+        assert!(matches!(app.selected_region, SelectedRegion::Site));
         assert_eq!(app.selected_tree_row, 0);
     }
 
@@ -2823,6 +2823,9 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
         app.selected_region = SelectedRegion::Page;
         assert!(app.filtered_component_kinds("").contains(&ComponentKind::Hero));
         assert!(!app.filtered_component_kinds("").contains(&ComponentKind::HeaderSearch));
+
+        app.selected_region = SelectedRegion::Site;
+        assert!(app.filtered_component_kinds("").is_empty());
     }
 
     #[test]
@@ -2841,4 +2844,116 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
         app.selected_region = SelectedRegion::Footer;
         app.insert_selected_component_kind();
         assert_eq!(app.site.pages[0].nodes.len(), nodes_before);
+    }
+
+    #[test]
+    fn regions_jk_visits_site_header_footer() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        send_key(&mut app, KeyCode::Char('1'), KeyModifiers::NONE);
+        assert_eq!(app.selected_sidebar_section, SidebarSection::Regions);
+        assert!(matches!(app.selected_region, SelectedRegion::Page));
+
+        send_key(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        assert!(matches!(app.selected_region, SelectedRegion::Site));
+        send_key(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        assert!(matches!(app.selected_region, SelectedRegion::Header));
+        send_key(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        assert!(matches!(app.selected_region, SelectedRegion::Footer));
+        send_key(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        assert!(matches!(app.selected_region, SelectedRegion::Site));
+
+        send_key(&mut app, KeyCode::Char('k'), KeyModifiers::NONE);
+        assert!(matches!(app.selected_region, SelectedRegion::Footer));
+        send_key(&mut app, KeyCode::Char('k'), KeyModifiers::NONE);
+        assert!(matches!(app.selected_region, SelectedRegion::Header));
+        send_key(&mut app, KeyCode::Char('k'), KeyModifiers::NONE);
+        assert!(matches!(app.selected_region, SelectedRegion::Site));
+    }
+
+    #[test]
+    fn enter_on_site_opens_site_settings_form() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        send_key(&mut app, KeyCode::Char('1'), KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        assert!(matches!(app.selected_region, SelectedRegion::Site));
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        match &app.modal {
+            Some(Modal::FormEdit { state, cursor, .. }) => {
+                assert_eq!(state.form.title, "Site settings");
+                assert!(matches!(cursor, cursor::Cursor::Site));
+                assert_eq!(state.get("name"), app.site.name);
+                assert_eq!(state.get("lang"), app.site.lang);
+            }
+            _ => panic!("expected Site settings FormEdit"),
+        }
+    }
+
+    #[test]
+    fn site_form_save_writes_lang() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.selected_region = SelectedRegion::Site;
+        app.sync_tree_row_with_selection();
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        if let Some(Modal::FormEdit { state, cursor_pos, .. }) = &mut app.modal {
+            state.set("lang", "de");
+            *cursor_pos = 2;
+        } else {
+            panic!("expected Site settings FormEdit");
+        }
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert_eq!(app.site.lang, "de");
+        assert!(app.modal.is_none());
+    }
+
+    #[test]
+    fn site_slash_does_not_open_component_picker() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.selected_region = SelectedRegion::Site;
+        send_key(&mut app, KeyCode::Char('/'), KeyModifiers::NONE);
+        assert!(app.modal.is_none(), "Site / must not open ComponentPicker");
+        let last = app.toasts.last().expect("expected warning toast");
+        assert_eq!(last.level, ToastLevel::Warning);
+        assert_eq!(last.message, "Insert is not available on Site settings.");
+    }
+
+    #[test]
+    fn header_slash_still_opens_component_picker() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.selected_region = SelectedRegion::Header;
+        send_key(&mut app, KeyCode::Char('/'), KeyModifiers::NONE);
+        assert!(matches!(app.modal, Some(Modal::ComponentPicker { .. })));
+    }
+
+    #[test]
+    fn selected_page_unchanged_while_site_focused() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        let clone = app.site.pages[0].clone();
+        app.site.pages.push(clone);
+        app.selected_page = 1;
+        send_key(&mut app, KeyCode::Char('1'), KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        assert!(matches!(app.selected_region, SelectedRegion::Site));
+        assert_eq!(app.selected_page, 1);
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(app.selected_page, 0);
+        assert!(matches!(app.selected_region, SelectedRegion::Site));
+    }
+
+    #[test]
+    fn site_column_keys_warn_and_do_not_mutate_page() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.selected_region = SelectedRegion::Site;
+        let cols_before = match &app.site.pages[0].nodes[1] {
+            PageNode::Section(section) => section.columns.len(),
+            _ => panic!("expected section"),
+        };
+        send_key(&mut app, KeyCode::Char('C'), KeyModifiers::SHIFT);
+        let cols_after = match &app.site.pages[0].nodes[1] {
+            PageNode::Section(section) => section.columns.len(),
+            _ => panic!("expected section"),
+        };
+        assert_eq!(cols_after, cols_before);
+        let last = app.toasts.last().expect("expected warning toast");
+        assert_eq!(last.level, ToastLevel::Warning);
+        assert_eq!(last.message, "Not available on Site settings.");
     }

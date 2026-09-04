@@ -4,10 +4,17 @@ use super::super::*;
 impl App {
     pub(in crate::tui) fn build_tree_rows(&self) -> Vec<TreeRow> {
         match self.selected_region {
+            SelectedRegion::Site => self.build_site_tree_rows(),
             SelectedRegion::Header => self.build_header_tree_rows(),
             SelectedRegion::Footer => self.build_footer_tree_rows(),
             SelectedRegion::Page => self.build_page_tree_rows(),
         }
+    }
+
+    pub(in crate::tui) fn build_site_tree_rows(&self) -> Vec<TreeRow> {
+        vec![TreeRow {
+            kind: TreeRowKind::SiteRoot,
+        }]
     }
 
     pub(in crate::tui) fn build_footer_tree_rows(&self) -> Vec<TreeRow> {
@@ -245,6 +252,7 @@ impl App {
 
     pub(in crate::tui) fn tree_row_label(&self, row: &TreeRow) -> String {
         match &row.kind {
+            TreeRowKind::SiteRoot => "Site settings".to_string(),
             TreeRowKind::HeaderRoot => {
                 let marker = if self.header_column_expanded {
                     "[-]"
@@ -598,6 +606,7 @@ impl App {
     pub(in crate::tui) fn apply_tree_row_selection(&mut self, row: TreeRow) {
         self.page_head_selected = matches!(row.kind, TreeRowKind::PageHead);
         match row.kind {
+            TreeRowKind::SiteRoot => {}
             TreeRowKind::HeaderRoot { .. } => {
                 self.selected_header_section = 0;
                 self.selected_header_column = 0;
@@ -762,6 +771,7 @@ impl App {
             return;
         }
         let row_matches_selection = |row: &TreeRow| match row.kind {
+            TreeRowKind::SiteRoot => true,
             TreeRowKind::HeaderRoot { .. } => true,
             TreeRowKind::HeaderSection { section_idx } => {
                 section_idx == self.selected_header_section

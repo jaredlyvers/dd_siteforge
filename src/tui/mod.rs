@@ -84,6 +84,7 @@ pub(super) enum SidebarSection {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum SelectedRegion {
     Page,
+    Site,
     Header,
     Footer,
 }

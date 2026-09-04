@@ -21,6 +21,13 @@ impl App {
     }
 
     pub(in crate::tui) fn open_component_picker(&mut self) {
+        if self.selected_region == SelectedRegion::Site {
+            self.push_toast(
+                ToastLevel::Warning,
+                "Insert is not available on Site settings.",
+            );
+            return;
+        }
         self.modal = Some(Modal::ComponentPicker {
             query: String::new(),
             selected: 0,
@@ -441,6 +448,11 @@ impl App {
                 let cur = cursor::Cursor::PageHead { page: page_idx };
                 Some((state, cur, "page-head"))
             }
+            TreeRowKind::SiteRoot => {
+                let state = cursor::site_to_form_state(&self.site);
+                let cur = cursor::Cursor::Site;
+                Some((state, cur, "Site settings"))
+            }
             TreeRowKind::HeaderRoot { .. } => {
                 let state = cursor::header_root_to_form_state(&self.site.header);
                 let cur = cursor::Cursor::HeaderRoot;
@@ -456,6 +468,13 @@ impl App {
     }
 
     pub(in crate::tui) fn insert_selected_component_kind(&mut self) {
+        if self.selected_region == SelectedRegion::Site {
+            self.push_toast(
+                ToastLevel::Warning,
+                "Insert is not available on Site settings.",
+            );
+            return;
+        }
         if matches!(self.component_kind, ComponentKind::Hero)
             && self.selected_region != SelectedRegion::Page
         {
@@ -472,11 +491,13 @@ impl App {
                 SelectedRegion::Header => self.add_header_section(),
                 SelectedRegion::Footer => self.add_footer_section(),
                 SelectedRegion::Page => self.add_section(),
+                SelectedRegion::Site => unreachable!("Site insert returns above"),
             },
             _ => match self.selected_region {
                 SelectedRegion::Header => self.add_component_to_header_section(),
                 SelectedRegion::Footer => self.add_component_to_footer_section(),
                 SelectedRegion::Page => self.add_selected_component_to_section(),
+                SelectedRegion::Site => unreachable!("Site insert returns above"),
             },
         }
     }
@@ -614,6 +635,9 @@ impl App {
     }
 
     pub(in crate::tui) fn filtered_component_kinds(&self, query: &str) -> Vec<ComponentKind> {
+        if self.selected_region == SelectedRegion::Site {
+            return Vec::new();
+        }
         let all = ComponentKind::all();
         // Hero is page-only; HeaderSearch/HeaderMenu are header-only. Details uses selected_region.
         let allowed: Vec<ComponentKind> = all

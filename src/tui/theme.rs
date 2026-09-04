@@ -371,7 +371,7 @@ pub(crate) fn choose_header_copy(quotes: &[String]) -> String {
     quotes[(seed as usize) % quotes.len()].clone()
 }
 
-fn parse_hex_color(raw: &str) -> anyhow::Result<Color> {
+pub(crate) fn parse_hex_color(raw: &str) -> anyhow::Result<Color> {
     let hex = raw.trim().trim_start_matches('#');
     if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(anyhow::anyhow!(

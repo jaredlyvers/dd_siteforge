@@ -14,6 +14,7 @@ pub(in crate::tui) struct TreeRow {
 
 #[derive(Clone, Copy)]
 pub(in crate::tui) enum TreeRowKind {
+    SiteRoot,
     HeaderRoot,
     HeaderSection {
         section_idx: usize,

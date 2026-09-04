@@ -41,7 +41,7 @@ impl App {
                         parts.push("Enter:Edit");
                     } else {
                         parts.extend_from_slice(&[
-                            "j/k:Header/Footer",
+                            "j/k:Site/Header/Footer",
                             "Enter:Edit",
                             "Ctrl+Q:Quit",
                         ]);
@@ -116,10 +116,33 @@ impl App {
     }
     pub(in crate::tui) fn details_text(&self, detail_width: usize) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
         match self.selected_region {
+            SelectedRegion::Site => self.site_details_text(),
             SelectedRegion::Header => self.header_details_text(detail_width),
             SelectedRegion::Footer => self.footer_details_text(detail_width),
             SelectedRegion::Page => self.page_details_text(detail_width),
         }
+    }
+    pub(in crate::tui) fn site_details_text(&self) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
+        let lines = vec![
+            "Site settings".to_string(),
+            String::new(),
+            format!("name: {}", self.site.name),
+            format!("lang: {}", self.site.lang),
+            format!(
+                "base_url: {}",
+                self.site.base_url.as_deref().unwrap_or("")
+            ),
+            format!(
+                "export_dir: {}",
+                self.site.export_dir.as_deref().unwrap_or("")
+            ),
+            format!("primary_color: {}", self.site.theme.primary_color),
+            format!("secondary_color: {}", self.site.theme.secondary_color),
+            format!("tertiary_color: {}", self.site.theme.tertiary_color),
+            format!("support_color: {}", self.site.theme.support_color),
+        ];
+        let hits = vec![Vec::new(); lines.len()];
+        (lines.join("\n"), hits)
     }
     pub(in crate::tui) fn header_details_text(&self, detail_width: usize) -> (String, Vec<Vec<(usize, usize, usize, usize)>>) {
         let mut out = Vec::new();
@@ -270,6 +293,7 @@ impl App {
             .cloned()
             .unwrap_or_default();
         match self.selected_region {
+            SelectedRegion::Site => return,
             SelectedRegion::Header | SelectedRegion::Footer => {
                 self.select_header_from_details_lines(&lines, text_line);
                 self.apply_header_details_hits(&line_segs, char_x);
@@ -314,7 +338,7 @@ impl App {
         }
         let matches = |r: &TreeRow| -> bool {
             match r.kind {
-                TreeRowKind::HeaderRoot { .. } | TreeRowKind::FooterRoot => true,
+                TreeRowKind::SiteRoot | TreeRowKind::HeaderRoot { .. } | TreeRowKind::FooterRoot => true,
                 TreeRowKind::HeaderSection { section_idx }
                 | TreeRowKind::FooterSection { section_idx } => section_idx == hsec,
                 TreeRowKind::HeaderColumn { section_idx, column_idx }

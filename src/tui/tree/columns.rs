@@ -35,6 +35,9 @@ impl App {
     }
 
     pub(in crate::tui) fn add_column(&mut self) {
+        if self.warn_site_settings_unavailable() {
+            return;
+        }
         // Check if we're in Header mode
         if self.selected_region == SelectedRegion::Header {
             self.add_column_to_header_section();
@@ -85,6 +88,9 @@ impl App {
     }
 
     pub(in crate::tui) fn remove_selected_column(&mut self) {
+        if self.warn_site_settings_unavailable() {
+            return;
+        }
         // Check if we're in Header mode
         if self.selected_region == SelectedRegion::Header {
             self.remove_column_from_header_section();
@@ -147,6 +153,9 @@ impl App {
     }
 
     pub(in crate::tui) fn select_prev_column(&mut self) {
+        if self.warn_site_settings_unavailable() {
+            return;
+        }
         // Check if we're in Header mode
         if self.selected_region == SelectedRegion::Header {
             let total = match self.selected_header_section_column_total() {
@@ -188,6 +197,9 @@ impl App {
     }
 
     pub(in crate::tui) fn select_next_column(&mut self) {
+        if self.warn_site_settings_unavailable() {
+            return;
+        }
         // Check if we're in Header mode
         if self.selected_region == SelectedRegion::Header {
             let total = match self.selected_header_section_column_total() {
@@ -239,6 +251,9 @@ impl App {
     }
 
     pub(in crate::tui) fn move_selected_column_up(&mut self) {
+        if self.warn_site_settings_unavailable() {
+            return;
+        }
         // Check if we're in Header mode
         if self.selected_region == SelectedRegion::Header {
             if self.site.header.sections.is_empty() {
@@ -303,6 +318,9 @@ impl App {
     }
 
     pub(in crate::tui) fn move_selected_column_down(&mut self) {
+        if self.warn_site_settings_unavailable() {
+            return;
+        }
         // Check if we're in Header mode
         if self.selected_region == SelectedRegion::Header {
             if self.site.header.sections.is_empty() {
@@ -411,6 +429,9 @@ impl App {
     }
 
     pub(in crate::tui) fn open_column_form_edit(&mut self, focus_id: &str) {
+        if self.warn_site_settings_unavailable() {
+            return;
+        }
         let rows = self.build_tree_rows();
         if rows.is_empty() {
             self.push_toast(ToastLevel::Warning, "Select a column row to edit.");

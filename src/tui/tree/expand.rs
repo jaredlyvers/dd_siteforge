@@ -414,6 +414,10 @@ impl App {
                 self.push_toast(ToastLevel::Info, "Press Enter to edit.");
                 return;
             }
+            TreeRowKind::SiteRoot => {
+                self.push_toast(ToastLevel::Info, "Press Enter to edit site settings.");
+                return;
+            }
             TreeRowKind::PageHead => {
                 self.push_toast(ToastLevel::Info, "Press Enter to edit page head.");
                 return;

@@ -100,14 +100,15 @@ impl App {
         };
         let details_title = format!("Details — {:02}: {}", page_idx, page_label);
 
-        // Regions section (Header, Footer)
-        let regions_items: Vec<ListItem> = vec!["  Header", "  Footer"]
+        // Regions section (Site, Header, Footer)
+        let regions_items: Vec<ListItem> = vec!["  Site", "  Header", "  Footer"]
             .iter()
             .enumerate()
             .map(|(idx, label)| {
                 let is_selected = match self.selected_region {
-                    SelectedRegion::Header => idx == 0,
-                    SelectedRegion::Footer => idx == 1,
+                    SelectedRegion::Site => idx == 0,
+                    SelectedRegion::Header => idx == 1,
+                    SelectedRegion::Footer => idx == 2,
                     SelectedRegion::Page => false,
                 };
                 let style = if is_selected {
@@ -199,8 +200,9 @@ impl App {
             .highlight_symbol("> ");
         let mut regions_state = ListState::default();
         let regions_selected = match self.selected_region {
-            SelectedRegion::Header => Some(0),
-            SelectedRegion::Footer => Some(1),
+            SelectedRegion::Site => Some(0),
+            SelectedRegion::Header => Some(1),
+            SelectedRegion::Footer => Some(2),
             SelectedRegion::Page => None,
         };
         regions_state.select(regions_selected);

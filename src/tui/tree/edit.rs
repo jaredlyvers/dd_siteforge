@@ -59,12 +59,18 @@ impl App {
     }
 
     pub(in crate::tui) fn delete_selected_row(&mut self) {
+        if self.warn_site_settings_unavailable() {
+            return;
+        }
         let Some(kind) = self.selected_tree_row_kind() else {
             self.push_toast(ToastLevel::Warning, "Nothing selected to delete.");
             return;
         };
         match kind {
-            TreeRowKind::PageHead | TreeRowKind::HeaderRoot | TreeRowKind::FooterRoot => {
+            TreeRowKind::SiteRoot
+            | TreeRowKind::PageHead
+            | TreeRowKind::HeaderRoot
+            | TreeRowKind::FooterRoot => {
                 self.push_toast(ToastLevel::Warning, "Cannot delete this row.");
             }
             TreeRowKind::Hero { .. } | TreeRowKind::Section { .. } => {
@@ -221,6 +227,9 @@ impl App {
     }
 
     pub(in crate::tui) fn duplicate_selected_row(&mut self) {
+        if self.warn_site_settings_unavailable() {
+            return;
+        }
         let Some(kind) = self.selected_tree_row_kind() else {
             self.push_toast(ToastLevel::Warning, "Nothing selected to duplicate.");
             return;
@@ -405,6 +414,9 @@ impl App {
     }
 
     pub(in crate::tui) fn move_selected_row(&mut self, delta: isize) {
+        if self.warn_site_settings_unavailable() {
+            return;
+        }
         let Some(kind) = self.selected_tree_row_kind() else {
             return;
         };
