@@ -18,7 +18,7 @@ impl App {
             .border_style(Style::default().fg(self.theme.border))
             .title_style(
                 Style::default()
-                    .fg(self.theme.title)
+                    .fg(self.theme.modal_header)
                     .add_modifier(Modifier::BOLD),
             );
 
@@ -28,8 +28,8 @@ impl App {
         let content = format!("Save file path:\n{}\n\n{}", path, config.footer_text);
         let prompt = Paragraph::new(content).style(
             Style::default()
-                .fg(self.theme.foreground)
-                .bg(self.theme.popup_background),
+                .fg(self.theme.text_primary)
+                .bg(self.theme.modal_background),
         );
 
         frame.render_widget(prompt, inner);
@@ -51,14 +51,14 @@ impl App {
                     .style(
                         Style::default()
                             .fg(self.theme.modal_text)
-                            .bg(self.theme.popup_background),
+                            .bg(self.theme.modal_background),
                     )
                     .border_style(Style::default().fg(self.theme.border_active))
                     .title_style(Style::default().fg(self.theme.modal_labels)),
             )
             .highlight_style(
                 Style::default()
-                    .fg(self.theme.selected_foreground)
+                    .fg(self.theme.text_active_focus)
                     .bg(self.theme.selected_background)
                     .add_modifier(Modifier::BOLD),
             )
@@ -120,11 +120,11 @@ impl App {
         let modal_block = Block::default()
             .title(outer_title.to_string())
             .borders(Borders::ALL)
-            .style(Style::default().bg(self.theme.popup_background))
+            .style(Style::default().bg(self.theme.modal_background))
             .border_style(Style::default().fg(self.theme.border_active))
             .title_style(
                 Style::default()
-                    .fg(self.theme.title)
+                    .fg(self.theme.modal_header)
                     .add_modifier(Modifier::BOLD),
             );
         frame.render_widget(modal_block.clone(), area);
@@ -150,7 +150,7 @@ impl App {
         let label_para = Paragraph::new(format!("{}:", label)).style(
             Style::default()
                 .fg(self.theme.text_active_focus)
-                .bg(self.theme.popup_background),
+                .bg(self.theme.modal_background),
         );
         frame.render_widget(label_para, label_area);
 
@@ -165,12 +165,12 @@ impl App {
             .style(
                 Style::default()
                     .fg(self.theme.input_text_focus)
-                    .bg(self.theme.popup_background),
+                    .bg(self.theme.modal_background),
             )
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .style(Style::default().bg(self.theme.popup_background))
+                    .style(Style::default().bg(self.theme.modal_background))
                     .border_style(Style::default().fg(self.theme.input_border_focus)),
             );
         frame.render_widget(input, input_area);
@@ -182,7 +182,7 @@ impl App {
         // Paint a themed cursor cell so the cursor color follows the theme.
         let cursor_cell = Paragraph::new(" ").style(
             Style::default()
-                .fg(self.theme.popup_background)
+                .fg(self.theme.modal_background)
                 .bg(self.theme.cursor),
         );
         frame.render_widget(
@@ -206,8 +206,8 @@ impl App {
         };
         let footer = Paragraph::new(footer_text).style(
             Style::default()
-                .fg(self.theme.muted)
-                .bg(self.theme.popup_background),
+                .fg(self.theme.text_secondary)
+                .bg(self.theme.modal_background),
         );
         frame.render_widget(footer, footer_area);
     }
@@ -222,7 +222,7 @@ impl App {
             .border_style(Style::default().fg(self.theme.border_active))
             .title_style(
                 Style::default()
-                    .fg(self.theme.title)
+                    .fg(self.theme.modal_header)
                     .add_modifier(Modifier::BOLD),
             );
 
@@ -232,8 +232,8 @@ impl App {
         let content = format!("{}\n\ny = confirm, n / Esc = cancel", message);
         let prompt = Paragraph::new(content).style(
             Style::default()
-                .fg(self.theme.foreground)
-                .bg(self.theme.popup_background),
+                .fg(self.theme.text_primary)
+                .bg(self.theme.modal_background),
         );
 
         frame.render_widget(prompt, inner);
@@ -252,11 +252,11 @@ impl App {
         let modal_block = Block::default()
             .title(outer_title)
             .borders(Borders::ALL)
-            .style(Style::default().bg(self.theme.popup_background))
+            .style(Style::default().bg(self.theme.modal_background))
             .border_style(Style::default().fg(self.theme.border_active))
             .title_style(
                 Style::default()
-                    .fg(self.theme.title)
+                    .fg(self.theme.modal_header)
                     .add_modifier(Modifier::BOLD),
             );
         frame.render_widget(modal_block.clone(), area);
@@ -282,8 +282,8 @@ impl App {
 
         let body = Paragraph::new(visible.join("\n")).style(
             Style::default()
-                .fg(self.theme.foreground)
-                .bg(self.theme.popup_background),
+                .fg(self.theme.text_primary)
+                .bg(self.theme.modal_background),
         );
         frame.render_widget(
             body,
@@ -309,8 +309,8 @@ impl App {
         };
         let footer = Paragraph::new(footer_text).style(
             Style::default()
-                .fg(self.theme.muted)
-                .bg(self.theme.popup_background),
+                .fg(self.theme.text_secondary)
+                .bg(self.theme.modal_background),
         );
         frame.render_widget(footer, footer_area);
     }

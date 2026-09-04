@@ -24,7 +24,7 @@ impl App {
             .border_style(Style::default().fg(self.theme.border))
             .title_style(
                 Style::default()
-                    .fg(self.theme.title)
+                    .fg(self.theme.modal_header)
                     .add_modifier(Modifier::BOLD),
             );
 
@@ -33,7 +33,7 @@ impl App {
 
         // Search box
         let search_text = format!("Search: {}", query);
-        let search = Paragraph::new(search_text).style(Style::default().fg(self.theme.foreground));
+        let search = Paragraph::new(search_text).style(Style::default().fg(self.theme.text_primary));
         frame.render_widget(
             search,
             Rect {
@@ -52,10 +52,10 @@ impl App {
             .map(|(idx, kind)| {
                 let style = if idx == selected {
                     Style::default()
-                        .fg(self.theme.selected_foreground)
+                        .fg(self.theme.text_active_focus)
                         .bg(self.theme.selected_background)
                 } else {
-                    Style::default().fg(self.theme.foreground)
+                    Style::default().fg(self.theme.text_primary)
                 };
                 ListItem::new(kind.label()).style(style)
             })
@@ -77,7 +77,7 @@ impl App {
 
         // Footer
         let footer =
-            Paragraph::new(&config.footer_text[..]).style(Style::default().fg(self.theme.muted));
+            Paragraph::new(&config.footer_text[..]).style(Style::default().fg(self.theme.text_secondary));
         frame.render_widget(
             footer,
             Rect {
@@ -100,11 +100,11 @@ impl App {
         let outer = Block::default()
             .title(" Pick image ")
             .borders(Borders::ALL)
-            .style(Style::default().bg(self.theme.popup_background))
+            .style(Style::default().bg(self.theme.modal_background))
             .border_style(Style::default().fg(self.theme.border_active))
             .title_style(
                 Style::default()
-                    .fg(self.theme.title)
+                    .fg(self.theme.modal_header)
                     .add_modifier(Modifier::BOLD),
             );
         let inner = outer.inner(area);
@@ -128,8 +128,8 @@ impl App {
         frame.render_widget(
             Paragraph::new(cwd_label).style(
                 Style::default()
-                    .fg(self.theme.muted)
-                    .bg(self.theme.popup_background),
+                    .fg(self.theme.text_secondary)
+                    .bg(self.theme.modal_background),
             ),
             Rect::new(content_x, inner.y, content_w, 1),
         );
@@ -140,7 +140,7 @@ impl App {
             Paragraph::new(filter_label).style(
                 Style::default()
                     .fg(self.theme.text_active_focus)
-                    .bg(self.theme.popup_background),
+                    .bg(self.theme.modal_background),
             ),
             Rect::new(content_x, inner.y + 1, content_w, 1),
         );
@@ -163,8 +163,8 @@ impl App {
             frame.render_widget(
                 Paragraph::new("(no matches)").style(
                     Style::default()
-                        .fg(self.theme.muted)
-                        .bg(self.theme.popup_background),
+                        .fg(self.theme.text_secondary)
+                        .bg(self.theme.modal_background),
                 ),
                 Rect::new(content_x, body_y, content_w, 1),
             );
@@ -176,13 +176,13 @@ impl App {
                 let line = format!("{} {}", glyph, entry.name);
                 let (fg, bg) = if is_selected {
                     (
-                        self.theme.selected_foreground,
+                        self.theme.text_active_focus,
                         self.theme.selected_background,
                     )
                 } else if entry.is_dir {
-                    (self.theme.folders, self.theme.popup_background)
+                    (self.theme.folders, self.theme.modal_background)
                 } else {
-                    (self.theme.files, self.theme.popup_background)
+                    (self.theme.files, self.theme.modal_background)
                 };
                 frame.render_widget(
                     Paragraph::new(line).style(Style::default().fg(fg).bg(bg)),
@@ -199,8 +199,8 @@ impl App {
             )
             .style(
                 Style::default()
-                    .fg(self.theme.muted)
-                    .bg(self.theme.popup_background),
+                    .fg(self.theme.text_secondary)
+                    .bg(self.theme.modal_background),
             ),
             Rect::new(content_x, footer_y, content_w, 1),
         );
@@ -216,11 +216,11 @@ impl App {
         let outer = Block::default()
             .title(" Pick page ")
             .borders(Borders::ALL)
-            .style(Style::default().bg(self.theme.popup_background))
+            .style(Style::default().bg(self.theme.modal_background))
             .border_style(Style::default().fg(self.theme.border_active))
             .title_style(
                 Style::default()
-                    .fg(self.theme.title)
+                    .fg(self.theme.modal_header)
                     .add_modifier(Modifier::BOLD),
             );
         let inner = outer.inner(area);
@@ -238,7 +238,7 @@ impl App {
             Paragraph::new(filter_label).style(
                 Style::default()
                     .fg(self.theme.text_active_focus)
-                    .bg(self.theme.popup_background),
+                    .bg(self.theme.modal_background),
             ),
             Rect::new(content_x, inner.y, content_w, 1),
         );
@@ -260,8 +260,8 @@ impl App {
             frame.render_widget(
                 Paragraph::new("(no matches)").style(
                     Style::default()
-                        .fg(self.theme.muted)
-                        .bg(self.theme.popup_background),
+                        .fg(self.theme.text_secondary)
+                        .bg(self.theme.modal_background),
                 ),
                 Rect::new(content_x, body_y, content_w, 1),
             );
@@ -274,11 +274,11 @@ impl App {
                 let line = format!("{}  /{}", title, slug);
                 let (fg, bg) = if is_selected {
                     (
-                        self.theme.selected_foreground,
+                        self.theme.text_active_focus,
                         self.theme.selected_background,
                     )
                 } else {
-                    (self.theme.foreground, self.theme.popup_background)
+                    (self.theme.text_primary, self.theme.modal_background)
                 };
                 frame.render_widget(
                     Paragraph::new(line).style(Style::default().fg(fg).bg(bg)),
@@ -294,8 +294,8 @@ impl App {
             )
             .style(
                 Style::default()
-                    .fg(self.theme.muted)
-                    .bg(self.theme.popup_background),
+                    .fg(self.theme.text_secondary)
+                    .bg(self.theme.modal_background),
             ),
             Rect::new(content_x, footer_y, content_w, 1),
         );

@@ -33,7 +33,7 @@ impl App {
             .style(self.theme.app_shell)
             .title_style(
                 Style::default()
-                    .fg(self.theme.title)
+                    .fg(self.theme.text_labels)
                     .add_modifier(Modifier::BOLD),
             );
         frame.render_widget(header_block.clone(), root[0]);
@@ -42,8 +42,8 @@ impl App {
             let inner = header_block.inner(root[0]);
             let quote = Paragraph::new(self.header_copy.as_str()).style(
                 Style::default()
-                    .fg(self.theme.foreground)
-                    .bg(self.theme.background),
+                    .fg(self.theme.text_primary)
+                    .bg(self.theme.base_background),
             );
             frame.render_widget(quote, inner);
         }
@@ -71,17 +71,17 @@ impl App {
 
         // Determine border colors based on active section
         let regions_border = if self.selected_sidebar_section == SidebarSection::Regions {
-            self.theme.active
+            self.theme.border_active
         } else {
             self.theme.border
         };
         let pages_border = if self.selected_sidebar_section == SidebarSection::Pages {
-            self.theme.active
+            self.theme.border_active
         } else {
             self.theme.border
         };
         let layouts_border = if self.selected_sidebar_section == SidebarSection::Layouts {
-            self.theme.active
+            self.theme.border_active
         } else {
             self.theme.border
         };
@@ -98,10 +98,10 @@ impl App {
                 };
                 let style = if is_selected {
                     Style::default()
-                        .fg(self.theme.selected_foreground)
+                        .fg(self.theme.text_active_focus)
                         .bg(self.theme.selected_background)
                 } else {
-                    Style::default().fg(self.theme.foreground)
+                    Style::default().fg(self.theme.text_primary)
                 };
                 ListItem::new(*label).style(style)
             })
@@ -113,24 +113,28 @@ impl App {
                     .borders(Borders::ALL)
                     .style(
                         Style::default()
-                            .fg(self.theme.foreground)
-                            .bg(self.theme.panel_background),
+                            .fg(self.theme.text_primary)
+                            .bg(self.theme.body_background),
                     )
                     .border_style(Style::default().fg(regions_border))
                     .title_style(
                         Style::default()
-                            .fg(self.theme.title)
+                            .fg(if self.selected_sidebar_section == SidebarSection::Regions {
+                                self.theme.text_active_focus
+                            } else {
+                                self.theme.text_labels
+                            })
                             .add_modifier(Modifier::BOLD),
                     ),
             )
             .style(
                 Style::default()
-                    .fg(self.theme.foreground)
-                    .bg(self.theme.panel_background),
+                    .fg(self.theme.text_primary)
+                    .bg(self.theme.body_background),
             )
             .highlight_style(
                 Style::default()
-                    .fg(self.theme.selected_foreground)
+                    .fg(self.theme.text_active_focus)
                     .bg(self.theme.selected_background)
                     .add_modifier(Modifier::BOLD),
             )
@@ -162,10 +166,10 @@ impl App {
                 let label = format!("{} {}", num, label_body);
                 let style = if idx == self.selected_page {
                     Style::default()
-                        .fg(self.theme.selected_foreground)
+                        .fg(self.theme.text_active_focus)
                         .bg(self.theme.selected_background)
                 } else {
-                    Style::default().fg(self.theme.foreground)
+                    Style::default().fg(self.theme.text_primary)
                 };
                 ListItem::new(label).style(style)
             })
@@ -186,24 +190,28 @@ impl App {
                     .borders(Borders::ALL)
                     .style(
                         Style::default()
-                            .fg(self.theme.foreground)
-                            .bg(self.theme.panel_background),
+                            .fg(self.theme.text_primary)
+                            .bg(self.theme.body_background),
                     )
                     .border_style(Style::default().fg(pages_border))
                     .title_style(
                         Style::default()
-                            .fg(self.theme.title)
+                            .fg(if self.selected_sidebar_section == SidebarSection::Pages {
+                                self.theme.text_active_focus
+                            } else {
+                                self.theme.text_labels
+                            })
                             .add_modifier(Modifier::BOLD),
                     ),
             )
             .style(
                 Style::default()
-                    .fg(self.theme.foreground)
-                    .bg(self.theme.panel_background),
+                    .fg(self.theme.text_primary)
+                    .bg(self.theme.body_background),
             )
             .highlight_style(
                 Style::default()
-                    .fg(self.theme.selected_foreground)
+                    .fg(self.theme.text_active_focus)
                     .bg(self.theme.selected_background)
                     .add_modifier(Modifier::BOLD),
             )
@@ -225,10 +233,10 @@ impl App {
                 let label = self.tree_row_label(row);
                 let style = if idx == self.selected_tree_row {
                     Style::default()
-                        .fg(self.theme.selected_foreground)
+                        .fg(self.theme.text_active_focus)
                         .bg(self.theme.selected_background)
                 } else {
-                    Style::default().fg(self.theme.foreground)
+                    Style::default().fg(self.theme.text_primary)
                 };
                 ListItem::new(label).style(style)
             })
@@ -240,24 +248,28 @@ impl App {
                     .borders(Borders::ALL)
                     .style(
                         Style::default()
-                            .fg(self.theme.foreground)
-                            .bg(self.theme.panel_background),
+                            .fg(self.theme.text_primary)
+                            .bg(self.theme.body_background),
                     )
                     .border_style(Style::default().fg(layouts_border))
                     .title_style(
                         Style::default()
-                            .fg(self.theme.title)
+                            .fg(if self.selected_sidebar_section == SidebarSection::Layouts {
+                                self.theme.text_active_focus
+                            } else {
+                                self.theme.text_labels
+                            })
                             .add_modifier(Modifier::BOLD),
                     ),
             )
             .style(
                 Style::default()
-                    .fg(self.theme.foreground)
-                    .bg(self.theme.panel_background),
+                    .fg(self.theme.text_primary)
+                    .bg(self.theme.body_background),
             )
             .highlight_style(
                 Style::default()
-                    .fg(self.theme.selected_foreground)
+                    .fg(self.theme.text_active_focus)
                     .bg(self.theme.selected_background)
                     .add_modifier(Modifier::BOLD),
             )
@@ -282,8 +294,8 @@ impl App {
         let details = Paragraph::new(details_content)
             .style(
                 Style::default()
-                    .fg(self.theme.foreground)
-                    .bg(self.theme.panel_background),
+                    .fg(self.theme.text_primary)
+                    .bg(self.theme.body_background),
             )
             .block(
                 Block::default()
@@ -291,13 +303,13 @@ impl App {
                     .borders(Borders::ALL)
                     .style(
                         Style::default()
-                            .fg(self.theme.foreground)
-                            .bg(self.theme.panel_background),
+                            .fg(self.theme.text_primary)
+                            .bg(self.theme.body_background),
                     )
                     .border_style(Style::default().fg(self.theme.border))
                     .title_style(
                         Style::default()
-                            .fg(self.theme.title)
+                            .fg(self.theme.text_labels)
                             .add_modifier(Modifier::BOLD),
                     ),
             )
@@ -333,7 +345,7 @@ impl App {
                 details_visible_rows,
                 self.theme.scrollbar,
                 self.theme.scrollbar_hover,
-                self.theme.panel_background,
+                self.theme.body_background,
             );
         }
 
@@ -355,8 +367,8 @@ impl App {
                     .borders(Borders::ALL)
                     .style(
                         Style::default()
-                            .fg(self.theme.foreground)
-                            .bg(self.theme.popup_background),
+                            .fg(self.theme.text_primary)
+                            .bg(self.theme.modal_background),
                     )
                     .border_style(Style::default().fg(self.theme.border_active))
                     .title_style(
@@ -393,8 +405,8 @@ impl App {
                 let body = Paragraph::new(help)
                     .style(
                         Style::default()
-                            .fg(self.theme.foreground)
-                            .bg(self.theme.popup_background),
+                            .fg(self.theme.text_primary)
+                            .bg(self.theme.modal_background),
                     )
                     .wrap(Wrap { trim: false })
                     .scroll((scroll, 0));
@@ -422,7 +434,7 @@ impl App {
                         visible,
                         self.theme.scrollbar,
                         self.theme.scrollbar_hover,
-                        self.theme.popup_background,
+                        self.theme.modal_background,
                     );
                 }
             }
@@ -434,8 +446,8 @@ impl App {
                     .borders(Borders::ALL)
                     .style(
                         Style::default()
-                            .fg(self.theme.foreground)
-                            .bg(self.theme.popup_background),
+                            .fg(self.theme.text_primary)
+                            .bg(self.theme.modal_background),
                     )
                     .border_style(Style::default().fg(self.theme.border_active))
                     .title_style(
@@ -468,8 +480,8 @@ impl App {
                 let body = Paragraph::new(help)
                     .style(
                         Style::default()
-                            .fg(self.theme.foreground)
-                            .bg(self.theme.popup_background),
+                            .fg(self.theme.text_primary)
+                            .bg(self.theme.modal_background),
                     )
                     .wrap(Wrap { trim: false })
                     .scroll((scroll, 0));
@@ -497,7 +509,7 @@ impl App {
                         visible,
                         self.theme.scrollbar,
                         self.theme.scrollbar_hover,
-                        self.theme.popup_background,
+                        self.theme.modal_background,
                     );
                 }
             }
@@ -515,7 +527,7 @@ impl App {
         if let Some((x, y, ch)) = cursor_overlay {
             let cursor_cell = Paragraph::new(ch.to_string()).style(
                 Style::default()
-                    .fg(self.theme.selected_foreground)
+                    .fg(self.theme.text_active_focus)
                     .bg(self.theme.selected_background)
                     .add_modifier(Modifier::BOLD),
             );

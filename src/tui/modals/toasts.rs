@@ -52,7 +52,7 @@ impl App {
             frame.render_widget(Clear, rect);
             let block = Block::default()
                 .borders(Borders::ALL)
-                .style(Style::default().bg(self.theme.popup_background))
+                .style(Style::default().bg(self.theme.modal_background))
                 .border_style(Style::default().fg(accent));
             let inner_x = rect.x + 2;
             let inner_y = rect.y + 1;
@@ -62,7 +62,7 @@ impl App {
             let body = Paragraph::new(text).style(
                 Style::default()
                     .fg(accent)
-                    .bg(self.theme.popup_background),
+                    .bg(self.theme.modal_background),
             );
             frame.render_widget(
                 body,

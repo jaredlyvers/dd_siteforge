@@ -60,7 +60,7 @@ pub(crate) fn build_help_text(theme: &AppTheme, width: usize) -> Text<'static> {
         .fg(theme.modal_header)
         .add_modifier(Modifier::BOLD);
     let k_style = Style::default().fg(theme.text_active_focus);
-    let div_style = Style::default().fg(theme.muted);
+    let div_style = Style::default().fg(theme.text_secondary);
 
     const KEY_COL: usize = 22;
 
@@ -250,7 +250,7 @@ pub(crate) fn build_theme_text(theme: &AppTheme, source: &str, status: &Option<S
         .fg(theme.modal_header)
         .add_modifier(Modifier::BOLD);
     let k_style = Style::default().fg(theme.text_active_focus);
-    let div_style = Style::default().fg(theme.muted);
+    let div_style = Style::default().fg(theme.text_secondary);
 
     let mut lines: Vec<Line<'static>> = Vec::new();
 
@@ -283,10 +283,10 @@ pub(crate) fn build_theme_text(theme: &AppTheme, source: &str, status: &Option<S
     lines.push(Line::from(""));
 
     let tokens: Vec<(&str, Color, &str)> = vec![
-        ("base_background", theme.background, "app_shell base"),
-        ("body_background", theme.panel_background, "content panes"),
-        ("modal_background", theme.popup_background, "modals & popups"),
-        ("text_primary", theme.foreground, "primary text"),
+        ("base_background", theme.base_background, "app_shell base"),
+        ("body_background", theme.body_background, "content panes"),
+        ("modal_background", theme.modal_background, "modals & popups"),
+        ("text_primary", theme.text_primary, "primary text"),
         ("modal_header", theme.modal_header, "section titles bold"),
         ("text_labels", theme.text_labels, "labels default"),
         ("text_active_focus", theme.text_active_focus, "focus + keys"),

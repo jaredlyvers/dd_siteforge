@@ -77,7 +77,7 @@ impl App {
                     .fg(self.theme.modal_labels)
                     .add_modifier(Modifier::BOLD),
             )
-            .style(Style::default().bg(self.theme.popup_background));
+            .style(Style::default().bg(self.theme.modal_background));
         let inner = outer.inner(area);
         frame.render_widget(outer, area);
         if inner.height < 3 || inner.width < 6 {
@@ -91,7 +91,7 @@ impl App {
             Paragraph::new(help_text).style(
                 Style::default()
                     .fg(self.theme.modal_labels)
-                    .bg(self.theme.popup_background)
+                    .bg(self.theme.modal_background)
                     .add_modifier(Modifier::BOLD),
             ),
             help_rect,
@@ -194,7 +194,7 @@ impl App {
                     Paragraph::new(format!("{}:", field.label)).style(
                         Style::default()
                             .fg(label_color)
-                            .bg(self.theme.popup_background)
+                            .bg(self.theme.modal_background)
                             .add_modifier(label_mod),
                     ),
                     label_rect,
@@ -223,8 +223,8 @@ impl App {
                 );
                 let field_block = Block::default()
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(border_color).bg(self.theme.popup_background))
-                    .style(Style::default().bg(self.theme.popup_background));
+                    .border_style(Style::default().fg(border_color).bg(self.theme.modal_background))
+                    .style(Style::default().bg(self.theme.modal_background));
                 let inner_rect = field_block.inner(box_rect);
                 frame.render_widget(field_block, box_rect);
                 self.modal_field_areas
@@ -257,7 +257,7 @@ impl App {
                 content_height as usize,
                 self.theme.scrollbar,
                 self.theme.scrollbar_hover,
-                self.theme.popup_background,
+                self.theme.modal_background,
             );
         }
     }
@@ -278,7 +278,7 @@ impl App {
         };
         let value_style = Style::default()
             .fg(text_color)
-            .bg(self.theme.popup_background);
+            .bg(self.theme.modal_background);
 
         match &field.kind {
             editform::FieldKind::Text { .. } | editform::FieldKind::Url { .. } => {
@@ -321,7 +321,7 @@ impl App {
                         visible_rows,
                         total_rows,
                         self.theme.scrollbar,
-                        self.theme.popup_background,
+                        self.theme.modal_background,
                     );
                 }
             }
@@ -332,7 +332,7 @@ impl App {
                 if !options.iter().any(|o| *o == value) {
                     style = Style::default()
                         .fg(self.theme.error)
-                        .bg(self.theme.popup_background);
+                        .bg(self.theme.modal_background);
                 }
                 frame.render_widget(Paragraph::new(display).style(style), rect);
             }

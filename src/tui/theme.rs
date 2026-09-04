@@ -3,26 +3,24 @@ use std::path::{Path, PathBuf};
 use ratatui::style::{Color, Style};
 use serde::Deserialize;
 
-#[allow(dead_code)]
 #[derive(Clone)]
 pub(crate) struct AppTheme {
     // Core UI backgrounds
-    pub(crate) background: Color,
-    pub(crate) panel_background: Color,
-    pub(crate) popup_background: Color,
+    pub(crate) base_background: Color,
+    pub(crate) body_background: Color,
+    pub(crate) modal_background: Color,
     // Text colors
-    pub(crate) foreground: Color,
-    pub(crate) muted: Color,
-    pub(crate) disabled: Color,
+    pub(crate) text_primary: Color,
+    pub(crate) text_secondary: Color,
+    #[allow(dead_code)] // reserved: no disabled/inverted text painted yet
+    pub(crate) text_disabled: Color,
+    #[allow(dead_code)] // reserved: no inverted text painted yet
     pub(crate) text_inverse: Color,
     pub(crate) text_labels: Color,
     pub(crate) text_active_focus: Color,
     pub(crate) modal_labels: Color,
     pub(crate) modal_text: Color,
     pub(crate) modal_header: Color,
-    // Accent colors
-    pub(crate) title: Color,
-    pub(crate) active: Color,
     // Border colors
     pub(crate) border: Color,
     pub(crate) border_active: Color,
@@ -37,7 +35,6 @@ pub(crate) struct AppTheme {
     pub(crate) scrollbar_hover: Color,
     // Selection colors
     pub(crate) selected_background: Color,
-    pub(crate) selected_foreground: Color,
     // Semantic colors
     pub(crate) success: Color,
     pub(crate) warning: Color,
@@ -47,10 +44,6 @@ pub(crate) struct AppTheme {
     pub(crate) folders: Color,
     pub(crate) files: Color,
     pub(crate) links: Color,
-    // Backwards-compat aliases (used by older code paths that haven't been
-    // migrated to the split border/text inputs yet).
-    pub(crate) input_default: Color,
-    pub(crate) input_focus: Color,
     pub(crate) app_shell: Style,
     pub(crate) active_border: Style,
     pub(crate) header_quotes: Vec<String>,
@@ -101,8 +94,6 @@ struct PaletteFile {
     // Backwards-compat: plain input_default/input_focus still accepted
     input_default: Option<String>,
     input_focus: Option<String>,
-    // Accent
-    active: Option<String>,
     // Semantic
     success: Option<String>,
     warning: Option<String>,
@@ -199,22 +190,22 @@ impl AppTheme {
         header_quotes: Vec<String>,
     ) -> anyhow::Result<Self> {
         // Core backgrounds
-        let background = parse_hex_color(p.base_background.as_str())?;
-        let panel_background = parse_hex_color(
+        let base_background = parse_hex_color(p.base_background.as_str())?;
+        let body_background = parse_hex_color(
             p.body_background
                 .as_deref()
                 .unwrap_or(p.base_background.as_str()),
         )?;
-        let popup_background = parse_hex_color(
+        let modal_background = parse_hex_color(
             p.modal_background
                 .as_deref()
                 .unwrap_or(p.base_background.as_str()),
         )?;
 
         // Text colors
-        let foreground = parse_hex_color(p.text_primary.as_str())?;
-        let muted = parse_hex_color(p.text_secondary.as_deref().unwrap_or("#9ea3aa"))?;
-        let disabled = parse_hex_color(p.text_disabled.as_deref().unwrap_or("#A0A4A8"))?;
+        let text_primary = parse_hex_color(p.text_primary.as_str())?;
+        let text_secondary = parse_hex_color(p.text_secondary.as_deref().unwrap_or("#9ea3aa"))?;
+        let text_disabled = parse_hex_color(p.text_disabled.as_deref().unwrap_or("#A0A4A8"))?;
         let text_inverse = parse_hex_color(p.text_inverse.as_deref().unwrap_or("#F9FAFB"))?;
         let text_labels = parse_hex_color(p.text_labels.as_deref().unwrap_or("#ffaf46"))?;
         let text_active_focus =
@@ -262,21 +253,6 @@ impl AppTheme {
         )?;
         let cursor = parse_hex_color(p.cursor.as_deref().unwrap_or("#64b4f5"))?;
 
-        // Back-compat aliases (keep the old semantics for any untouched code paths).
-        let input_default = input_border_default;
-        let input_focus = input_border_focus;
-
-        // Accents
-        let title_seed = p
-            .modal_labels
-            .as_deref()
-            .or(p.text_active_focus.as_deref())
-            .or(p.input_border_focus.as_deref())
-            .or(p.input_focus.as_deref())
-            .unwrap_or(p.text_primary.as_str());
-        let title = parse_hex_color(title_seed)?;
-        let active = parse_hex_color(p.active.as_deref().unwrap_or("#64B4F5"))?;
-
         // Semantic
         let success = parse_hex_color(p.success.as_deref().unwrap_or("#82e0aa"))?;
         let warning = parse_hex_color(p.warning.as_deref().unwrap_or("#f5c469"))?;
@@ -289,25 +265,23 @@ impl AppTheme {
         let links = parse_hex_color(p.links.as_deref().unwrap_or("#ffa087"))?;
 
         let app_shell = Style::default()
-            .bg(background)
-            .fg(foreground);
+            .bg(base_background)
+            .fg(text_primary);
         let active_border = Style::default().fg(border_active);
 
         Ok(Self {
-            background,
-            panel_background,
-            popup_background,
-            foreground,
-            muted,
-            disabled,
+            base_background,
+            body_background,
+            modal_background,
+            text_primary,
+            text_secondary,
+            text_disabled,
             text_inverse,
             text_labels,
             text_active_focus,
             modal_labels,
             modal_text,
             modal_header,
-            title,
-            active,
             border,
             border_active,
             input_border_default,
@@ -318,7 +292,6 @@ impl AppTheme {
             scrollbar,
             scrollbar_hover,
             selected_background,
-            selected_foreground: foreground,
             success,
             warning,
             error,
@@ -326,8 +299,6 @@ impl AppTheme {
             folders,
             files,
             links,
-            input_default,
-            input_focus,
             app_shell,
             active_border,
             header_quotes,
@@ -340,20 +311,18 @@ impl Default for AppTheme {
         let border_def = Color::Rgb(245, 246, 247);
         let border_focus = Color::Rgb(100, 180, 245);
         Self {
-            background: Color::Rgb(15, 17, 20),
-            panel_background: Color::Rgb(42, 45, 49),
-            popup_background: Color::Rgb(28, 30, 33),
-            foreground: Color::Rgb(245, 246, 247),
-            muted: Color::Rgb(158, 163, 170),
-            disabled: Color::Rgb(160, 164, 168),
+            base_background: Color::Rgb(15, 17, 20),
+            body_background: Color::Rgb(42, 45, 49),
+            modal_background: Color::Rgb(28, 30, 33),
+            text_primary: Color::Rgb(245, 246, 247),
+            text_secondary: Color::Rgb(158, 163, 170),
+            text_disabled: Color::Rgb(160, 164, 168),
             text_inverse: Color::Rgb(249, 250, 251),
             text_labels: Color::Rgb(255, 175, 70),
             text_active_focus: border_focus,
             modal_labels: border_focus,
             modal_text: Color::Rgb(245, 246, 247),
             modal_header: border_focus,
-            title: border_focus,
-            active: border_focus,
             border: border_def,
             border_active: border_focus,
             input_border_default: border_def,
@@ -364,7 +333,6 @@ impl Default for AppTheme {
             scrollbar: Color::Rgb(255, 160, 135),
             scrollbar_hover: border_focus,
             selected_background: Color::Rgb(15, 17, 20),
-            selected_foreground: Color::Rgb(245, 246, 247),
             success: Color::Rgb(130, 224, 170),
             warning: Color::Rgb(245, 196, 105),
             error: Color::Rgb(229, 115, 115),
@@ -372,8 +340,6 @@ impl Default for AppTheme {
             folders: Color::Rgb(100, 180, 245),
             files: Color::Rgb(255, 175, 70),
             links: Color::Rgb(255, 160, 135),
-            input_default: border_def,
-            input_focus: border_focus,
             app_shell: Style::default()
                 .bg(Color::Rgb(15, 17, 20))
                 .fg(Color::Rgb(245, 246, 247)),
@@ -457,7 +423,6 @@ mod tests {
             cursor: None,
             input_default: None,
             input_focus: None,
-            active: None,
             success: None,
             warning: None,
             error: None,
@@ -477,8 +442,7 @@ mod tests {
         assert_eq!(color_to_hex(theme.info), "#5dade2");
         assert_eq!(color_to_hex(theme.border_active), "#64b4f5");
         assert_eq!(color_to_hex(theme.text_inverse), "#f9fafb");
-        assert_eq!(color_to_hex(theme.disabled), "#a0a4a8");
-        assert_eq!(color_to_hex(theme.active), "#64b4f5");
-        assert_eq!(color_to_hex(AppTheme::default().active), "#64b4f5");
+        assert_eq!(color_to_hex(theme.text_disabled), "#a0a4a8");
+        assert_eq!(color_to_hex(AppTheme::default().border_active), "#64b4f5");
     }
 }
