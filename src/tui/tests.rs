@@ -1,5 +1,5 @@
 use super::*;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
 
     fn app_with_card() -> App {
@@ -25,6 +25,16 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
     fn send_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         app.handle_event(Event::Key(KeyEvent::new(code, modifiers)))
             .expect("key event should be handled");
+    }
+
+    fn send_mouse(app: &mut App, kind: MouseEventKind, column: u16, row: u16) {
+        app.handle_event(Event::Mouse(MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }))
+        .expect("mouse event should be handled");
     }
 
     fn selected_card(app: &App) -> &crate::model::DdCard {
@@ -2012,4 +2022,68 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
         app.dirty = true;
         let dirty = app.footer_hint(120);
         assert!(dirty.starts_with("*  F1:Help  F2:Theme"), "{dirty}");
+    }
+
+    #[test]
+    fn wheel_down_over_pages_selects_next_page() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        let clone = app.site.pages[0].clone();
+        app.site.pages.push(clone);
+        app.selected_page = 0;
+        app.pages_area = Rect {
+            x: 0,
+            y: 1,
+            width: 30,
+            height: 10,
+            ..Default::default()
+        };
+        app.list_area = Rect::default();
+        app.regions_area = Rect::default();
+        app.details_area = Rect::default();
+        send_mouse(&mut app, MouseEventKind::ScrollDown, 10, 3);
+        assert_eq!(app.selected_page, 1);
+    }
+
+    #[test]
+    fn wheel_down_over_layout_selects_next_tree_row() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.list_area = Rect {
+            x: 0,
+            y: 10,
+            width: 30,
+            height: 20,
+            ..Default::default()
+        };
+        app.pages_area = Rect::default();
+        app.regions_area = Rect::default();
+        app.details_area = Rect::default();
+        app.sync_tree_row_with_selection();
+        let before = app.selected_tree_row;
+        send_mouse(&mut app, MouseEventKind::ScrollDown, 10, 15);
+        assert_eq!(app.selected_tree_row, before + 1);
+    }
+
+    #[test]
+    fn wheel_down_over_details_scrolls_details_not_tree_or_page() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.details_area = Rect {
+            x: 40,
+            y: 1,
+            width: 40,
+            height: 5,
+            ..Default::default()
+        };
+        app.list_area = Rect::default();
+        app.pages_area = Rect::default();
+        app.regions_area = Rect::default();
+        app.sync_tree_row_with_selection();
+        app.details_scroll_row = 0;
+        let tree_before = app.selected_tree_row;
+        let page_before = app.selected_page;
+        send_mouse(&mut app, MouseEventKind::ScrollDown, 45, 3);
+        assert_eq!(app.selected_tree_row, tree_before);
+        assert_eq!(app.selected_page, page_before);
+        if app.details_max_scroll() > 0 {
+            assert!(app.details_scroll_row > 0);
+        }
     }

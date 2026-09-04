@@ -1,7 +1,32 @@
 //! Keyboard, mouse, and Pages-panel dispatch.
 use super::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pane {
+    Regions,
+    Pages,
+    Layout,
+    Details,
+}
+
 impl App {
+    /// First matching pane. Overlap (shouldn't happen) is Regions, Pages, Layout, Details.
+    fn pane_at(&self, x: u16, y: u16) -> Option<Pane> {
+        if contains(self.regions_area, x, y) {
+            return Some(Pane::Regions);
+        }
+        if contains(self.pages_area, x, y) {
+            return Some(Pane::Pages);
+        }
+        if contains(self.list_area, x, y) {
+            return Some(Pane::Layout);
+        }
+        if contains(self.details_area, x, y) {
+            return Some(Pane::Details);
+        }
+        None
+    }
+
     /// Try to handle a key as a Pages-panel-scoped action.
     /// Returns `true` if the key was consumed — caller should short-circuit.
     pub(super) fn try_handle_pages_panel_key(&mut self, key: &event::KeyEvent) -> bool {
@@ -254,18 +279,35 @@ impl App {
                 }
             },
             Event::Mouse(m) => match m.kind {
-                MouseEventKind::ScrollUp => {
-                    if contains(self.details_area, m.column, m.row) {
-                        self.scroll_details_by(-3);
-                    } else {
-                        self.select_prev();
-                    }
-                }
-                MouseEventKind::ScrollDown => {
-                    if contains(self.details_area, m.column, m.row) {
-                        self.scroll_details_by(3);
-                    } else {
-                        self.select_next();
+                MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                    let up = matches!(m.kind, MouseEventKind::ScrollUp);
+                    match self.pane_at(m.column, m.row) {
+                        Some(Pane::Regions) => {
+                            self.selected_region = if up {
+                                SelectedRegion::Header
+                            } else {
+                                SelectedRegion::Footer
+                            };
+                            self.selected_tree_row = 0;
+                        }
+                        Some(Pane::Pages) => {
+                            if up {
+                                self.select_prev_page();
+                            } else {
+                                self.select_next_page();
+                            }
+                        }
+                        Some(Pane::Layout) => {
+                            if up {
+                                self.select_prev();
+                            } else {
+                                self.select_next();
+                            }
+                        }
+                        Some(Pane::Details) => {
+                            self.scroll_details_by(if up { -3 } else { 3 });
+                        }
+                        None => {}
                     }
                 }
                 MouseEventKind::Down(MouseButton::Left) => {
