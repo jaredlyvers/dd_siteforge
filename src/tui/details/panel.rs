@@ -288,6 +288,7 @@ impl App {
         // For decl lines, use MAX for lower levels so only the decl row matches predicate (ancestors do but we pick specific).
         let mut tcol = self.selected_column;
         let mut tcomp = self.selected_component;
+        let mut hsec = self.selected_header_section;
         let mut hcol = self.selected_header_column;
         let mut hcomp = self.selected_header_component;
         if clicked_line.contains('[')
@@ -300,6 +301,10 @@ impl App {
             tcomp = usize::MAX;
             hcol = usize::MAX;
             hcomp = usize::MAX;
+            // Header/footer have a Root above Section; MAX section so the tree lands on Root.
+            if clicked_line.contains("dd-header") || clicked_line.contains("dd-footer") {
+                hsec = usize::MAX;
+            }
         } else if clicked_line.contains("column: ") || clicked_line.contains("item: ") {
             tcomp = usize::MAX;
             hcomp = usize::MAX;
@@ -311,18 +316,14 @@ impl App {
             match r.kind {
                 TreeRowKind::HeaderRoot { .. } | TreeRowKind::FooterRoot => true,
                 TreeRowKind::HeaderSection { section_idx }
-                | TreeRowKind::FooterSection { section_idx } => {
-                    section_idx == self.selected_header_section
-                }
+                | TreeRowKind::FooterSection { section_idx } => section_idx == hsec,
                 TreeRowKind::HeaderColumn { section_idx, column_idx }
                 | TreeRowKind::FooterColumn { section_idx, column_idx } => {
-                    section_idx == self.selected_header_section && column_idx == hcol
+                    section_idx == hsec && column_idx == hcol
                 }
                 TreeRowKind::HeaderComponent { section_idx, column_idx, component_idx }
                 | TreeRowKind::FooterComponent { section_idx, column_idx, component_idx } => {
-                    section_idx == self.selected_header_section
-                        && column_idx == hcol
-                        && component_idx == hcomp
+                    section_idx == hsec && column_idx == hcol && component_idx == hcomp
                 }
                 TreeRowKind::Hero { node_idx } | TreeRowKind::Section { node_idx } => node_idx == self.selected_node,
                 TreeRowKind::Column { node_idx, column_idx } => {

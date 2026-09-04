@@ -2504,6 +2504,78 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
     }
 
     #[test]
+    fn header_details_decl_click_selects_header_root() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.selected_region = SelectedRegion::Header;
+        app.header_column_expanded = true;
+        app.set_header_section_expanded(0, true);
+        app.sync_tree_row_with_selection();
+        app.details_area = Rect {
+            x: 20,
+            y: 1,
+            width: 60,
+            height: 30,
+            ..Default::default()
+        };
+        let detail_w = app.details_area.width.saturating_sub(2) as usize;
+        let (content, hits) = app.details_text(detail_w);
+        app.details_hits = hits;
+        let lines: Vec<&str> = content.lines().collect();
+        let line = lines
+            .iter()
+            .position(|l| l.contains("[01] dd-header"))
+            .expect("header decl");
+        app.select_item_from_details_click(line, 4);
+        let rows = app.build_tree_rows();
+        assert!(
+            matches!(rows[app.selected_tree_row].kind, TreeRowKind::HeaderRoot),
+            "header decl click should select HeaderRoot, not a section"
+        );
+        app.handle_enter_on_selected_row();
+        match &app.modal {
+            Some(Modal::FormEdit { cursor, .. }) => {
+                assert!(matches!(cursor, cursor::Cursor::HeaderRoot));
+            }
+            _ => panic!("expected header root form"),
+        }
+    }
+
+    #[test]
+    fn footer_details_decl_click_selects_footer_root() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.selected_region = SelectedRegion::Footer;
+        app.sync_tree_row_with_selection();
+        app.details_area = Rect {
+            x: 20,
+            y: 1,
+            width: 60,
+            height: 30,
+            ..Default::default()
+        };
+        let detail_w = app.details_area.width.saturating_sub(2) as usize;
+        let (content, hits) = app.details_text(detail_w);
+        app.details_hits = hits;
+        let lines: Vec<&str> = content.lines().collect();
+        let line = lines
+            .iter()
+            .position(|l| l.contains("[01] dd-footer"))
+            .expect("footer decl");
+        app.select_item_from_details_click(line, 4);
+        let rows = app.build_tree_rows();
+        assert!(
+            matches!(rows[app.selected_tree_row].kind, TreeRowKind::FooterRoot),
+            "footer decl click should select FooterRoot, not a section"
+        );
+        app.handle_enter_on_selected_row();
+        match &app.modal {
+            Some(Modal::FormEdit { cursor, .. }) => {
+                assert!(matches!(cursor, cursor::Cursor::FooterRoot));
+            }
+            _ => panic!("expected footer root form"),
+        }
+    }
+
+    #[test]
     fn footer_details_click_selects_component() {
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
         app.selected_region = SelectedRegion::Footer;
