@@ -527,9 +527,8 @@ impl App {
         if let Some((x, y, ch)) = cursor_overlay {
             let cursor_cell = Paragraph::new(ch.to_string()).style(
                 Style::default()
-                    .fg(self.theme.text_active_focus)
-                    .bg(self.theme.selected_background)
-                    .add_modifier(Modifier::BOLD),
+                    .fg(self.theme.modal_background)
+                    .bg(self.theme.cursor),
             );
             frame.render_widget(
                 cursor_cell,
@@ -544,7 +543,79 @@ impl App {
     }
 
     pub(super) fn set_cursor_for_active_input(&self, frame: &mut ratatui::Frame) -> Option<(u16, u16, char)> {
-        let _ = frame;
-        None
+        // Help/Theme paint after FormEdit; a caret overlay would punch through.
+        if self.overlay.is_some() {
+            return None;
+        }
+        let Some(Modal::FormEdit {
+            state, cursor_pos, ..
+        }) = &self.modal
+        else {
+            return None;
+        };
+        let field = state.form.fields.get(state.focused_field)?;
+        let value = state.get(field.id);
+        let areas = self.modal_field_areas.borrow();
+        let (_, box_rect) = areas
+            .iter()
+            .find(|(idx, _)| *idx == state.focused_field)?;
+
+        if box_rect.width < 3 || box_rect.height < 3 {
+            return None;
+        }
+        let inner_x = box_rect.x.saturating_add(1);
+        let inner_y = box_rect.y.saturating_add(1);
+        let inner_w = box_rect.width.saturating_sub(2);
+        let inner_h = box_rect.height.saturating_sub(2);
+
+        let pos = (*cursor_pos).min(value.chars().count());
+        let ch = value
+            .chars()
+            .nth(pos)
+            .filter(|c| *c != '\n')
+            .unwrap_or(' ');
+
+        let (x, y) = match &field.kind {
+            editform::FieldKind::Text { .. } | editform::FieldKind::Url { .. } => {
+                let col = (pos as u16).min(inner_w.saturating_sub(1));
+                (inner_x.saturating_add(col), inner_y)
+            }
+            editform::FieldKind::Textarea { .. } => {
+                let cursor_row = textarea_cursor_row(value, pos);
+                let cursor_col = textarea_cursor_col(value, pos);
+                let visible_rows = inner_h.max(1) as usize;
+                let total_rows = input_lines_preserve(value).len().max(1);
+                let start = cursor_row.saturating_sub(visible_rows.saturating_sub(1));
+                let row_in_view = cursor_row.saturating_sub(start) as u16;
+                if row_in_view >= inner_h {
+                    return None;
+                }
+                let text_w = if total_rows > visible_rows {
+                    inner_w.saturating_sub(1)
+                } else {
+                    inner_w
+                };
+                if text_w == 0 {
+                    return None;
+                }
+                let col = (cursor_col as u16).min(text_w.saturating_sub(1));
+                (
+                    inner_x.saturating_add(col),
+                    inner_y.saturating_add(row_in_view),
+                )
+            }
+            _ => return None,
+        };
+
+        let area = frame.area();
+        if x < area.x
+            || y < area.y
+            || x >= area.x.saturating_add(area.width)
+            || y >= area.y.saturating_add(area.height)
+        {
+            return None;
+        }
+        frame.set_cursor_position((x, y));
+        Some((x, y, ch))
     }
 }

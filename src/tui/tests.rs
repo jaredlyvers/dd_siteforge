@@ -721,7 +721,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
         let value = "one\ntwo\nthree\nfour\nfive";
         let rendered = render_textarea_display(value, value.chars().count(), true, 3);
 
-        assert_eq!(rendered, "three\nfour\nfive▋");
+        assert_eq!(rendered, "three\nfour\nfive");
     }
 
     #[test]

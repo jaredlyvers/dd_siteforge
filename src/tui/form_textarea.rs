@@ -100,13 +100,8 @@ pub(super) fn render_textarea_display_window(
     let end = (start + visible_rows).min(lines.len());
 
     let mut display = Vec::with_capacity(visible_rows);
-    for (idx, line) in lines.iter().enumerate().take(end).skip(start) {
-        if focused && idx == cursor_row {
-            let cursor_col = textarea_cursor_col(value, cursor_pos);
-            display.push(render_cursor_line(line, cursor_col));
-        } else {
-            display.push(line.clone());
-        }
+    for line in lines.iter().take(end).skip(start) {
+        display.push(line.clone());
     }
     while display.len() < visible_rows {
         display.push(String::new());
@@ -179,23 +174,5 @@ pub(super) fn auto_scroll_for_focus(state: &editform::EditFormState, current_scr
     } else {
         current_scroll
     }
-}
-
-/// Insert a block cursor `▋` at `cursor_pos` in `value`. Used by the form
-/// editor to show where typing will land in a single-line text field.
-pub(super) fn render_cursor_line(value: &str, cursor_pos: usize) -> String {
-    let chars: Vec<char> = value.chars().collect();
-    let pos = cursor_pos.min(chars.len());
-    let mut out = String::with_capacity(value.len() + 3);
-    for (i, ch) in chars.iter().enumerate() {
-        if i == pos {
-            out.push('▋');
-        }
-        out.push(*ch);
-    }
-    if pos >= chars.len() {
-        out.push('▋');
-    }
-    out
 }
 

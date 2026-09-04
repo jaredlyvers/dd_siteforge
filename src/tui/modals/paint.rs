@@ -283,12 +283,7 @@ impl App {
         match &field.kind {
             editform::FieldKind::Text { .. } | editform::FieldKind::Url { .. } => {
                 let value = state.get(field.id);
-                let display = if focused {
-                    render_cursor_line(value, cursor_pos)
-                } else {
-                    value.to_string()
-                };
-                frame.render_widget(Paragraph::new(display).style(value_style), rect);
+                frame.render_widget(Paragraph::new(value).style(value_style), rect);
             }
             editform::FieldKind::Textarea { .. } => {
                 let value = state.get(field.id);
