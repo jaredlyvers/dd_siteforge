@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dd_siteforge tutorial</title>
+  <style>
+    :root {
+      --base: #0F1114;
+      --body: #2A2D31;
+      --modal: #1C1E21;
+      --text: #F5F6F7;
+      --muted: #9EA3AA;
+      --label: #FFAF46;
+      --accent: #64B4F5;
+      --ok: #82e0aa;
+      --warn: #f5c469;
+      --err: #e57373;
+      --max: 52rem;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--base);
+    }
+    a { color: var(--accent); }
+    a:hover { text-decoration-thickness: 2px; }
+    header.hero {
+      border-bottom: 1px solid #3a3e44;
+      background: var(--modal);
+      padding: 2.25rem 1.25rem 1.75rem;
+    }
+    .wrap, main, footer.page {
+      max-width: var(--max);
+      margin: 0 auto;
+    }
+    header.hero h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.85rem;
+      letter-spacing: -0.02em;
+    }
+    header.hero p { margin: 0; color: var(--muted); }
+    .kicker { color: var(--label); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+    nav.toc {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      margin-top: 1.25rem;
+      font-size: 0.92rem;
+    }
+    main { padding: 1.5rem 1.25rem 3rem; }
+    h2 {
+      margin: 2.4rem 0 0.7rem;
+      padding-top: 0.4rem;
+      border-top: 1px solid #3a3e44;
+      font-size: 1.35rem;
+    }
+    h2:first-child { border-top: 0; margin-top: 0; }
+    h3 { margin: 1.4rem 0 0.45rem; font-size: 1.05rem; color: var(--label); }
+    p, li { color: var(--text); }
+    .muted { color: var(--muted); }
+    pre, code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.88em;
+    }
+    code {
+      background: var(--body);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+    }
+    pre {
+      background: var(--modal);
+      border: 1px solid #3a3e44;
+      border-radius: 8px;
+      padding: 0.9rem 1rem;
+      overflow-x: auto;
+      line-height: 1.45;
+    }
+    pre code { background: none; padding: 0; }
+    figure {
+      margin: 1rem 0 1.4rem;
+      background: var(--modal);
+      border: 1px solid #3a3e44;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: #0F1114;
+    }
+    figcaption {
+      padding: 0.55rem 0.85rem 0.7rem;
+      font-size: 0.88rem;
+      color: var(--muted);
+      border-top: 1px solid #3a3e44;
+    }
+    kbd {
+      display: inline-block;
+      border: 1px solid #5a6068;
+      background: var(--body);
+      border-radius: 4px;
+      padding: 0 0.35em;
+      font: 0.82em ui-monospace, Menlo, Consolas, monospace;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 0.45rem 0.5rem;
+      border-bottom: 1px solid #3a3e44;
+    }
+    th { color: var(--label); font-weight: 600; }
+    .callout {
+      border-left: 3px solid var(--accent);
+      background: var(--modal);
+      padding: 0.7rem 1rem;
+      margin: 1rem 0;
+      border-radius: 0 8px 8px 0;
+    }
+    .callout.warn { border-left-color: var(--warn); }
+    footer.page {
+      padding: 1rem 1.25rem 2.5rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    @media (max-width: 640px) {
+      header.hero h1 { font-size: 1.45rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <div class="kicker">dd_siteforge 1.7</div>
+      <h1>Setup, install, and the TUI</h1>
+      <p>A terminal CMS for framework-native static pages. One Rust binary: edit a typed site tree, export HTML, host anywhere static.</p>
+      <nav class="toc" aria-label="Sections">
+        <a href="#what">What it is</a>
+        <a href="#install">Install</a>
+        <a href="#first-site">First site</a>
+        <a href="#tui">TUI</a>
+        <a href="#export">Export</a>
+        <a href="#keys">Keys</a>
+        <a href="#screenshots">Updating screenshots</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <h2 id="what">What it is</h2>
+    <p>You author a marketing site (roughly 5–20 pages, one editor) as JSON. The TUI edits that tree. Export writes static HTML plus CSS/JS from a Grunt build. There is no database, no multi-user CMS, and no server after export.</p>
+    <p class="muted">Workflow: <code>init-site</code> → drop images in <code>source/images/</code> → TUI → <code>npx grunt build</code> → export or preview.</p>
+
+    <h2 id="install">Install</h2>
+    <p>You need a Rust toolchain (<code>cargo</code>) and, for CSS/JS, Node.js. From a clone of the repo:</p>
+<pre><code>./install.sh</code></pre>
+    <p>Builds a release binary, installs it to <code>$HOME/.local/bin/dd_siteforge</code>, and copies the default theme to <code>$HOME/.config/ldnddev/dd_siteforge_theme.yml</code> only if that file is not already there. Override with <code>PREFIX</code>, <code>BIN_DIR</code>, or <code>CONFIG_DIR</code>.</p>
+<pre><code># alternatives
+cargo install --path .              # ~/.cargo/bin
+cargo build --release               # ./target/release/dd_siteforge
+
+./install.sh uninstall              # remove binary + theme</code></pre>
+    <p>Confirm:</p>
+<pre><code>dd_siteforge --version
+# dd_siteforge 1.7.0</code></pre>
+
+    <h2 id="first-site">Create a site</h2>
+    <p>Pick an empty folder. <code>init-site</code> writes <code>site.json</code>, seeds Handlebars into <code>source/templates/</code>, and copies the Grunt / <code>source/</code> / Lando / DDEV kit next to the JSON. Existing files are skipped.</p>
+<pre><code>mkdir my-site &amp;&amp; cd my-site
+dd_siteforge init-site site.json --name my-site</code></pre>
+    <p>Without <code>--name</code> it prompts (or uses the folder name when stdin is not a TTY). Put author images in <code>source/images/</code> (URLs in the TUI look like <code>assets/images/hero.jpg</code>).</p>
+
+    <h3>CSS / JS</h3>
+    <p>Host Node is the contract. Lando and DDEV are optional wrappers around the same commands.</p>
+<pre><code>npm install
+npx grunt build          # or: npm run build</code></pre>
+    <p>Writes <code>web/assets/{css,js,webfonts}</code>. <code>npx grunt dev</code> rebuilds on change. Optional: <code>lando start</code> then <code>lando grunt build</code>, or <code>ddev start</code> then <code>ddev npm run build</code>.</p>
+
+    <h2 id="tui">The editor</h2>
+    <pre><code>dd_siteforge tui site.json</code></pre>
+    <p>Autosave rewrites the JSON 2s after a change. Manual <kbd>s</kbd> also writes a <code>site.json.backup</code> checkpoint. <kbd>Ctrl+Q</kbd> quits (confirms if dirty).</p>
+
+    <figure>
+      <img src="images/01-shell.png" width="941" height="1150" alt="dd_siteforge TUI: header, Regions, Pages, Layout tree, Details blueprint, footer with F1 Help and F2 Theme">
+      <figcaption>Main shell after <code>init-site</code>. Header is the product name (version lives in F2). Footer always starts <kbd>F1:Help</kbd> then <kbd>F2:Theme</kbd>. Layout is focused; Details shows the page blueprint.</figcaption>
+    </figure>
+
+    <h3>Panes</h3>
+    <table>
+      <thead>
+        <tr><th>Key</th><th>Pane</th><th>What it is</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><kbd>1</kbd></td><td>Regions</td><td>Site settings, Header, Footer</td></tr>
+        <tr><td><kbd>2</kbd></td><td>Pages</td><td>Sitemap order. <kbd>Shift+A</kbd> add, <kbd>r</kbd> rename</td></tr>
+        <tr><td><kbd>3</kbd></td><td>Layout</td><td>Tree for the current region. <kbd>Enter</kbd> edit, <kbd>/</kbd> insert</td></tr>
+        <tr><td><kbd>4</kbd></td><td>Details</td><td>ASCII blueprint. <kbd>j</kbd>/<kbd>k</kbd> scroll; click selects</td></tr>
+      </tbody>
+    </table>
+    <p><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> still move between <em>pages</em>, not panes.</p>
+
+    <figure>
+      <img src="images/07-regions.png" width="941" height="1150" alt="Regions pane with Site selected; Details shows name, lang, and CSS colors">
+      <figcaption>Press <kbd>1</kbd> then <kbd>j</kbd> so <strong>Site</strong> is selected. Layout collapses to one “Site settings” row. Details is a read-only summary of name, lang, base URL, export dir, and CSS colors.</figcaption>
+    </figure>
+
+    <figure>
+      <img src="images/08-site-settings.png" width="941" height="1150" alt="Site settings form with name, lang, base URL, export dir, and four CSS color fields">
+      <figcaption><kbd>Enter</kbd> on Site opens the settings form. <kbd>Ctrl+S</kbd> writes existing <code>Site</code> fields (no schema change). Esc cancels.</figcaption>
+    </figure>
+
+    <figure>
+      <img src="images/06-details.png" width="941" height="1150" alt="Details pane focused; footer shows j/k Scroll">
+      <figcaption><kbd>4</kbd> focuses Details (active border). <kbd>j</kbd>/<kbd>k</kbd> and PageUp/PageDown scroll the blueprint. Click a box to select the matching Layout row; double-click edits.</figcaption>
+    </figure>
+
+    <h3>Edit a component</h3>
+    <p>In Layout, <kbd>j</kbd>/<kbd>k</kbd> to a row and press <kbd>Enter</kbd> (or double-click). Tab between fields. Left/Right cycles enums. <kbd>Ctrl+S</kbd> saves; <kbd>Esc</kbd> cancels. In a URL field, <kbd>Ctrl+P</kbd> opens an image picker (<code>source/images/</code>) or a page picker.</p>
+    <figure>
+      <img src="images/04-edit-form.png" width="941" height="1150" alt="Edit modal for dd-hero with title, subtitle, copy, class, animation, and image fields">
+      <figcaption>FormEdit on the starter <code>dd-hero</code>. The modal footer says <kbd>Ctrl+S: save</kbd>. Enter is a newline in textareas, not save.</figcaption>
+    </figure>
+
+    <h3>Insert a component</h3>
+    <p><kbd>/</kbd> opens a fuzzy picker. Allowed kinds follow the focused region: pages can insert hero/section/components; header can insert header-search/menu; footer cannot insert a hero.</p>
+    <figure>
+      <img src="images/05-insert.png" width="941" height="1150" alt="Insert component picker listing dd-hero, dd-section, dd-cta, and other page components">
+      <figcaption>Type to filter, <kbd>Enter</kbd> to insert after the current Layout row, <kbd>Esc</kbd> to cancel.</figcaption>
+    </figure>
+
+    <h3>Help and theme</h3>
+    <figure>
+      <img src="images/02-help.png" width="941" height="1150" alt="F1 help overlay listing global keys, autosave, layout keys, and Pages panel keys">
+      <figcaption><kbd>F1</kbd> — full key and mouse list. Scroll with <kbd>j</kbd>/<kbd>k</kbd> or the wheel. Esc or F1 closes. Help sits above an open form; it will not drop a paused image picker.</figcaption>
+    </figure>
+    <figure>
+      <img src="images/03-theme.png" width="941" height="1150" alt="F2 theme overlay showing source local, version, and sampled color tokens with hex values">
+      <figcaption><kbd>F2</kbd> — theme source (<code>local</code> / <code>global</code> / <code>default</code>), load status, and canonical tokens. Version is here, not in the header title.</figcaption>
+    </figure>
+
+    <h2 id="export">Validate, export, preview</h2>
+<pre><code>dd_siteforge validate-site site.json
+npx grunt build
+dd_siteforge export-html site.json ./web/
+dd_siteforge serve site.json          # export + http://127.0.0.1:8765/
+</code></pre>
+    <p>Inside the TUI: <kbd>F3</kbd> validate, <kbd>Shift+E</kbd> export (prompts for a directory the first time, then remembers <code>export_dir</code>), <kbd>p</kbd> export + local HTTP + open the current page in a browser.</p>
+    <p>Export copies Grunt <code>web/assets</code> (unless the dest already is that tree), fills missing webfonts/favicon from <code>source/</code>, copies <code>source/images/</code> → <code>web/assets/images/</code>, and writes <code>sitemap.xml</code>, <code>robots.txt</code>, and <code>404.html</code> when you have no author 404 page.</p>
+    <div class="callout warn">
+      Validation and export refuse to run when slugs collide, required fields are empty, or a local <code>assets/images/…</code> file is missing next to the JSON.
+    </div>
+
+    <h2>Theme</h2>
+    <p>First file found wins:</p>
+    <ol>
+      <li><code>./dd_siteforge_theme.yml</code> (project)</li>
+      <li><code>~/.config/ldnddev/dd_siteforge_theme.yml</code> (user)</li>
+      <li>Built-in defaults</li>
+    </ol>
+    <p>Must declare <code>version: 1</code>. Token names are in <a href="../../LDNDDEV_TUI_VISUAL_STANDARD.md">LDNDDEV_TUI_VISUAL_STANDARD.md</a>. Optional <code>header_quotes</code> replaces the rotating header line (picked once per launch).</p>
+
+    <h2 id="keys">Cheatsheet</h2>
+    <table>
+      <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td><kbd>F1</kbd> / <kbd>F2</kbd> / <kbd>F3</kbd></td><td>Help / Theme / Validate</td></tr>
+        <tr><td><kbd>Shift+E</kbd> / <kbd>p</kbd> / <kbd>s</kbd></td><td>Export / Preview / Save (+ backup)</td></tr>
+        <tr><td><kbd>/</kbd></td><td>Insert component</td></tr>
+        <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></td><td>Focus Regions / Pages / Layout / Details</td></tr>
+        <tr><td><kbd>Tab</kbd></td><td>Next page</td></tr>
+        <tr><td><kbd>Ctrl+Q</kbd></td><td>Quit</td></tr>
+        <tr><td><kbd>Shift+A</kbd> <kbd>Shift+X</kbd> <kbd>r</kbd></td><td>Pages: add / delete / rename</td></tr>
+        <tr><td><kbd>j</kbd> <kbd>k</kbd> <kbd>Enter</kbd> <kbd>d</kbd> <kbd>y</kbd> <kbd>u</kbd></td><td>Layout: move / edit / delete / duplicate / undo</td></tr>
+        <tr><td><kbd>Ctrl+S</kbd> in a form</td><td>Save the form (Esc cancels)</td></tr>
+      </tbody>
+    </table>
+    <p class="muted">The footer is one adaptive line. Narrow terminals drop trailing hints; F1 is the full list.</p>
+
+    <h2>Other CLI</h2>
+<pre><code>dd_siteforge init-templates site.json [--force] [--name dd-hero]
+dd_siteforge init-scaffold site.json [--force] [--name my-site]
+dd_siteforge init-scaffold --global          # house overlay in ~/.config/ldnddev/dd_siteforge/
+dd_siteforge show-site site.json</code></pre>
+
+    <h2 id="screenshots">Updating these screenshots</h2>
+    <p>PNGs live in <code>docs/tutorial/images/</code>. Names are a contract with this page. The full procedure is <a href="SCREENSHOTS.md">SCREENSHOTS.md</a>.</p>
+    <p>On Hyprland (foot + grim + wtype):</p>
+<pre><code>cargo build --release
+./docs/tutorial/capture.sh</code></pre>
+    <p>That seeds a throwaway site under <code>/tmp/dd_siteforge_tutorial/</code>, pins the header quote, drives the TUI through the table in SCREENSHOTS.md, and overwrites the eight PNGs. Inspect them, then:</p>
+<pre><code>git add docs/tutorial/images/*.png
+git commit -m "docs: refresh tutorial screenshots"</code></pre>
+    <p>Do not commit <code>site.json</code> or the <code>/tmp</code> scratch site. Manual capture: 132×42 terminal, same key sequence, window-only screenshot, same filenames.</p>
+  </main>
+
+  <footer class="page">
+    MIT licensed. Spec: <a href="../SPEC.md">docs/SPEC.md</a>.
+    Capture script: <a href="capture.sh">capture.sh</a>.
+  </footer>
+</body>
+</html>
