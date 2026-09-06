@@ -43,7 +43,7 @@ Site
 ├── header (DdHeader)         always present
 ├── footer (DdFooter)         always present
 ├── pages: Vec<Page>
-│   ├── head (DdHead)         per-page SEO + slug
+│   ├── head (DdHead)         page label, slug, meta title/description, SEO
 │   └── nodes: Vec<PageNode>  ordered top-level blocks
 │       ├── Hero(DdHero)      standalone, no wrapper
 │       └── Section(DdSection)

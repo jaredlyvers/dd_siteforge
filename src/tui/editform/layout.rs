@@ -216,6 +216,13 @@ pub static PAGE_HEAD_FORM: EditForm = EditForm {
             visible_when: None,
         },
         FormField {
+            id: "meta_title",
+            label: "Meta Title",
+            kind: FieldKind::Text { default: "" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
             id: "meta_description",
             label: "Meta Description",
             kind: FieldKind::Text { default: "" },

@@ -177,6 +177,7 @@ fn not_found_page() -> Page {
         slug_locked: true,
         head: crate::model::DdHead {
             title: "Not Found".to_string(),
+            meta_title: None,
             meta_description: Some("This page does not exist.".to_string()),
             canonical_url: None,
             robots: RobotsDirective::NoindexNofollow,

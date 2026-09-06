@@ -78,7 +78,8 @@ fn render_head(r: &Renderer, head: &DdHead, site: &Site, page: &Page) -> anyhow:
         Value::String("https://schema.org".to_string()),
     );
     schema.insert("@type".to_string(), Value::String(schema_type.to_string()));
-    schema.insert("name".to_string(), Value::String(head.title.clone()));
+    let html_title = head.html_title().to_string();
+    schema.insert("name".to_string(), Value::String(html_title.clone()));
     if let Some(d) = head
         .meta_description
         .as_deref()
@@ -117,7 +118,7 @@ fn render_head(r: &Renderer, head: &DdHead, site: &Site, page: &Page) -> anyhow:
         .map(str::trim)
         .filter(|v| !v.is_empty())
         .map(str::to_string)
-        .or_else(|| Some(head.title.clone()));
+        .or_else(|| Some(html_title.clone()));
     let og_description = head
         .og_description
         .as_deref()
@@ -143,7 +144,7 @@ fn render_head(r: &Renderer, head: &DdHead, site: &Site, page: &Page) -> anyhow:
         .map(|_| "summary_large_image".to_string());
 
     let data = json!({
-        "title": head.title,
+        "title": html_title,
         "meta_description": head.meta_description,
         "canonical_url": canonical,
         "robots": robots,
@@ -1129,5 +1130,27 @@ mod tests {
         assert!(html.contains("rel=\"canonical\" href=\"https://ex.com/index.html\""));
         assert!(html.contains("property=\"og:url\" content=\"https://ex.com/index.html\""));
         assert!(html.contains("property=\"og:title\" content=\"Home\""));
+        assert!(html.contains("<title>Home</title>"));
+    }
+
+    #[test]
+    fn html_title_uses_meta_title_when_set() {
+        let mut site = Site::starter();
+        site.pages[0].head.title = "Home".to_string();
+        site.pages[0].head.meta_title =
+            Some("Custom Drupal & WordPress Development | ldnddev".to_string());
+        let r = crate::templates::Renderer::bundled_only().unwrap();
+        let html = super::render_page_html_with_chrome(&r, &site.pages[0], "", "", &site).unwrap();
+        assert!(html.contains(
+            "<title>Custom Drupal &amp; WordPress Development | ldnddev</title>"
+        ) || html.contains(
+            "<title>Custom Drupal & WordPress Development | ldnddev</title>"
+        ));
+        assert!(!html.contains("<title>Home</title>"));
+        assert!(html.contains(
+            "property=\"og:title\" content=\"Custom Drupal &amp; WordPress Development | ldnddev\""
+        ) || html.contains(
+            "property=\"og:title\" content=\"Custom Drupal & WordPress Development | ldnddev\""
+        ));
     }
 }

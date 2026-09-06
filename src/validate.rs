@@ -743,6 +743,7 @@ fn collect_region_image_refs(
         slug_locked: true,
         head: crate::model::DdHead {
             title: region.to_string(),
+            meta_title: None,
             meta_description: None,
             canonical_url: None,
             robots: crate::model::RobotsDirective::NoindexNofollow,

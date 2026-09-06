@@ -364,7 +364,11 @@ pub struct DdFooter {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DdHead {
+    /// TUI / Pages-panel label. Not the HTML `<title>` unless `meta_title` is empty.
     pub title: String,
+    /// Document `<title>`. When empty/None, export falls back to `title`.
+    #[serde(default)]
+    pub meta_title: Option<String>,
     pub meta_description: Option<String>,
     pub canonical_url: Option<String>,
     #[serde(default = "default_head_robots")]
@@ -374,6 +378,17 @@ pub struct DdHead {
     pub og_title: Option<String>,
     pub og_description: Option<String>,
     pub og_image: Option<String>,
+}
+
+impl DdHead {
+    /// Value written to `<title>` (and OG/schema name fallbacks).
+    pub fn html_title(&self) -> &str {
+        self.meta_title
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| self.title.trim())
+    }
 }
 
 fn default_alert_parent_type() -> AlertType {
@@ -864,6 +879,7 @@ impl Site {
                 slug_locked: false,
                 head: DdHead {
                     title: "Home".to_string(),
+                    meta_title: None,
                     meta_description: Some("Starter page".to_string()),
                     canonical_url: None,
                     robots: RobotsDirective::IndexFollow,
@@ -941,6 +957,7 @@ impl Page {
             slug_locked: false,
             head: DdHead {
                 title: title.to_string(),
+                meta_title: None,
                 meta_description: None,
                 canonical_url: None,
                 robots: RobotsDirective::IndexFollow,
@@ -1102,8 +1119,47 @@ mod tests {
         assert_eq!(dup.head.title, "Home (Copy)");
         assert_eq!(dup.slug, "home-copy");
         assert!(!dup.slug_locked);
+        assert!(dup.head.meta_title.is_none());
         assert_eq!(dup.nodes.len(), starter.pages[0].nodes.len());
         assert_ne!(dup.id, starter.pages[0].id);
+    }
+
+    #[test]
+    fn html_title_falls_back_to_page_label() {
+        let mut head = DdHead {
+            title: "Brands".to_string(),
+            meta_title: None,
+            meta_description: None,
+            canonical_url: None,
+            robots: RobotsDirective::IndexFollow,
+            schema_type: SchemaType::WebPage,
+            og_title: None,
+            og_description: None,
+            og_image: None,
+        };
+        assert_eq!(head.html_title(), "Brands");
+        head.meta_title = Some("  ".to_string());
+        assert_eq!(head.html_title(), "Brands");
+        head.meta_title = Some("ldnddev | Brands".to_string());
+        assert_eq!(head.html_title(), "ldnddev | Brands");
+    }
+
+    #[test]
+    fn head_meta_title_missing_in_legacy_json() {
+        let raw = r#"{
+            "title": "Home",
+            "meta_description": null,
+            "canonical_url": null,
+            "robots": "index, follow",
+            "schema_type": "WebPage",
+            "og_title": null,
+            "og_description": null,
+            "og_image": null
+        }"#;
+        let head: DdHead = serde_json::from_str(raw).expect("legacy head should load");
+        assert_eq!(head.title, "Home");
+        assert!(head.meta_title.is_none());
+        assert_eq!(head.html_title(), "Home");
     }
 
     #[test]

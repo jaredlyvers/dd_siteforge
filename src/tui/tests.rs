@@ -1237,6 +1237,61 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
     }
 
     #[test]
+    fn page_head_modal_shows_and_saves_meta_title() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        open_page_head_form(&mut app);
+        match &app.modal {
+            Some(Modal::FormEdit { state, .. }) => {
+                assert!(state.form.fields.iter().any(|f| f.id == "title"));
+                assert!(state.form.fields.iter().any(|f| f.id == "slug"));
+                assert!(state.form.fields.iter().any(|f| f.id == "meta_title"));
+                assert_eq!(state.get("meta_title"), "");
+            }
+            _ => panic!("expected FormEdit"),
+        }
+        if let Some(Modal::FormEdit { state, cursor_pos, .. }) = &mut app.modal {
+            state.set("meta_title", "SEO Title for Home");
+            *cursor_pos = 8;
+        }
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert_eq!(
+            app.site.pages[0].head.meta_title.as_deref(),
+            Some("SEO Title for Home")
+        );
+        assert_eq!(app.site.pages[0].head.title, "Home");
+        assert_eq!(app.site.pages[0].slug, "index");
+        assert!(!app.site.pages[0].slug_locked);
+    }
+
+    #[test]
+    fn page_head_meta_title_edit_does_not_regen_slug() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        assert!(!app.site.pages[0].slug_locked);
+        let orig_slug = app.site.pages[0].slug.clone();
+        open_page_head_form(&mut app);
+        if let Some(Modal::FormEdit { state, cursor_pos, .. }) = &mut app.modal {
+            state.set("meta_title", "A Long Search Title");
+            *cursor_pos = 8;
+        }
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert_eq!(app.site.pages[0].slug, orig_slug);
+        assert!(!app.site.pages[0].slug_locked);
+    }
+
+    #[test]
+    fn page_head_modal_default_og_title_uses_meta_title_when_set() {
+        let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
+        app.site.pages[0].head.meta_title = Some("SEO Home".to_string());
+        open_page_head_form(&mut app);
+        match &app.modal {
+            Some(Modal::FormEdit { state, .. }) => {
+                assert_eq!(state.get("og_title"), "SEO Home");
+            }
+            _ => panic!("expected FormEdit"),
+        }
+    }
+
+    #[test]
     fn open_validation_modal_on_clean_starter_pushes_success_toast_and_no_modal() {
         let mut app = App::new(Site::starter(), None, AppTheme::default(), "default".to_string(), None);
         app.open_validation_modal();

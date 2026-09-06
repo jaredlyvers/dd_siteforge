@@ -40,6 +40,8 @@ Current crate version: see `Cargo.toml`.
 
 `Site` → always-present `header` / `footer` → `pages[]` → per-page `head` + `nodes[]` (`dd-hero` or `dd-section` with columns of components). Optional `export_dir`, `base_url`, `lang`.
 
+Page head: `title` is the TUI page label. `meta_title` is the HTML `<title>`; empty falls back to `title`. Slug is edited on the same form.
+
 New fields on `Site` / `Page` take `#[serde(default)]` so legacy JSON still loads.
 
 Animation attribute is SAL (`data-sal`). JSON still accepts the old `parent_data_aos` alias.

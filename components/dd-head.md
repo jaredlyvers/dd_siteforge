@@ -7,6 +7,7 @@ node_scope: page_head   # special scope: rendered inside <head>, one per page
 insert:
   defaults:
     title: "Untitled Page"
+    meta_title: ""
     meta_description: ""
     canonical_url: ""
     robots: "index, follow"
@@ -19,7 +20,18 @@ fields:
   - id: title
     required: true
     type: string
+    maps_to: "TUI / Pages-panel label; also <title> when meta_title is empty"
+
+  - id: slug
+    required: false
+    type: string
+    maps_to: "page file name / URL path (page-level field, edited on this form)"
+
+  - id: meta_title
+    required: false
+    type: string
     maps_to: "<title>"
+    notes: "When empty, export uses title"
 
   - id: meta_description
     required: false
@@ -63,6 +75,8 @@ fields:
 edit_ui:
   tab_order:
     - title
+    - slug
+    - meta_title
     - meta_description
     - canonical_url
     - robots
@@ -77,6 +91,8 @@ edit_ui:
   modal_fields:
     parent_edit_modes:
       - title
+      - slug
+      - meta_title
       - meta_description
       - canonical_url
       - robots
@@ -89,6 +105,8 @@ blueprint:
   label: "dd-head"
   show_fields:
     - title
+    - slug
+    - meta_title
     - meta_description
     - canonical_url
     - robots
@@ -105,7 +123,7 @@ fields render conditionally below them.
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>[title]</title>
+  <title>[meta_title or title]</title>
   <!-- if meta_description -->
   <meta name="description" content="[meta_description]">
   <!-- endif -->
@@ -136,7 +154,7 @@ fields render conditionally below them.
   {
     "@context": "https://schema.org",
     "@type": "[schema_type]",
-    "name": "[title]"
+    "name": "[meta_title or title]"
     <!-- if meta_description -->,
     "description": "[meta_description]"
     <!-- endif -->
@@ -153,7 +171,7 @@ fields render conditionally below them.
 
 ## Conditional Markup
 
-- `<title>` always renders (field is required)
+- `<title>` always renders: `meta_title` when non-empty, otherwise `title`
 - `<meta name="description">` renders only when `meta_description` is non-empty
 - `<link rel="canonical">` renders only when `canonical_url` is non-empty
 - `<meta name="robots">` always renders (defaults to `"index, follow"`)
@@ -164,7 +182,8 @@ fields render conditionally below them.
 
 ## Validation Rules
 
-- `title` required and non-empty (after trimming)
+- `title` required and non-empty (after trimming); this is the page label in the TUI, not necessarily the HTML title
+- `meta_title` optional; when empty, `<title>` / OG title / schema name fall back to `title`
 - `meta_description` optional; recommended 50–160 characters when provided (warning only, not a hard fail)
 - `canonical_url` optional; when provided, must pass URL check (`http://`, `https://`, or `/`)
 - `robots` optional; must be one of the enum options when provided

@@ -995,6 +995,8 @@ fn apply_section_values(section: &mut DdSection, state: &EditFormState) -> Resul
 
 fn apply_head_values(head: &mut crate::model::DdHead, state: &EditFormState) -> Result<()> {
     head.title = state.get("title").to_string();
+    let meta_title = state.get("meta_title").trim().to_string();
+    head.meta_title = if meta_title.is_empty() { None } else { Some(meta_title) };
     let meta = state.get("meta_description").trim().to_string();
     head.meta_description = if meta.is_empty() { None } else { Some(meta) };
     let canon = state.get("canonical_url").trim().to_string();
@@ -1075,6 +1077,7 @@ pub fn page_head_to_form_state(page: &crate::model::Page) -> EditFormState {
     let head = &page.head;
     s.set("title", head.title.clone());
     s.set("slug", page.slug.clone());
+    s.set("meta_title", head.meta_title.clone().unwrap_or_default());
     s.set("meta_description", head.meta_description.clone().unwrap_or_default());
     let canon = head.canonical_url.clone().unwrap_or_default();
     s.set("canonical_url", canon);
@@ -1097,7 +1100,12 @@ pub fn page_head_to_form_state(page: &crate::model::Page) -> EditFormState {
         crate::model::SchemaType::Service => "Service",
     };
     s.set("schema_type", schema.to_string());
-    s.set("og_title", head.og_title.clone().unwrap_or_else(|| head.title.clone()));
+    s.set(
+        "og_title",
+        head.og_title
+            .clone()
+            .unwrap_or_else(|| head.html_title().to_string()),
+    );
     s.set("og_description", head.og_description.clone().unwrap_or_default());
     s.set("og_image", head.og_image.clone().unwrap_or_default());
     s
