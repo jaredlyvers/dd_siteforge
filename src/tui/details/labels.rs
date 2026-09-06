@@ -2,17 +2,16 @@
 
 pub(in crate::tui) fn section_class_to_str(v: crate::model::SectionClass) -> &'static str {
     match v {
-        crate::model::SectionClass::Contained => "-contained",
-        crate::model::SectionClass::ContainedMd => "-contained-md",
-        crate::model::SectionClass::ContainedLg => "-contained-lg",
-        crate::model::SectionClass::ContainedXl => "-contained-xl",
-        crate::model::SectionClass::ContainedXxl => "-contained-xxl",
         crate::model::SectionClass::FullFull => "-full-full",
         crate::model::SectionClass::FullContained => "-full-contained",
-        crate::model::SectionClass::FullContainedMd => "-full-contained-md",
-        crate::model::SectionClass::FullContainedLg => "-full-contained-lg",
-        crate::model::SectionClass::FullContainedXl => "-full-contained-xl",
-        crate::model::SectionClass::FullContainedXxl => "-full-contained-xxl",
+        crate::model::SectionClass::FullXxl => "-full-xxl",
+        crate::model::SectionClass::FullXl => "-full-xl",
+        crate::model::SectionClass::FullLg => "-full-lg",
+        crate::model::SectionClass::FullMd => "-full-md",
+        crate::model::SectionClass::Xxl => "-xxl",
+        crate::model::SectionClass::Xl => "-xl",
+        crate::model::SectionClass::Lg => "-lg",
+        crate::model::SectionClass::Md => "-md",
     }
 }
 

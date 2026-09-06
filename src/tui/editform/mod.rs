@@ -302,7 +302,18 @@ pub(super) const HERO_CLASS_OPTIONS: &[&str] = &[
     "-full-contained-xxl",
 ];
 
-pub(super) const SECTION_CLASS_OPTIONS: &[&str] = HERO_CLASS_OPTIONS;
+pub(super) const SECTION_CLASS_OPTIONS: &[&str] = &[
+    "-full-full",
+    "-full-contained",
+    "-full-xxl",
+    "-full-xl",
+    "-full-lg",
+    "-full-md",
+    "-xxl",
+    "-xl",
+    "-lg",
+    "-md",
+];
 
 pub(super) const ITEM_BOX_CLASS_OPTIONS: &[&str] = &["l-box", "ll-box"];
 

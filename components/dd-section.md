@@ -27,7 +27,7 @@ fields:
   - id: section_class
     required: true
     type: enum
-    options: ["-contained", "-contained-md", "-contained-lg", "-contained-xl", "-contained-xxl", "-full-full", "-full-contained", "-full-contained-md", "-full-contained-lg", "-full-contained-xl", "-full-contained-xxl"]
+    options: ["-full-full", "-full-contained", "-full-xxl", "-full-xl", "-full-lg", "-full-md", "-xxl", "-xl", "-lg", "-md"]
     default: "-full-contained"
     maps_to: ".dd-section class token"
   

@@ -1098,7 +1098,7 @@ mod tests {
             nodes: vec![PageNode::Section(crate::model::DdSection {
                 id: "s1".to_string(),
                 section_title: None,
-                section_class: Some(SectionClass::Contained),
+                section_class: Some(SectionClass::FullContained),
                 item_box_class: Some(SectionItemBoxClass::LBox),
                 columns: vec![SectionColumn {
                     id: "c1".to_string(),

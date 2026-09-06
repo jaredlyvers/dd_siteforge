@@ -595,28 +595,26 @@ pub enum SalAnimation {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SectionClass {
-    #[serde(rename = "-contained")]
-    Contained,
-    #[serde(rename = "-contained-md")]
-    ContainedMd,
-    #[serde(rename = "-contained-lg")]
-    ContainedLg,
-    #[serde(rename = "-contained-xl")]
-    ContainedXl,
-    #[serde(rename = "-contained-xxl")]
-    ContainedXxl,
     #[serde(rename = "-full-full")]
     FullFull,
     #[serde(rename = "-full-contained")]
     FullContained,
-    #[serde(rename = "-full-contained-md")]
-    FullContainedMd,
-    #[serde(rename = "-full-contained-lg")]
-    FullContainedLg,
-    #[serde(rename = "-full-contained-xl")]
-    FullContainedXl,
-    #[serde(rename = "-full-contained-xxl")]
-    FullContainedXxl,
+    #[serde(rename = "-full-xxl")]
+    FullXxl,
+    #[serde(rename = "-full-xl")]
+    FullXl,
+    #[serde(rename = "-full-lg")]
+    FullLg,
+    #[serde(rename = "-full-md")]
+    FullMd,
+    #[serde(rename = "-xxl")]
+    Xxl,
+    #[serde(rename = "-xl")]
+    Xl,
+    #[serde(rename = "-lg")]
+    Lg,
+    #[serde(rename = "-md")]
+    Md,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
