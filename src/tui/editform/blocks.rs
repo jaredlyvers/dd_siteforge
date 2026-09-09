@@ -164,9 +164,16 @@ pub static IMAGE_FORM: EditForm = EditForm {
         },
         FormField {
             id: "parent_image_url",
-            label: "Image URL",
+            label: "Light Mode Image",
             kind: FieldKind::Url { default: "" },
             required: true,
+            visible_when: None,
+        },
+        FormField {
+            id: "parent_image_url_dark",
+            label: "Dark Mode Image (optional)",
+            kind: FieldKind::Url { default: "" },
+            required: false,
             visible_when: None,
         },
         FormField {

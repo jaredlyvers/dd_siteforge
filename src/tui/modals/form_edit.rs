@@ -5,6 +5,24 @@ impl App {
     pub(in crate::tui) fn handle_form_edit_event(&mut self, key: event::KeyEvent) -> Option<ModalResult> {
         use crossterm::event::{KeyCode, KeyModifiers};
 
+        // Ctrl+E: expand the focused textarea to a full-size editor.
+        if matches!(key.code, KeyCode::Char('e'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            let is_textarea = matches!(
+                self.modal.as_ref(),
+                Some(Modal::FormEdit { state, .. })
+                    if matches!(
+                        state.form.fields.get(state.focused_field).map(|f| &f.kind),
+                        Some(editform::FieldKind::Textarea { .. })
+                    )
+            );
+            if is_textarea {
+                self.form_textarea_expanded = !self.form_textarea_expanded;
+            }
+            return Some(ModalResult::Continue);
+        }
+
         // Ctrl+P: open image picker on image_url fields, page picker on
         // link_url fields. Heuristic on field id since both kinds are
         // FieldKind::Url today.
@@ -118,6 +136,7 @@ impl App {
                 // Top-level save: commit to the model.
                 match cursor::apply_edit_form_to_component(&mut self.site, &cursor, &state) {
                     Ok(()) => {
+                        self.form_textarea_expanded = false;
                         let msg = format!("Saved {}.", state.form.title);
                         self.push_toast(ToastLevel::Success, msg);
                         return Some(ModalResult::CloseSuccess);
@@ -137,8 +156,13 @@ impl App {
             }
             return Some(ModalResult::CloseCancel);
         }
-        // Esc: drilled-down discards and returns; top-level closes.
+        // Esc: expanded textarea returns to the form; drilled-down
+        // discards and returns; top-level closes.
         if matches!(key.code, KeyCode::Esc) {
+            if self.form_textarea_expanded {
+                self.form_textarea_expanded = false;
+                return Some(ModalResult::Continue);
+            }
             let taken = self.modal.take();
             if let Some(Modal::FormEdit {
                 state: _,
@@ -160,10 +184,12 @@ impl App {
                     return Some(ModalResult::Continue);
                 }
             }
+            self.form_textarea_expanded = false;
             self.modal = None;
             return Some(ModalResult::CloseCancel);
         }
 
+        let expanded = self.form_textarea_expanded;
         let Some(Modal::FormEdit {
             state,
             cursor_pos,
@@ -366,12 +392,12 @@ impl App {
         }
 
         match key.code {
-            KeyCode::Tab => {
+            KeyCode::Tab if !expanded => {
                 state.focus_next();
                     *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
                 *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();
             }
-            KeyCode::BackTab => {
+            KeyCode::BackTab if !expanded => {
                 state.focus_prev();
                     *scroll_offset = auto_scroll_for_focus(state, *scroll_offset);
                 *cursor_pos = state.get(state.form.fields[state.focused_field].id).len();

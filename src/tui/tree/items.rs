@@ -215,6 +215,7 @@ impl App {
                                 child_image_url: "https://dummyimage.com/600x400/000/fff".to_string(),
                                 child_image_alt: format!("Alternating image {}", next_num),
                                 child_title: format!("Alternating Item {}", next_num),
+                                child_subtitle: "Subtitle".to_string(),
                                 child_copy: "Alternating content".to_string(),
                             },
                         );

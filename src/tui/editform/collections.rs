@@ -245,6 +245,13 @@ pub static ALTERNATING_ITEM_FORM: EditForm = EditForm {
             visible_when: None,
         },
         FormField {
+            id: "child_subtitle",
+            label: "Subtitle (optional)",
+            kind: FieldKind::Text { default: "Subtitle" },
+            required: false,
+            visible_when: None,
+        },
+        FormField {
             id: "child_copy",
             label: "Copy",
             kind: FieldKind::Textarea { rows: 5, default: "" },

@@ -2,16 +2,20 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::Context;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::templates::Renderer;
 use crate::model::{
     DdAccordion, DdAlert, DdAlternating, DdBanner, DdBlockquote, DdCard, DdCta, DdFilmstrip,
-    DdFooter, DdHead, DdHeader, DdHero, DdMilestones, DdModal, DdSection, DdSlider, Page,
-    PageNode, SectionComponent, Site,
+    DdFooter, DdHead, DdHeader, DdHero, DdMilestones, DdModal, DdSection, DdSlider, Page, PageNode,
+    SectionComponent, Site,
 };
+use crate::templates::Renderer;
 
-pub fn render_site_to_dir(site: &Site, output_dir: &Path, site_root: Option<&Path>) -> anyhow::Result<()> {
+pub fn render_site_to_dir(
+    site: &Site,
+    output_dir: &Path,
+    site_root: Option<&Path>,
+) -> anyhow::Result<()> {
     fs::create_dir_all(output_dir).context("failed to create export directory")?;
     let r = Renderer::load(site_root)?;
     let header_html = render_header(&r, &site.header)?;
@@ -40,7 +44,6 @@ pub fn render_page_html_with_chrome(
     footer_html: &str,
     site: &Site,
 ) -> anyhow::Result<String> {
-
     let mut content = String::new();
     for node in &page.nodes {
         match node {
@@ -64,7 +67,8 @@ pub fn render_page_html_with_chrome(
             "head_html": head_html,
             "header_html": header_html,
             "footer_html": footer_html,
-            "content": content
+            "content": content,
+            "body_class": format!("page page-{}", page.slug)
         }),
     )
 }
@@ -109,8 +113,8 @@ fn render_head(r: &Renderer, head: &DdHead, site: &Site, page: &Page) -> anyhow:
     {
         schema.insert("image".to_string(), Value::String(i.to_string()));
     }
-    let schema_json = serde_json::to_string_pretty(&Value::Object(schema))
-        .unwrap_or_else(|_| "{}".to_string());
+    let schema_json =
+        serde_json::to_string_pretty(&Value::Object(schema)).unwrap_or_else(|_| "{}".to_string());
 
     let og_title = head
         .og_title
@@ -139,9 +143,7 @@ fn render_head(r: &Renderer, head: &DdHead, site: &Site, page: &Page) -> anyhow:
         .filter(|v| !v.is_empty())
         .map(|v| public_url(v));
     let og_url = canonical.clone();
-    let twitter_card = og_image
-        .as_ref()
-        .map(|_| "summary_large_image".to_string());
+    let twitter_card = og_image.as_ref().map(|_| "summary_large_image".to_string());
 
     let data = json!({
         "title": html_title,
@@ -278,7 +280,6 @@ fn render_section(r: &Renderer, section: &DdSection) -> anyhow::Result<String> {
         columns_html.push('\n');
     }
 
-
     r.render(
         "dd-section",
         &json!({
@@ -388,7 +389,6 @@ fn render_banner(r: &Renderer, banner: &DdBanner) -> anyhow::Result<String> {
 }
 
 fn render_cta(r: &Renderer, cta: &DdCta) -> anyhow::Result<String> {
-
     let link_url = cta
         .parent_link_url
         .as_deref()
@@ -426,7 +426,6 @@ fn render_cta(r: &Renderer, cta: &DdCta) -> anyhow::Result<String> {
 }
 
 fn render_filmstrip(r: &Renderer, filmstrip: &DdFilmstrip) -> anyhow::Result<String> {
-
     let data = json!({
         "parent_type": serde_json::to_value(filmstrip.parent_type).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "-default".to_string()),
         "sal": serde_json::to_value(filmstrip.sal).map(|raw| stringify_json(&raw)).unwrap_or_else(|_| "fade".to_string()),
@@ -487,7 +486,6 @@ fn render_modal(r: &Renderer, modal: &DdModal) -> anyhow::Result<String> {
 }
 
 fn render_slider(r: &Renderer, slider: &DdSlider) -> anyhow::Result<String> {
-
     let fallback_uid = stable_uid_from_title(&slider.parent_title);
     let parent_uid = html_id_safe_from_title(&slider.parent_title, &fallback_uid);
     let mut items = Vec::new();
@@ -640,10 +638,16 @@ fn render_image(r: &Renderer, image: &crate::model::DdImage) -> anyhow::Result<S
         .and_then(|v| serde_json::to_value(v).ok())
         .map(|v| stringify_json(&v))
         .unwrap_or_else(|| "_self".to_string());
+    let dark = image
+        .parent_image_url_dark
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
     let data = json!({
         "sal": data_aos,
         "has_link": has_link,
         "parent_image_url": image.parent_image_url,
+        "parent_image_url_dark": dark,
         "parent_image_alt": image.parent_image_alt,
         "parent_link_url": image.parent_link_url.clone().unwrap_or_default(),
         "parent_link_target": link_target,
@@ -743,7 +747,10 @@ fn render_nav_item(item: &crate::model::NavigationItem) -> String {
     )
 }
 
-fn render_header_search(r: &Renderer, search: &crate::model::DdHeaderSearch) -> anyhow::Result<String> {
+fn render_header_search(
+    r: &Renderer,
+    search: &crate::model::DdHeaderSearch,
+) -> anyhow::Result<String> {
     let data = json!({
         "parent_width": search.parent_width,
         "sal": sal_token(search.sal),
@@ -795,7 +802,6 @@ fn navigation_class_token(class: crate::model::NavigationClass) -> &'static str 
         crate::model::NavigationClass::SocialMenu => "-social-menu",
     }
 }
-
 
 fn hero_to_json(hero: &DdHero) -> Value {
     let link_1_target = hero
@@ -1061,7 +1067,10 @@ mod tests {
 
     #[test]
     fn card_items_stagger_sal_delay() {
-        use crate::model::{CardItem, CardLinkTarget, CardType, DdCard, Page, PageNode, SalAnimation, SectionClass, SectionColumn, SectionComponent, SectionItemBoxClass};
+        use crate::model::{
+            CardItem, CardLinkTarget, CardType, DdCard, Page, PageNode, SalAnimation, SectionClass,
+            SectionColumn, SectionComponent, SectionItemBoxClass,
+        };
 
         let card = DdCard {
             parent_type: CardType::Default,
@@ -1124,8 +1133,8 @@ mod tests {
         let r = crate::templates::Renderer::bundled_only().unwrap();
         let header = super::render_header(&r, &site.header).unwrap();
         let footer = super::render_footer(&r, &site.footer).unwrap();
-        let html =
-            super::render_page_html_with_chrome(&r, &site.pages[0], &header, &footer, &site).unwrap();
+        let html = super::render_page_html_with_chrome(&r, &site.pages[0], &header, &footer, &site)
+            .unwrap();
         assert!(html.contains("lang=\"fr\""));
         assert!(html.contains("rel=\"canonical\" href=\"https://ex.com/index.html\""));
         assert!(html.contains("property=\"og:url\" content=\"https://ex.com/index.html\""));
@@ -1141,16 +1150,130 @@ mod tests {
             Some("Custom Drupal & WordPress Development | ldnddev".to_string());
         let r = crate::templates::Renderer::bundled_only().unwrap();
         let html = super::render_page_html_with_chrome(&r, &site.pages[0], "", "", &site).unwrap();
-        assert!(html.contains(
-            "<title>Custom Drupal &amp; WordPress Development | ldnddev</title>"
-        ) || html.contains(
-            "<title>Custom Drupal & WordPress Development | ldnddev</title>"
-        ));
+        assert!(
+            html.contains("<title>Custom Drupal &amp; WordPress Development | ldnddev</title>")
+                || html.contains("<title>Custom Drupal & WordPress Development | ldnddev</title>")
+        );
         assert!(!html.contains("<title>Home</title>"));
         assert!(html.contains(
             "property=\"og:title\" content=\"Custom Drupal &amp; WordPress Development | ldnddev\""
         ) || html.contains(
             "property=\"og:title\" content=\"Custom Drupal & WordPress Development | ldnddev\""
         ));
+    }
+
+    fn page_with_image(dark: Option<&str>, link: Option<&str>) -> crate::model::Page {
+        use crate::model::{
+            CardLinkTarget, DdImage, DdSection, Page, PageNode, SalAnimation, SectionClass,
+            SectionColumn, SectionComponent, SectionItemBoxClass,
+        };
+        Page {
+            id: "p".to_string(),
+            slug: "index".to_string(),
+            slug_locked: false,
+            head: crate::model::Site::starter().pages[0].head.clone(),
+            nodes: vec![PageNode::Section(DdSection {
+                id: "s1".to_string(),
+                section_title: None,
+                section_class: Some(SectionClass::FullContained),
+                item_box_class: Some(SectionItemBoxClass::LBox),
+                columns: vec![SectionColumn {
+                    id: "c1".to_string(),
+                    width_class: "dd-u-1-1".to_string(),
+                    components: vec![SectionComponent::Image(DdImage {
+                        sal: SalAnimation::Fade,
+                        parent_image_url: "/light.jpg".to_string(),
+                        parent_image_url_dark: dark.map(str::to_string),
+                        parent_image_alt: "Alt text".to_string(),
+                        parent_link_url: link.map(str::to_string),
+                        parent_link_target: link.map(|_| CardLinkTarget::SelfTarget),
+                    })],
+                }],
+            })],
+        }
+    }
+
+    #[test]
+    fn image_renders_picture_with_dark_source() {
+        let html = render_page_html(&page_with_image(Some("/dark.jpg"), None))
+            .expect("image page should render");
+        assert!(html.contains("<picture>"));
+        assert!(
+            html.contains(r#"<source srcset="/dark.jpg" media="(prefers-color-scheme: dark)">"#)
+        );
+        assert!(html.contains(r#"<img src="/light.jpg" alt="Alt text" class="dd-img""#));
+        assert!(!html.contains("<a href="));
+    }
+
+    #[test]
+    fn image_without_dark_omits_source_but_keeps_picture() {
+        let html =
+            render_page_html(&page_with_image(None, None)).expect("image page should render");
+        assert!(html.contains("<picture>"));
+        assert!(!html.contains("prefers-color-scheme: dark"));
+        assert!(html.contains(r#"<img src="/light.jpg" alt="Alt text" class="dd-img""#));
+    }
+
+    #[test]
+    fn image_with_link_wraps_picture() {
+        let html = render_page_html(&page_with_image(Some("/dark.jpg"), Some("/about.html")))
+            .expect("linked image page should render");
+        let link_at = html.find(r#"<a href="/about.html""#).expect("link");
+        let picture_at = html.find("<picture>").expect("picture");
+        let source_at = html
+            .find(r#"<source srcset="/dark.jpg" media="(prefers-color-scheme: dark)">"#)
+            .expect("dark source");
+        assert!(picture_at > link_at, "picture should sit inside the link");
+        assert!(source_at > picture_at);
+    }
+
+    fn page_with_alternating(subtitle: &str) -> crate::model::Page {
+        use crate::model::{
+            AlternatingItem, AlternatingType, DdAlternating, DdSection, Page, PageNode,
+            SalAnimation, SectionClass, SectionColumn, SectionComponent, SectionItemBoxClass,
+        };
+        Page {
+            id: "p".to_string(),
+            slug: "index".to_string(),
+            slug_locked: false,
+            head: crate::model::Site::starter().pages[0].head.clone(),
+            nodes: vec![PageNode::Section(DdSection {
+                id: "s1".to_string(),
+                section_title: None,
+                section_class: Some(SectionClass::FullContained),
+                item_box_class: Some(SectionItemBoxClass::LBox),
+                columns: vec![SectionColumn {
+                    id: "c1".to_string(),
+                    width_class: "dd-u-1-1".to_string(),
+                    components: vec![SectionComponent::Alternating(DdAlternating {
+                        parent_type: AlternatingType::Default,
+                        parent_class: "-default".to_string(),
+                        sal: SalAnimation::Fade,
+                        items: vec![AlternatingItem {
+                            child_image_url: "/a.jpg".to_string(),
+                            child_image_alt: "a".to_string(),
+                            child_title: "Title".to_string(),
+                            child_subtitle: subtitle.to_string(),
+                            child_copy: "Copy".to_string(),
+                        }],
+                    })],
+                }],
+            })],
+        }
+    }
+
+    #[test]
+    fn alternating_renders_subtitle_when_set() {
+        let html = render_page_html(&page_with_alternating("A kicker"))
+            .expect("alternating page should render");
+        assert!(html.contains("dd-alternating__subtitle"));
+        assert!(html.contains("A kicker"));
+    }
+
+    #[test]
+    fn alternating_omits_subtitle_when_empty() {
+        let html =
+            render_page_html(&page_with_alternating("")).expect("alternating page should render");
+        assert!(!html.contains("dd-alternating__subtitle"));
     }
 }

@@ -379,6 +379,10 @@ pub fn image_to_form_state(i: &DdImage) -> EditFormState {
     let mut s = EditFormState::new(&editform::IMAGE_FORM);
     s.set("sal", enum_serde_str(i.sal));
     s.set("parent_image_url", i.parent_image_url.clone());
+    s.set(
+        "parent_image_url_dark",
+        i.parent_image_url_dark.clone().unwrap_or_default(),
+    );
     s.set("parent_image_alt", i.parent_image_alt.clone());
     s.set(
         "parent_link_url",
@@ -396,6 +400,8 @@ fn apply_image_values(i: &mut DdImage, state: &EditFormState) -> Result<()> {
     i.sal = parse_enum::<SalAnimation>(state.get("sal"))
         .context("invalid sal")?;
     i.parent_image_url = state.get("parent_image_url").trim().to_string();
+    let dark = state.get("parent_image_url_dark").trim().to_string();
+    i.parent_image_url_dark = if dark.is_empty() { None } else { Some(dark) };
     i.parent_image_alt = state.get("parent_image_alt").trim().to_string();
     let link = state.get("parent_link_url").trim().to_string();
     if link.is_empty() {
@@ -784,6 +790,7 @@ pub fn alternating_to_form_state(a: &DdAlternating) -> EditFormState {
         item.set("child_image_url", it.child_image_url.clone());
         item.set("child_image_alt", it.child_image_alt.clone());
         item.set("child_title", it.child_title.clone());
+        item.set("child_subtitle", it.child_subtitle.clone());
         item.set("child_copy", it.child_copy.clone());
         items.push(item);
     }
@@ -802,6 +809,7 @@ fn apply_alternating_values(a: &mut DdAlternating, state: &EditFormState) -> Res
                 child_image_url: item_s.get("child_image_url").trim().to_string(),
                 child_image_alt: item_s.get("child_image_alt").trim().to_string(),
                 child_title: item_s.get("child_title").to_string(),
+                child_subtitle: item_s.get("child_subtitle").to_string(),
                 child_copy: item_s.get("child_copy").to_string(),
             });
         }

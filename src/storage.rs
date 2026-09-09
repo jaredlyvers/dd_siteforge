@@ -88,6 +88,7 @@ mod tests {
                         child_image_url: "/assets/images/alternating.jpg".to_string(),
                         child_image_alt: "Alt".to_string(),
                         child_title: "Item A".to_string(),
+                        child_subtitle: "Sub A".to_string(),
                         child_copy: "Copy A".to_string(),
                     }],
                 }));
@@ -327,12 +328,14 @@ mod tests {
                             child_image_url: "/assets/images/a1.jpg".to_string(),
                             child_image_alt: "A1".to_string(),
                             child_title: "Alt 1".to_string(),
+                            child_subtitle: String::new(),
                             child_copy: "One".to_string(),
                         },
                         crate::model::AlternatingItem {
                             child_image_url: "/assets/images/a2.jpg".to_string(),
                             child_image_alt: "A2".to_string(),
                             child_title: "Alt 2".to_string(),
+                            child_subtitle: String::new(),
                             child_copy: "Two".to_string(),
                         },
                     ],

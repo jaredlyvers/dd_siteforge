@@ -172,6 +172,11 @@ pub(super) struct App {
     /// FormEdit modal that was paused when the image picker opened on top
     /// of it. Restored when the picker closes (Esc or after a commit).
     paused_form_edit_modal: Option<Modal>,
+    /// When true, FormEdit paints the focused textarea full-size. Esc
+    /// returns to the compact form; Ctrl+S still saves the component.
+    form_textarea_expanded: bool,
+    /// Draw-time hit targets for `[Expand]` on textarea field labels.
+    form_expand_hits: std::cell::RefCell<Vec<(usize, Rect)>>,
     expanded_sections: HashSet<(usize, usize)>,
     expanded_accordion_items: HashSet<(usize, usize, usize, usize)>,
     expanded_alternating_items: HashSet<(usize, usize, usize, usize)>,
@@ -238,6 +243,8 @@ impl App {
             theme_status,
             modal_field_areas: std::cell::RefCell::new(Vec::new()),
             paused_form_edit_modal: None,
+            form_textarea_expanded: false,
+            form_expand_hits: std::cell::RefCell::new(Vec::new()),
             expanded_sections: HashSet::new(),
             expanded_accordion_items: HashSet::new(),
             expanded_alternating_items: HashSet::new(),

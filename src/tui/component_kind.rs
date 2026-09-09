@@ -127,6 +127,7 @@ impl ComponentKind {
                         child_image_url: "https://dummyimage.com/600x400/000/fff".to_string(),
                         child_image_alt: "Alternating image".to_string(),
                         child_title: "Alternating Item".to_string(),
+                        child_subtitle: "Subtitle".to_string(),
                         child_copy: "Alternating content".to_string(),
                     }],
                 })
@@ -200,6 +201,7 @@ impl ComponentKind {
             ComponentKind::Image => crate::model::SectionComponent::Image(crate::model::DdImage {
                 sal: crate::model::SalAnimation::Fade,
                 parent_image_url: "https://dummyimage.com/1200x600/000/fff".to_string(),
+                parent_image_url_dark: None,
                 parent_image_alt: "Image alt text".to_string(),
                 parent_link_url: None,
                 parent_link_target: None,

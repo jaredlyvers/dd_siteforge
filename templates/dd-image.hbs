@@ -1,9 +1,15 @@
 <div class="dd-image" data-sal="{{sal}}">
   {{#if has_link}}
   <a href="{{parent_link_url}}" target="{{parent_link_target}}" title="{{parent_image_alt}}">
-    <img src="{{parent_image_url}}" alt="{{parent_image_alt}}" class="dd-img" loading="lazy" />
+    <picture>
+      {{#if parent_image_url_dark}}<source srcset="{{parent_image_url_dark}}" media="(prefers-color-scheme: dark)">{{/if}}
+      <img src="{{parent_image_url}}" alt="{{parent_image_alt}}" class="dd-img" loading="lazy" />
+    </picture>
   </a>
   {{else}}
-  <img src="{{parent_image_url}}" alt="{{parent_image_alt}}" class="dd-img" loading="lazy" />
+  <picture>
+    {{#if parent_image_url_dark}}<source srcset="{{parent_image_url_dark}}" media="(prefers-color-scheme: dark)">{{/if}}
+    <img src="{{parent_image_url}}" alt="{{parent_image_alt}}" class="dd-img" loading="lazy" />
+  </picture>
   {{/if}}
 </div>

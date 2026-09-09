@@ -345,14 +345,23 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
         open_form_edit_on_page_component(&mut app);
         // Cycle sal once (focused field 0).
         send_key(&mut app, KeyCode::Right, KeyModifiers::NONE);
+        if let Some(Modal::FormEdit { state, .. }) = &mut app.modal {
+            state.set("parent_image_url_dark", "/assets/images/dark.jpg");
+        }
         send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
         match &app.site.pages[0].nodes[1] {
             PageNode::Section(s) => match &s.columns[0].components[0] {
-                crate::model::SectionComponent::Image(i) => assert_eq!(
-                    i.sal,
-                    crate::model::SalAnimation::SlideUp,
-                    "image sal should advance one step from default"
-                ),
+                crate::model::SectionComponent::Image(i) => {
+                    assert_eq!(
+                        i.sal,
+                        crate::model::SalAnimation::SlideUp,
+                        "image sal should advance one step from default"
+                    );
+                    assert_eq!(
+                        i.parent_image_url_dark.as_deref(),
+                        Some("/assets/images/dark.jpg")
+                    );
+                }
                 _ => panic!("expected Image"),
             },
             _ => panic!("expected Section"),
@@ -408,6 +417,153 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
             },
             _ => panic!("expected Section"),
         }
+    }
+
+    fn focus_rich_text_copy(app: &mut App) {
+        send_key(app, KeyCode::Tab, KeyModifiers::NONE);
+        send_key(app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(form_focused_field_id(app), Some("parent_copy"));
+    }
+
+    #[test]
+    fn textarea_expand_ctrl_e_opens_and_esc_returns_to_form() {
+        let mut app = app_with_component(ComponentKind::RichText);
+        open_form_edit_on_page_component(&mut app);
+        focus_rich_text_copy(&mut app);
+
+        send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
+        assert!(app.form_textarea_expanded);
+        assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+
+        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(!app.form_textarea_expanded);
+        assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+        assert_eq!(form_focused_field_id(&app), Some("parent_copy"));
+    }
+
+    #[test]
+    fn textarea_expand_ctrl_e_on_non_textarea_is_noop() {
+        let mut app = app_with_component(ComponentKind::RichText);
+        open_form_edit_on_page_component(&mut app);
+        assert_eq!(form_focused_field_id(&app), Some("parent_class"));
+        send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
+        assert!(!app.form_textarea_expanded);
+        assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+    }
+
+    #[test]
+    fn textarea_expand_esc_from_form_still_closes() {
+        let mut app = app_with_component(ComponentKind::RichText);
+        open_form_edit_on_page_component(&mut app);
+        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(app.modal.is_none());
+        assert!(!app.form_textarea_expanded);
+    }
+
+    #[test]
+    fn textarea_expand_edits_then_save_commits_copy() {
+        let mut app = app_with_component(ComponentKind::RichText);
+        open_form_edit_on_page_component(&mut app);
+        focus_rich_text_copy(&mut app);
+        send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
+        assert!(app.form_textarea_expanded);
+
+        send_key(&mut app, KeyCode::Char('Z'), KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(!app.form_textarea_expanded);
+        assert!(form_value(&app, "parent_copy").ends_with('Z'));
+
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert!(app.modal.is_none());
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => match &s.columns[0].components[0] {
+                crate::model::SectionComponent::RichText(r) => {
+                    assert!(r.parent_copy.ends_with('Z'), "{}", r.parent_copy);
+                }
+                _ => panic!("expected RichText"),
+            },
+            _ => panic!("expected Section"),
+        }
+    }
+
+    #[test]
+    fn textarea_expand_ctrl_s_saves_from_expanded_view() {
+        let mut app = app_with_component(ComponentKind::RichText);
+        open_form_edit_on_page_component(&mut app);
+        focus_rich_text_copy(&mut app);
+        send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
+        send_key(&mut app, KeyCode::Char('Q'), KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert!(app.modal.is_none());
+        assert!(!app.form_textarea_expanded);
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => match &s.columns[0].components[0] {
+                crate::model::SectionComponent::RichText(r) => {
+                    assert!(r.parent_copy.ends_with('Q'), "{}", r.parent_copy);
+                }
+                _ => panic!("expected RichText"),
+            },
+            _ => panic!("expected Section"),
+        }
+    }
+
+    #[test]
+    fn textarea_expand_tab_does_not_leave_field() {
+        let mut app = app_with_component(ComponentKind::RichText);
+        open_form_edit_on_page_component(&mut app);
+        focus_rich_text_copy(&mut app);
+        send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert!(app.form_textarea_expanded);
+        assert_eq!(form_focused_field_id(&app), Some("parent_copy"));
+    }
+
+    #[test]
+    fn textarea_expand_click_opens_from_hit_target() {
+        let mut app = app_with_component(ComponentKind::RichText);
+        open_form_edit_on_page_component(&mut app);
+        let copy_idx = match &app.modal {
+            Some(Modal::FormEdit { state, .. }) => state
+                .form
+                .fields
+                .iter()
+                .position(|f| f.id == "parent_copy")
+                .expect("parent_copy field"),
+            _ => panic!("expected FormEdit"),
+        };
+        app.form_expand_hits.borrow_mut().push((
+            copy_idx,
+            Rect {
+                x: 40,
+                y: 10,
+                width: 8,
+                height: 1,
+            },
+        ));
+        send_mouse(
+            &mut app,
+            MouseEventKind::Down(MouseButton::Left),
+            42,
+            10,
+        );
+        assert!(app.form_textarea_expanded);
+        assert_eq!(form_focused_field_id(&app), Some("parent_copy"));
+    }
+
+    #[test]
+    fn f1_from_expanded_textarea_keeps_form() {
+        let mut app = app_with_component(ComponentKind::RichText);
+        open_form_edit_on_page_component(&mut app);
+        focus_rich_text_copy(&mut app);
+        send_key(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
+        send_key(&mut app, KeyCode::F(1), KeyModifiers::NONE);
+        assert!(matches!(app.overlay, Some(Overlay::Help { scroll: 0 })));
+        assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
+        assert!(app.form_textarea_expanded);
+        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(app.overlay.is_none());
+        assert!(app.form_textarea_expanded);
+        assert!(matches!(app.modal, Some(Modal::FormEdit { .. })));
     }
 
     #[test]
@@ -530,6 +686,34 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, Mous
     #[test]
     fn tier_b_alternating_drill_round_trip() {
         tier_b_drill_round_trip(ComponentKind::Alternating);
+    }
+
+    #[test]
+    fn alternating_item_subtitle_round_trip() {
+        let mut app = app_with_component(ComponentKind::Alternating);
+        open_form_edit_on_page_component(&mut app);
+        tab_to_items_field(&mut app);
+        send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(form_focused_field_id(&app), Some("child_subtitle"));
+        send_key(&mut app, KeyCode::Char('!'), KeyModifiers::NONE);
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        send_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL);
+        match &app.site.pages[0].nodes[1] {
+            PageNode::Section(s) => match &s.columns[0].components[0] {
+                crate::model::SectionComponent::Alternating(alt) => {
+                    assert!(
+                        alt.items[0].child_subtitle.contains('!'),
+                        "subtitle should contain inserted char, got {:?}",
+                        alt.items[0].child_subtitle
+                    );
+                }
+                _ => panic!("expected Alternating"),
+            },
+            _ => panic!("expected Section"),
+        }
     }
 
     #[test]

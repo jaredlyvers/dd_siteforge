@@ -493,6 +493,15 @@ fn validate_section_component(
                     page_id, section_id
                 ));
             }
+            if let Some(dark) = image.parent_image_url_dark.as_deref()
+                && !dark.trim().is_empty()
+                && !is_valid_url(dark)
+            {
+                errors.push(format!(
+                    "Page '{}' section '{}' dd-image parent_image_url_dark is invalid.",
+                    page_id, section_id
+                ));
+            }
             if image.parent_image_alt.trim().is_empty() {
                 errors.push(format!(
                     "Page '{}' section '{}' dd-image is missing parent_image_alt.",
@@ -837,7 +846,12 @@ fn collect_component_image_refs(
     match comp {
         Banner(b) => refs.push((lbl("banner image"), b.parent_image_url.clone())),
         Cta(c) => refs.push((lbl("cta image"), c.parent_image_url.clone())),
-        Image(i) => refs.push((lbl("image"), i.parent_image_url.clone())),
+        Image(i) => {
+            refs.push((lbl("image"), i.parent_image_url.clone()));
+            if let Some(dark) = i.parent_image_url_dark.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+                refs.push((lbl("image dark"), dark.to_string()));
+            }
+        }
         Blockquote(b) => refs.push((lbl("blockquote image"), b.parent_image_url.clone())),
         Card(c) => {
             for (n, item) in c.items.iter().enumerate() {

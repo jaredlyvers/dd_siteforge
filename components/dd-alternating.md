@@ -67,7 +67,7 @@ fields:
         maps_to: ".dd-alternating__title"
 
       - id: child_subtitle
-        required: true
+        required: false
         type: string
         maps_to: ".dd-alternating__subtitle"
 
@@ -152,7 +152,9 @@ blueprint:
         </div>
         <div class="dd-alternating__copy l-box dd-u-1-1 dd-u-sm-1-1 dd-u-md-1-1 dd-u-lg-12-24" data-sal="[sal]">
           <div class="dd-alternating__title"><h2>[child_title]</h2></div>
-          <div class="dd-alternating__subtitle"><strong>[child_subtitle]</strong></div>
+          <!-- if [child_subtitle] -->
+          <div class="dd-alternating__subtitle"><div>[child_subtitle]</div></div>
+          <!-- endif -->
           <div class="dd-alternating__body">
             <p>[child_copy]</p>
           </div>
@@ -165,4 +167,5 @@ blueprint:
 
 ## Conditional Markup
 
-- none (this variant intentionally has no optional link fields)
+- `.dd-alternating__subtitle` renders only when `child_subtitle` is non-empty
+- this variant has no optional link fields

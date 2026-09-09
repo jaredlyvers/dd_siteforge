@@ -129,6 +129,8 @@ pub struct AlternatingItem {
     pub child_image_url: String,
     pub child_image_alt: String,
     pub child_title: String,
+    #[serde(default)]
+    pub child_subtitle: String,
     pub child_copy: String,
 }
 
@@ -289,6 +291,8 @@ pub struct DdImage {
     #[serde(default = "default_image_sal", alias = "parent_data_aos")]
     pub sal: SalAnimation,
     pub parent_image_url: String,
+    #[serde(default)]
+    pub parent_image_url_dark: Option<String>,
     pub parent_image_alt: String,
     pub parent_link_url: Option<String>,
     pub parent_link_target: Option<CardLinkTarget>,
@@ -1245,5 +1249,36 @@ mod tests {
         assert!(!fresh.contains("parent_data_aos"));
         assert!(fresh.contains("slide-up"));
         assert!(!fresh.contains("fade-up"));
+    }
+
+    #[test]
+    fn image_loads_legacy_json_without_dark_url() {
+        let image: crate::model::DdImage = serde_json::from_str(
+            r#"{
+                "sal": "fade",
+                "parent_image_url": "/light.jpg",
+                "parent_image_alt": "Alt"
+            }"#,
+        )
+        .expect("legacy dd-image JSON should load");
+        assert_eq!(image.parent_image_url, "/light.jpg");
+        assert!(image.parent_image_url_dark.is_none());
+        assert_eq!(image.parent_image_alt, "Alt");
+    }
+
+    #[test]
+    fn alternating_item_loads_legacy_json_without_subtitle() {
+        let item: crate::model::AlternatingItem = serde_json::from_str(
+            r#"{
+                "child_image_url": "/a.jpg",
+                "child_image_alt": "a",
+                "child_title": "Title",
+                "child_copy": "Copy"
+            }"#,
+        )
+        .expect("legacy alternating item JSON should load");
+        assert_eq!(item.child_title, "Title");
+        assert!(item.child_subtitle.is_empty());
+        assert_eq!(item.child_copy, "Copy");
     }
 }

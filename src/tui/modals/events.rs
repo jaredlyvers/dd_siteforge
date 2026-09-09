@@ -98,6 +98,26 @@ impl App {
             // FormEdit scrollbar before field click-to-focus so a track click
             // jumps instead of focusing the adjacent input.
             if matches!(kind, MouseEventKind::Down(MouseButton::Left)) {
+                let expand_hit = self
+                    .form_expand_hits
+                    .borrow()
+                    .iter()
+                    .find(|(_, r)| contains(*r, col, row))
+                    .map(|(idx, _)| *idx);
+                if let Some(idx) = expand_hit {
+                    if let Some(Modal::FormEdit { state, cursor_pos, .. }) = self.modal.as_mut() {
+                        state.focused_field = idx;
+                        let field_id = state.form.fields.get(idx).map(|f| f.id);
+                        if let Some(field_id) = field_id {
+                            *cursor_pos = state.get(field_id).len();
+                        }
+                    }
+                    self.form_textarea_expanded = true;
+                    return Some(ModalResult::Continue);
+                }
+                if self.form_textarea_expanded {
+                    return Some(ModalResult::Continue);
+                }
                 let sb = *self.form_scrollbar_track.borrow();
                 if contains(sb.rect, col, row) {
                     if let Some(Modal::FormEdit { scroll_offset, .. }) = self.modal.as_mut() {
@@ -132,6 +152,29 @@ impl App {
             match kind {
                 MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
                     let delta: i32 = if matches!(kind, MouseEventKind::ScrollUp) { -3 } else { 3 };
+                    if self.form_textarea_expanded {
+                        if let Some(Modal::FormEdit {
+                            state, cursor_pos, ..
+                        }) = self.modal.as_mut()
+                        {
+                            let field_id = match state.form.fields.get(state.focused_field) {
+                                Some(f)
+                                    if matches!(f.kind, editform::FieldKind::Textarea { .. }) =>
+                                {
+                                    Some(f.id)
+                                }
+                                _ => None,
+                            };
+                            if let Some(field_id) = field_id {
+                                *cursor_pos = textarea_move_cursor_vertical(
+                                    state.get(field_id),
+                                    *cursor_pos,
+                                    delta as isize,
+                                );
+                            }
+                        }
+                        return Some(ModalResult::Continue);
+                    }
                     if let Some(modal) = self.modal.as_mut() {
                         match modal {
                             Modal::ValidationErrors { errors, scroll_offset } => {
