@@ -37,6 +37,10 @@ pub const BUNDLED: &[(&str, &str)] = &[
     ("dd-rich_text", include_str!("../templates/dd-rich_text.hbs")),
     ("dd-navigation", include_str!("../templates/dd-navigation.hbs")),
     (
+        "dd-navigation-item",
+        include_str!("../templates/dd-navigation-item.hbs"),
+    ),
+    (
         "dd-header-search",
         include_str!("../templates/dd-header-search.hbs"),
     ),

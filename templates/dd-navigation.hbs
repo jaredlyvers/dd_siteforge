@@ -2,7 +2,9 @@
   <nav itemscope itemtype="https://schema.org/SiteNavigationElement" aria-label="{{aria_label}}">
     <button class="dd-menu__close fa-regular fa-times" type="button"><span class="visually-hidden">Menu</span></button>
     <ul class="menu">
-{{{items_html}}}
+{{#each items}}
+{{> dd-navigation-item}}
+{{/each}}
     </ul>
   </nav>
 </div>

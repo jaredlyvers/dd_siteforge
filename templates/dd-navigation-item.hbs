@@ -1,0 +1,10 @@
+      <li class="menu-item{{#if has_children}} -has-children{{/if}}">
+        {{#if is_link}}<a href="{{child_link_url}}" target="{{child_link_target}}" class="{{child_link_css}}">{{child_link_label}}</a>{{/if}}{{#if is_button}}<span class="{{child_link_css}}" role="presentation">{{child_link_label}}</span>{{/if}}
+        {{#if has_children}}
+        <ul class="sub-menu">
+{{#each items}}
+{{> dd-navigation-item}}
+{{/each}}
+        </ul>
+        {{/if}}
+      </li>

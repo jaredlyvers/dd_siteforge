@@ -160,10 +160,11 @@ blueprint:
 
 ## HTML Template
 
-Rendered as a recursive tree. The `<!-- block: menu-item -->` section is the
-recursive unit: at every depth, an item renders either an `<a>` (link) or a
-`<span>` (button), followed by a `<ul class="sub-menu">` if and only if the
-item carries a non-empty nested `items[]`.
+Rendered as a recursive tree. Export uses `templates/dd-navigation.hbs` for
+the shell and `templates/dd-navigation-item.hbs` as a recursive partial for
+each `<!-- block: menu-item -->`. At every depth, an item renders either an
+`<a>` (link) or a `<span>` (button), followed by a `<ul class="sub-menu">`
+if and only if the item carries a non-empty nested `items[]`.
 
 ```html
 <div class="dd-navigation [parent_class] -y-center">

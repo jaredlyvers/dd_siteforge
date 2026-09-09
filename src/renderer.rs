@@ -677,74 +677,36 @@ fn render_navigation(r: &Renderer, nav: &crate::model::DdNavigation) -> anyhow::
         crate::model::NavigationType::HeaderNav => "header navigation",
         crate::model::NavigationType::FooterNav => "footer navigation",
     };
-    let items_html = render_nav_items(&nav.items);
     r.render(
         "dd-navigation",
         &json!({
             "parent_class": parent_class,
             "sal": sal_token(nav.sal),
             "aria_label": aria_label,
-            "items_html": items_html,
+            "items": nav_items_to_json(&nav.items),
         }),
     )
 }
 
-fn render_nav_items(items: &[crate::model::NavigationItem]) -> String {
-    let mut out = String::new();
-    for item in items {
-        out.push_str(&render_nav_item(item));
-        out.push('\n');
-    }
-    out
+fn nav_items_to_json(items: &[crate::model::NavigationItem]) -> Vec<Value> {
+    items.iter().map(nav_item_to_json).collect()
 }
 
-fn render_nav_item(item: &crate::model::NavigationItem) -> String {
-    let has_children = !item.items.is_empty();
-    let has_children_cls = if has_children { " -has-children" } else { "" };
-    let css = item.child_link_css.as_deref().unwrap_or("");
-    let label = item.child_link_label.as_str();
-    let inner = match item.child_kind {
-        crate::model::NavigationKind::Link => {
-            let url = item.child_link_url.as_deref().unwrap_or("");
-            let target = item
-                .child_link_target
-                .map(link_target_token)
-                .unwrap_or("_self");
-            format!(
-                r#"<a href="{url}" target="{target}" class="{css}">{label}</a>"#,
-                url = url,
-                target = target,
-                css = css,
-                label = label,
-            )
-        }
-        crate::model::NavigationKind::Button => {
-            format!(
-                r#"<span class="{css}" role="presentation">{label}</span>"#,
-                css = css,
-                label = label,
-            )
-        }
-    };
-    let submenu = if has_children {
-        format!(
-            r#"
-        <ul class="sub-menu">
-{children}
-        </ul>"#,
-            children = render_nav_items(&item.items),
-        )
-    } else {
-        String::new()
-    };
-    format!(
-        r#"      <li class="menu-item{has_children_cls}">
-        {inner}{submenu}
-      </li>"#,
-        has_children_cls = has_children_cls,
-        inner = inner,
-        submenu = submenu,
-    )
+fn nav_item_to_json(item: &crate::model::NavigationItem) -> Value {
+    let nested = nav_items_to_json(&item.items);
+    json!({
+        "is_link": matches!(item.child_kind, crate::model::NavigationKind::Link),
+        "is_button": matches!(item.child_kind, crate::model::NavigationKind::Button),
+        "child_link_label": item.child_link_label,
+        "child_link_url": item.child_link_url.as_deref().unwrap_or(""),
+        "child_link_target": item
+            .child_link_target
+            .map(link_target_token)
+            .unwrap_or("_self"),
+        "child_link_css": item.child_link_css.as_deref().unwrap_or(""),
+        "has_children": !nested.is_empty(),
+        "items": nested,
+    })
 }
 
 fn render_header_search(
@@ -1275,5 +1237,80 @@ mod tests {
         let html =
             render_page_html(&page_with_alternating("")).expect("alternating page should render");
         assert!(!html.contains("dd-alternating__subtitle"));
+    }
+
+    fn page_with_navigation(items: Vec<crate::model::NavigationItem>) -> crate::model::Page {
+        use crate::model::{
+            DdNavigation, DdSection, NavigationClass, NavigationType, Page, PageNode,
+            SalAnimation, SectionClass, SectionColumn, SectionComponent, SectionItemBoxClass,
+        };
+        Page {
+            id: "p".to_string(),
+            slug: "index".to_string(),
+            slug_locked: false,
+            head: crate::model::Site::starter().pages[0].head.clone(),
+            nodes: vec![PageNode::Section(DdSection {
+                id: "s1".to_string(),
+                section_title: None,
+                section_class: Some(SectionClass::FullContained),
+                item_box_class: Some(SectionItemBoxClass::LBox),
+                columns: vec![SectionColumn {
+                    id: "c1".to_string(),
+                    width_class: "dd-u-1-1".to_string(),
+                    components: vec![SectionComponent::Navigation(DdNavigation {
+                        parent_type: NavigationType::HeaderNav,
+                        parent_class: NavigationClass::MainMenu,
+                        sal: SalAnimation::Fade,
+                        parent_width: "dd-u-1-1".to_string(),
+                        items,
+                    })],
+                }],
+            })],
+        }
+    }
+
+    fn nav_link(label: &str, url: &str, children: Vec<crate::model::NavigationItem>) -> crate::model::NavigationItem {
+        crate::model::NavigationItem {
+            child_kind: crate::model::NavigationKind::Link,
+            child_link_label: label.to_string(),
+            child_link_url: Some(url.to_string()),
+            child_link_target: Some(crate::model::CardLinkTarget::SelfTarget),
+            child_link_css: None,
+            items: children,
+        }
+    }
+
+    fn nav_button(label: &str, children: Vec<crate::model::NavigationItem>) -> crate::model::NavigationItem {
+        crate::model::NavigationItem {
+            child_kind: crate::model::NavigationKind::Button,
+            child_link_label: label.to_string(),
+            child_link_url: None,
+            child_link_target: None,
+            child_link_css: None,
+            items: children,
+        }
+    }
+
+    #[test]
+    fn navigation_renders_link_item() {
+        let html = render_page_html(&page_with_navigation(vec![nav_link("Home", "/", vec![])]))
+            .expect("nav page should render");
+        assert!(html.contains(r#"<li class="menu-item">"#));
+        assert!(html.contains(r#"<a href="/" target="_self" class="">Home</a>"#));
+        assert!(!html.contains("sub-menu"));
+        assert!(!html.contains("-has-children"));
+    }
+
+    #[test]
+    fn navigation_renders_nested_button_and_escapes_label() {
+        let html = render_page_html(&page_with_navigation(vec![nav_button(
+            "More & Extra",
+            vec![nav_link("About", "/about.html", vec![])],
+        )]))
+        .expect("nested nav should render");
+        assert!(html.contains(r#"<li class="menu-item -has-children">"#));
+        assert!(html.contains(r#"<span class="" role="presentation">More &amp; Extra</span>"#));
+        assert!(html.contains(r#"<ul class="sub-menu">"#));
+        assert!(html.contains(r#"<a href="/about.html" target="_self" class="">About</a>"#));
     }
 }
